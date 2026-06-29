@@ -1,0 +1,103 @@
+openapi: 3.0.0
+info:
+  title: Encuesta Oficial Charros - Submit API
+  version: 1.0.0
+  description: Endpoint HTTP para recibir respuestas de la landing "Encuesta Oficial Charros 2026-2027". Ideal para Power Automate HTTP trigger.
+
+paths:
+  /submit:
+    post:
+      summary: Recibe una respuesta de la encuesta
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                timestamp:
+                  type: string
+                  format: date-time
+                campaignName:
+                  type: string
+                source:
+                  type: string
+                nombre:
+                  type: string
+                apellido:
+                  type: string
+                email:
+                  type: string
+                  format: email
+                telefono:
+                  type: string
+                rangoEdad:
+                  type: string
+                sexo:
+                  type: string
+                municipio:
+                  type: string
+                relacionCharros:
+                  type: string
+                antiguedad:
+                  type: string
+                acompanantes:
+                  type: string
+                motivacion:
+                  type: string
+                calificacionExperiencia:
+                  type: string
+                aspectosDisfrutados:
+                  type: array
+                  items:
+                    type: string
+                aspectosMejorar:
+                  type: array
+                  items:
+                    type: string
+                consumoEstadio:
+                  type: string
+                interesClubCharros:
+                  type: string
+                razonAbonado:
+                  type: array
+                  items:
+                    type: string
+                razonNoRenovo:
+                  type: string
+                barreraCompra:
+                  type: array
+                  items:
+                    type: string
+                beneficioPreferido:
+                  type: array
+                  items:
+                    type: string
+                probabilidadCompra:
+                  type: string
+                canalPromociones:
+                  type: array
+                  items:
+                    type: string
+                tipoInformacion:
+                  type: array
+                  items:
+                    type: string
+                comentario:
+                  type: string
+                aceptaAvisoPrivacidad:
+                  type: boolean
+                aceptaComunicaciones:
+                  type: boolean
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  message:
+                    type: string
