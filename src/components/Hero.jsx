@@ -41,7 +41,9 @@ export default function Hero(){
         >
           <img src={logo} alt="Charros logo" className="logo" />
         </a>
-        <h1>Encuesta Oficial Charros 2026-2027</h1>
+        <h1>
+          Encuesta Oficial Charros <span className="hero-year">2026-2027</span>
+        </h1>
         <p className="slogan">Únete al Club más Charro</p>
         <p className="hero-description">En Charros de Jalisco queremos seguir construyendo una experiencia a la altura de nuestra afición. Responde esta breve encuesta y ayúdanos a mejorar tu visita al estadio, conocer tus intereses y enviarte promociones, preventas y beneficios pensados para ti.</p>
 

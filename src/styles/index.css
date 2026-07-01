@@ -46,6 +46,9 @@ body {
 .hero-inner {
   max-width: var(--max-width);
   margin: 0 auto;
+  width: 100%;
+  display: grid;
+  justify-items: center;
 }
 
 .hero .logo {
@@ -77,6 +80,14 @@ body {
   font-size: 1.5rem;
   font-weight: 700;
   letter-spacing: -0.5px;
+  width: min(100%, 760px);
+  text-align: center;
+  text-wrap: balance;
+}
+
+.hero-year {
+  display: inline;
+  white-space: nowrap;
 }
 
 .hero .slogan {
@@ -601,6 +612,14 @@ legend {
     max-width: 100%;
   }
 
+  .hero h1 {
+    width: min(100%, 340px);
+  }
+
+  .hero-year {
+    display: block;
+  }
+
   .hero-metrics {
     gap: 12px;
   }
@@ -645,6 +664,10 @@ legend {
     max-width: 700px;
     text-align: center;
     margin-inline: auto;
+  }
+
+  .hero h1 {
+    width: min(100%, 760px);
   }
 }
 
