@@ -5,7 +5,7 @@ import path from 'path'
 import { fileURLToPath } from 'url'
 import rateLimit from 'express-rate-limit'
 import swaggerUi from 'swagger-ui-express'
-import yaml from 'js-yaml'
+import { load as parseYaml } from 'js-yaml'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -73,7 +73,7 @@ function loadOpenApiSpec() {
   if (!fs.existsSync(openApiPath)) return null
   try {
     const rawSpec = fs.readFileSync(openApiPath, 'utf8')
-    const spec = yaml.load(rawSpec)
+    const spec = parseYaml(rawSpec)
     if (!spec || typeof spec !== 'object') return null
 
     const publicBaseUrl = process.env.PUBLIC_API_BASE_URL || ''
