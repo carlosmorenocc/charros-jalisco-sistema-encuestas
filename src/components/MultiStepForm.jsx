@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import ProgressBar from './ProgressBar'
 import StepContact from './steps/StepContact'
 import StepFanProfile from './steps/StepFanProfile'
@@ -29,9 +29,15 @@ export default function MultiStepForm() {
     campaignName: 'Encuesta Oficial Charros 2026-2027',
     source: 'landing'
   })
+  const formRef = useRef(null)
 
   const StepComponent = STEPS[index].comp
   const currentStepId = STEPS[index].id
+
+  useEffect(() => {
+    if (!formRef.current) return
+    formRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }, [index])
 
   function update(part) {
     setData(prev => ({ ...prev, ...part }))
@@ -171,7 +177,7 @@ export default function MultiStepForm() {
   if (done) return <ThankYou />
 
   return (
-    <form className="survey-form" onSubmit={(e)=>{e.preventDefault();handleNext()}}>
+    <form ref={formRef} className="survey-form" onSubmit={(e)=>{e.preventDefault();handleNext()}}>
       <ProgressBar current={index+1} total={STEPS.length} />
       <div style={{marginBottom:16}}>
         <strong>{STEPS[index].label}</strong>

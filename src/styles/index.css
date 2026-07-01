@@ -95,8 +95,10 @@ body {
 }
 
 .hero-description {
-  width: min(640px, 92%);
+  width: min(700px, 92%);
   margin: 8px auto 0;
+  margin-inline: auto;
+  display: block;
   text-align: center;
   transform: none;
   overflow-wrap: anywhere;
@@ -637,6 +639,12 @@ legend {
 
   label {
     font-size: 1rem;
+  }
+
+  .hero-description {
+    max-width: 700px;
+    text-align: center;
+    margin-inline: auto;
   }
 }
 
