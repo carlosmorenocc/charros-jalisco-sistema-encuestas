@@ -12,16 +12,15 @@ const maxChoices = (arr, limit, updateKey, data, update) => (e) => {
   update({ [updateKey]: list })
 }
 
-export default function StepExperience({ data, update }) {
+export default function StepExperience({ data, update, errors = {} }) {
   const opciones = ['Ambiente','Juego','Comida y bebida','Música / entretenimiento','Convivencia familiar','Atención del personal','Instalaciones','Otro']
-  const mejoras = ['Alimentos y bebidas','Filas / tiempos de espera','Baños','Estacionamiento','Limpieza','Pantallas / audio','Tienda oficial','Señalización','Nada, todo estuvo excelente','Otro']
 
   return (
-    <section>
+    <section className="experience-step">
       <h3>Experiencia en el estadio</h3>
 
       <label>
-        En general, ¿cómo calificarías tu experiencia hoy?
+        Del 1 al 10, ¿cómo calificarías tu experiencia en Charros?
         <select value={data.calificacionExperiencia||''} onChange={e=>update({ calificacionExperiencia: e.target.value })}>
           <option value="">-- Selecciona --</option>
           <option value="1">1</option>
@@ -29,42 +28,68 @@ export default function StepExperience({ data, update }) {
           <option value="3">3</option>
           <option value="4">4</option>
           <option value="5">5</option>
+          <option value="6">6</option>
+          <option value="7">7</option>
+          <option value="8">8</option>
+          <option value="9">9</option>
+          <option value="10">10</option>
         </select>
       </label>
 
+      <label>
+        ¿Qué te gustaría incluir o modificar en tu experiencia?
+        <textarea
+          value={data.comentarioExperiencia||''}
+          onChange={e=>update({ comentarioExperiencia: e.target.value })}
+          rows={4}
+          placeholder="Cuéntanos qué mejorarías o qué te gustaría ver en tu próxima visita."
+        />
+      </label>
+
       <fieldset>
-        <legend>¿Qué fue lo que más disfrutaste? (máx 3)</legend>
+        <legend>Cuando vas a Charros, ¿qué es lo que más disfrutas? (máx 4)</legend>
         {opciones.map(o=> (
           <label key={o} className="checkbox">
-            <input type="checkbox" value={o} checked={(data.aspectosDisfrutados||[]).includes(o)} onChange={maxChoices(opciones,3,'aspectosDisfrutados',data,update)} /> {o}
+            <input type="checkbox" value={o} checked={(data.aspectosDisfrutados||[]).includes(o)} onChange={maxChoices(opciones,4,'aspectosDisfrutados',data,update)} /> {o}
           </label>
         ))}
       </fieldset>
 
-      <fieldset>
-        <legend>¿Qué aspectos mejorarías? (máx 3)</legend>
-        {mejoras.map(m=> (
-          <label key={m} className="checkbox">
-            <input type="checkbox" value={m} checked={(data.aspectosMejorar||[]).includes(m)} onChange={maxChoices(mejoras,3,'aspectosMejorar',data,update)} /> {m}
-          </label>
-        ))}
-      </fieldset>
+      {(data.aspectosDisfrutados || []).includes('Otro') && (
+        <label>
+          ¿Cuál es ese otro aspecto que más disfrutas?
+          <input
+            type="text"
+            value={data.aspectosDisfrutadosOtro || ''}
+            onChange={e=>update({ aspectosDisfrutadosOtro: e.target.value })}
+            placeholder="Escribe aquí tu respuesta"
+          />
+        </label>
+      )}
 
       <label>
-        ¿Cómo realizas normalmente tus consumos dentro del estadio?
-        <select value={data.consumoEstadio||''} onChange={e=>update({ consumoEstadio: e.target.value })}>
+        Cuando usas MyCashless, ¿qué tan fácil te resulta pagar dentro del estadio?
+        <select value={data.facilidadMyCashless||''} onChange={e=>update({ facilidadMyCashless: e.target.value })}>
           <option value="">-- Selecciona --</option>
-          <option value="mycashless">MyCashless</option>
-          <option value="efectivo">Efectivo</option>
-          <option value="tarjeta">Tarjeta bancaria</option>
-          <option value="no-consumo">No consumo dentro del estadio</option>
-          <option value="otro">Otro</option>
+          <option value="muy-facil">Muy fácil</option>
+          <option value="facil">Fácil</option>
+          <option value="regular">Regular</option>
+          <option value="dificil">Difícil</option>
+          <option value="muy-dificil">Muy difícil</option>
+          <option value="no-lo-he-usado">No lo he usado</option>
         </select>
       </label>
 
       <label>
-        Comentarios / sugerencias (opcional)
-        <textarea value={data.comentarioExperiencia||''} onChange={e=>update({ comentarioExperiencia: e.target.value })} rows={3} />
+        ¿Qué opinas sobre la atención e información que comparten los encargados en módulos MyCashless?
+        <textarea
+          value={data.comentarioMyCashless||''}
+          onChange={e=>update({ comentarioMyCashless: e.target.value })}
+          rows={3}
+          placeholder="Comparte tu opinión sobre la atención recibida y la claridad de la información en módulos MyCashless."
+          aria-invalid={Boolean(errors.comentarioMyCashless)}
+        />
+        {errors.comentarioMyCashless && <div className="error-message">{errors.comentarioMyCashless}</div>}
       </label>
     </section>
   )

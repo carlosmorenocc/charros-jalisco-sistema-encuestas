@@ -3,16 +3,26 @@ import cors from 'cors'
 import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
+import rateLimit from 'express-rate-limit'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
 const app = express()
 const port = Number(process.env.PORT || 3001)
-const dataDir = path.join(__dirname, 'data')
+const dataDir = process.env.CSV_DATA_DIR
+  ? path.resolve(process.env.CSV_DATA_DIR)
+  : path.join(__dirname, 'data')
 const csvPath = path.join(dataDir, 'submissions.csv')
+const flushIntervalMs = Number(process.env.CSV_FLUSH_INTERVAL_MS || 250)
+const maxQueueSize = Number(process.env.CSV_MAX_QUEUE_SIZE || 10000)
+const maxBatchSize = Number(process.env.CSV_MAX_BATCH_SIZE || 250)
+const dedupeWindowMs = Number(process.env.CSV_DEDUPE_WINDOW_MS || 24 * 60 * 60 * 1000)
+const submitRateLimit = Number(process.env.SUBMIT_RATE_LIMIT_PER_MIN || 180)
+const allowedOrigins = (process.env.ALLOWED_ORIGINS || '').split(',').map((v) => v.trim()).filter(Boolean)
 
 const CSV_COLUMNS = [
+  'submissionId',
   'timestamp',
   'campaignName',
   'source',
@@ -20,6 +30,7 @@ const CSV_COLUMNS = [
   'apellido',
   'email',
   'telefono',
+  'myCashlessId',
   'rangoEdad',
   'sexo',
   'municipio',
@@ -29,7 +40,11 @@ const CSV_COLUMNS = [
   'motivacion',
   'calificacionExperiencia',
   'aspectosDisfrutados',
+  'aspectosDisfrutadosOtro',
   'aspectosMejorar',
+  'comentarioExperiencia',
+  'facilidadMyCashless',
+  'comentarioMyCashless',
   'consumoEstadio',
   'interesClubCharros',
   'razonAbonado',
@@ -43,6 +58,13 @@ const CSV_COLUMNS = [
   'aceptaAvisoPrivacidad',
   'aceptaComunicaciones'
 ]
+
+const REQUIRED_FIELDS = ['nombre', 'apellido', 'email', 'myCashlessId']
+
+const pendingRows = []
+const recentSubmissionIds = new Map()
+let flushTimer = null
+let isFlushing = false
 
 function ensureDataFile() {
   fs.mkdirSync(dataDir, { recursive: true })
@@ -63,25 +85,162 @@ function buildCsvRow(payload) {
   return CSV_COLUMNS.map((column) => toCsvValue(payload[column])).join(',') + '\n'
 }
 
-app.use(cors({ origin: true }))
-app.use(express.json({ limit: '5mb' }))
+function cleanupOldSubmissionIds() {
+  const now = Date.now()
+  for (const [id, ts] of recentSubmissionIds.entries()) {
+    if (now - ts > dedupeWindowMs) {
+      recentSubmissionIds.delete(id)
+    }
+  }
+}
 
-app.get('/healthz', (_req, res) => {
-  res.json({ ok: true, status: 'ready' })
-})
+function markAndCheckDuplicate(submissionId) {
+  if (!submissionId) return false
+  cleanupOldSubmissionIds()
+  if (recentSubmissionIds.has(submissionId)) return true
+  recentSubmissionIds.set(submissionId, Date.now())
+  return false
+}
 
-app.post('/api/submit', (req, res) => {
+function normalizePayload(input) {
+  const nowIso = new Date().toISOString()
+  const raw = input && typeof input === 'object' ? input : {}
+  const normalized = {
+    ...Object.fromEntries(CSV_COLUMNS.map((k) => [k, ''])),
+    ...raw
+  }
+
+  if (!normalized.timestamp) normalized.timestamp = nowIso
+  if (!normalized.submissionId) {
+    normalized.submissionId = `sub_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
+  }
+
+  return normalized
+}
+
+function validatePayload(payload) {
+  const missing = REQUIRED_FIELDS.filter((field) => !String(payload[field] || '').trim())
+  return {
+    valid: missing.length === 0,
+    missing
+  }
+}
+
+function enqueueRow(row) {
+  if (pendingRows.length >= maxQueueSize) return false
+  pendingRows.push(row)
+  scheduleFlush()
+  return true
+}
+
+function scheduleFlush() {
+  if (flushTimer) return
+  flushTimer = setTimeout(() => {
+    flushTimer = null
+    flushQueue().catch((error) => {
+      console.error('CSV flush error', error)
+    })
+  }, flushIntervalMs)
+}
+
+async function flushQueue() {
+  if (isFlushing || pendingRows.length === 0) return
+  isFlushing = true
   try {
     ensureDataFile()
-    const payload = req.body || {}
-    fs.appendFileSync(csvPath, buildCsvRow(payload), 'utf8')
-    res.json({ ok: true, stored: true, rows: 1 })
+    while (pendingRows.length > 0) {
+      const batch = pendingRows.splice(0, maxBatchSize)
+      await fs.promises.appendFile(csvPath, batch.join(''), 'utf8')
+    }
+  } finally {
+    isFlushing = false
+    if (pendingRows.length > 0) scheduleFlush()
+  }
+}
+
+app.set('trust proxy', 1)
+
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin) return callback(null, true)
+    if (allowedOrigins.length === 0 || allowedOrigins.includes(origin)) {
+      return callback(null, true)
+    }
+    return callback(new Error('CORS not allowed'))
+  }
+}))
+app.use(express.json({ limit: '5mb' }))
+
+const submitLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: submitRateLimit,
+  standardHeaders: true,
+  legacyHeaders: false
+})
+
+app.get('/healthz', (_req, res) => {
+  res.json({ ok: true, status: 'ready', queueSize: pendingRows.length })
+})
+
+app.post('/api/submit', submitLimiter, (req, res) => {
+  try {
+    const payload = normalizePayload(req.body)
+    const validation = validatePayload(payload)
+
+    if (!validation.valid) {
+      return res.status(400).json({
+        ok: false,
+        error: 'Missing required fields',
+        missing: validation.missing
+      })
+    }
+
+    if (markAndCheckDuplicate(payload.submissionId)) {
+      return res.status(200).json({ ok: true, stored: false, duplicate: true })
+    }
+
+    const enqueued = enqueueRow(buildCsvRow(payload))
+    if (!enqueued) {
+      return res.status(503).json({ ok: false, error: 'Server busy, retry shortly' })
+    }
+
+    res.status(202).json({ ok: true, stored: true, queued: true })
   } catch (error) {
     console.error('CSV persistence error', error)
     res.status(500).json({ ok: false, error: 'Unable to persist submission' })
   }
 })
 
+app.get('/api/submissions.csv', async (_req, res) => {
+  try {
+    await flushQueue()
+    ensureDataFile()
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8')
+    res.setHeader('Content-Disposition', 'attachment; filename="submissions.csv"')
+    fs.createReadStream(csvPath).pipe(res)
+  } catch (error) {
+    console.error('CSV download error', error)
+    res.status(500).json({ ok: false, error: 'Unable to read CSV' })
+  }
+})
+
+process.on('SIGINT', async () => {
+  try {
+    await flushQueue()
+  } finally {
+    process.exit(0)
+  }
+})
+
+process.on('SIGTERM', async () => {
+  try {
+    await flushQueue()
+  } finally {
+    process.exit(0)
+  }
+})
+
 app.listen(port, () => {
-  console.log(`Submission API listening on http://localhost:${port}`)
+  console.log(`Submission API listening on port ${port}`)
+  console.log(`CSV storage path: ${csvPath}`)
 })

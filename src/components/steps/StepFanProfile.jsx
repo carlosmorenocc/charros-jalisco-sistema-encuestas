@@ -2,7 +2,7 @@ import React from 'react'
 
 export default function StepFanProfile({ data, update }){
   return (
-    <section>
+    <section className="profile-step">
       <h3>Perfil del aficionado</h3>
 
       <label>

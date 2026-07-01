@@ -40,8 +40,8 @@ export default function FormField({
   const isInvalid = touched && error
 
   return (
-    <div style={{ marginBottom: 16 }}>
-      <label htmlFor={name} style={{ display: 'block', marginBottom: 6 }}>
+    <div className="form-field">
+      <label htmlFor={name} className="form-label">
         {label}
         {required && <span style={{ color: 'var(--red)' }}> *</span>}
       </label>

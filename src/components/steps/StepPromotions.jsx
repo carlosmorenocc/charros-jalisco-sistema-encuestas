@@ -1,8 +1,34 @@
 import React from 'react'
 
+const infoOptions = [
+  'Fechas y horarios de partidos',
+  'Promociones y descuentos',
+  'Beneficios del Club Charros',
+  'Noticias del equipo',
+  'Activaciones y eventos especiales',
+  'Experiencias para familias',
+  'Venta de boletos',
+  'Otro'
+]
+
+const toggleOption = (updateKey, data, update) => (e) => {
+  const value = e.target.value
+  let list = Array.isArray(data[updateKey]) ? [...data[updateKey]] : []
+
+  if (e.target.checked) {
+    list.push(value)
+  } else {
+    list = list.filter((item) => item !== value)
+  }
+
+  update({ [updateKey]: list })
+}
+
 export default function StepPromotions({ data, update }){
+  const selectedInfo = Array.isArray(data.tipoInformacion) ? data.tipoInformacion : []
+
   return (
-    <section>
+    <section className="promotions-step">
       <h3>Promociones y comunicación</h3>
 
       <label>
@@ -21,10 +47,32 @@ export default function StepPromotions({ data, update }){
         </select>
       </label>
 
-      <label>
-        ¿Qué tipo de información te gustaría recibir? (marca las que apliquen)
-        <input type="text" placeholder="Escribe las opciones separadas por comas" value={Array.isArray(data.tipoInformacion)?data.tipoInformacion.join(', '):data.tipoInformacion||''} onChange={e=>update({ tipoInformacion: e.target.value })} />
-      </label>
+      <fieldset>
+        <legend>¿Qué tipo de información te gustaría recibir? (marca las que apliquen)</legend>
+        {infoOptions.map((option) => (
+          <label key={option} className="checkbox">
+            <input
+              type="checkbox"
+              value={option}
+              checked={selectedInfo.includes(option)}
+              onChange={toggleOption('tipoInformacion', data, update)}
+            />
+            {option}
+          </label>
+        ))}
+      </fieldset>
+
+      {selectedInfo.includes('Otro') && (
+        <label>
+          Especifica otro tipo de información
+          <input
+            type="text"
+            value={data.tipoInformacionOtro || ''}
+            onChange={e=>update({ tipoInformacionOtro: e.target.value })}
+            placeholder="Escribe tu opción"
+          />
+        </label>
+      )}
 
       <label>
         Comentario adicional (opcional)

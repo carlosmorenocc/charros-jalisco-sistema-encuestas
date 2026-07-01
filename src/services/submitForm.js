@@ -49,7 +49,10 @@ async function flushPendingQueue(endpoint) {
 }
 
 export async function submitForm(payload){
-  const endpoint = import.meta.env.VITE_SUBMISSION_ENDPOINT || import.meta.env.VITE_POWER_AUTOMATE_ENDPOINT
+  const endpoint =
+    import.meta.env.VITE_SUBMISSION_ENDPOINT ||
+    import.meta.env.VITE_POWER_AUTOMATE_ENDPOINT ||
+    (import.meta.env.DEV ? 'http://localhost:3001/api/submit' : '')
   const localQueueEnabled = import.meta.env.VITE_ENABLE_LOCAL_QUEUE !== 'false'
 
   if (endpoint) {

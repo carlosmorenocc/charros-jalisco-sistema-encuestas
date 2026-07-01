@@ -24,9 +24,18 @@ npm install
 
 ### 2. Desarrollo local
 ```bash
+npm run server
 npm run dev
 ```
 Abre [http://localhost:5173](http://localhost:5173)
+
+Con esto, cada respuesta se almacena automáticamente en:
+
+`data/submissions.csv`
+
+También puedes descargar el CSV desde:
+
+`http://localhost:3001/api/submissions.csv`
 
 ### 3. Configura Power Automate (opcional)
 Copia `.env.example` a `.env` y añade tu endpoint:
@@ -103,6 +112,23 @@ npm test:ui          # Con interfaz
 npm run build        # Optimizado
 npm run preview      # Vista previa
 ```
+
+## 🗄 Almacenamiento CSV automático
+
+- La API de captura está en `server.js`.
+- Endpoint de escritura: `POST /api/submit`.
+- Endpoint de descarga: `GET /api/submissions.csv`.
+- En desarrollo, el frontend usa por defecto `http://localhost:3001/api/submit` si no defines otro endpoint.
+
+### Producción recomendada
+
+1. Despliega el frontend en Vercel (como hoy).
+2. Despliega `server.js` en un servicio Node dedicado (Render/Railway/Fly.io) para tener escritura persistente de CSV.
+3. Configura en Vercel la variable:
+
+`VITE_SUBMISSION_ENDPOINT=https://TU-API/api/submit`
+
+Esto evita que las respuestas se queden solo en `localStorage` y garantiza guardado centralizado.
 
 ## 🔗 Integración Power Automate
 

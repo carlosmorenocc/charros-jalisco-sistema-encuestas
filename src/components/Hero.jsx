@@ -1,4 +1,5 @@
 import React, { useState } from 'react'
+import logo from '../assets/logo.png'
 
 export default function Hero(){
   const [copied, setCopied] = useState(false)
@@ -31,24 +32,32 @@ export default function Hero(){
   return (
     <header className="hero">
       <div className="hero-inner">
-        <img src="/assets/ch-logo.png" alt="Charros logo" className="logo" />
+        <a
+          href="https://www.charrosjalisco.com/"
+          target="_blank"
+          rel="noreferrer"
+          className="logo-link"
+          aria-label="Ir al sitio oficial de Charros de Jalisco"
+        >
+          <img src={logo} alt="Charros logo" className="logo" />
+        </a>
         <h1>Encuesta Oficial Charros 2026-2027</h1>
         <p className="slogan">Únete al Club más Charro</p>
-        <p style={{maxWidth:700,margin:'8px auto 0'}}>En Charros de Jalisco queremos seguir construyendo una experiencia a la altura de nuestra afición. Responde esta breve encuesta y ayúdanos a mejorar tu visita al estadio, conocer tus intereses y enviarte promociones, preventas y beneficios pensados para ti.</p>
+        <p className="hero-description">En Charros de Jalisco queremos seguir construyendo una experiencia a la altura de nuestra afición. Responde esta breve encuesta y ayúdanos a mejorar tu visita al estadio, conocer tus intereses y enviarte promociones, preventas y beneficios pensados para ti.</p>
 
-        <div style={{display:'flex',gap:12,justifyContent:'center',marginTop:12,flexWrap:'wrap'}}>
-          <button type="button" className="btn btn-outline" onClick={shareLink}>
-            {copied ? 'Enlace copiado' : 'Compartir enlace'}
+        <div className="hero-metrics">
+          <button type="button" className="btn hero-share-btn" onClick={shareLink}>
+            {copied ? 'Enlace copiado' : 'Compartir enlace para participar por premios'}
           </button>
-          <div style={{textAlign:'center'}}>
+          <div>
             <strong>Encuesta rápida</strong>
             <div>3 minutos</div>
           </div>
-          <div style={{textAlign:'center'}}>
+          <div>
             <strong>Tu opinión</strong>
             <div>mejora la experiencia</div>
           </div>
-          <div style={{textAlign:'center'}}>
+          <div>
             <strong>Promociones</strong>
             <div>y beneficios</div>
           </div>

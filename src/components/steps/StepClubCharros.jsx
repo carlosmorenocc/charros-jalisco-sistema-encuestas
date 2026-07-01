@@ -1,15 +1,42 @@
 import React from 'react'
 
+const maxChoices = (limit, updateKey, data, update) => (e) => {
+  const val = e.target.value
+  let list = Array.isArray(data[updateKey]) ? [...data[updateKey]] : []
+
+  if (e.target.checked) {
+    if (list.length < limit) list.push(val)
+    else e.target.checked = false
+  } else {
+    list = list.filter((x) => x !== val)
+  }
+
+  update({ [updateKey]: list })
+}
+
 export default function StepClubCharros({ data, update }){
-  const relation = data.relacionCharros || ''
+  const abonadoStatus = data.abonadoClubStatus || ''
+  const beneficios = [
+    'Descuentos en boletos',
+    'Descuentos en alimentos y bebidas',
+    'Descuentos en tienda oficial',
+    'Acceso preferencial al estadio',
+    'Eventos exclusivos con el equipo',
+    'Contenido exclusivo y preventas',
+    'Mejores ubicaciones',
+    'Otro'
+  ]
 
   return (
-    <section>
-      <h3>Club Charros</h3>
+    <section className="club-step">
+      <h3>
+        Club Charros
+        <small className="club-step-note">Abonados*</small>
+      </h3>
       <p style={{fontSize:14}}>Estamos desarrollando nuevas formas de vivir Charros como miembro de la familia del club. Tu opinión nos ayuda a mejorar beneficios, atención, comunicación y experiencias para nuestros aficionados más frecuentes.</p>
 
       <label>
-        ¿Te interesaría recibir información sobre Club Charros y sus membresías?
+        ¿Te interesaría recibir información sobre Club Charros y sus membresías? Una nueva experiencia en el Estadio.
         <select value={data.interesClubCharros||''} onChange={e=>update({ interesClubCharros: e.target.value })}>
           <option value="">-- Selecciona --</option>
           <option value="si">Sí</option>
@@ -18,36 +45,42 @@ export default function StepClubCharros({ data, update }){
         </select>
       </label>
 
-      {relation === 'miembro' && (
-        <label>
-          Si actualmente eres miembro, ¿qué influyó para adquirir tu membresía? (máx 3)
-          <input type="text" placeholder="Escribe hasta 3 razones separadas por comas" value={data.razonAbonadoText||''} onChange={e=>update({ razonAbonadoText: e.target.value })} />
-        </label>
-      )}
-
-      {relation === 'fui-abonado' && (
-        <label>
-          Si fuiste abonado y sigues viniendo, ¿por qué dejaste de renovar?
-          <input type="text" placeholder="Razón principal" value={data.razonNoRenovo||''} onChange={e=>update({ razonNoRenovo: e.target.value })} />
-        </label>
-      )}
-
-      {relation !== 'miembro' && (
-        <label>
-          Si no eres abonado actualmente, ¿qué te ha detenido para comprar una membresía?
-          <input type="text" placeholder="Razones principales" value={data.barreraCompraText||''} onChange={e=>update({ barreraCompraText: e.target.value })} />
-        </label>
-      )}
-
       <label>
-        ¿Qué beneficio te llamaría más la atención en Club Charros? (máx 3)
-        <input type="text" placeholder="Ej: Descuentos en tienda, Acceso preferencial" value={data.beneficioPreferidoText||''} onChange={e=>update({ beneficioPreferidoText: e.target.value })} />
+        ¿Eres abonado de los Charros?
+        <select value={abonadoStatus} onChange={e=>update({ abonadoClubStatus: e.target.value })}>
+          <option value="">-- Selecciona --</option>
+          <option value="abonado-actual">Sí, soy Abonado Charro</option>
+          <option value="fui-abonado">Lo fui, pero en este momento no lo soy</option>
+          <option value="desconoce-beneficios">No conozco qué beneficios incluye</option>
+        </select>
       </label>
 
-      <label>
-        En una escala del 1 al 10, ¿qué tan probable es que consideres comprar o renovar una membresía?
-        <input type="number" min="1" max="10" value={data.probabilidadCompra||''} onChange={e=>update({ probabilidadCompra: e.target.value })} />
-      </label>
+      {abonadoStatus === 'fui-abonado' && (
+        <label>
+          Para el Club Charros es de vital importancia la atención y experiencia que vivas con nosotros, tu hogar. Te invitamos a compartir cómo fue tu experiencia como Abonado.
+          <textarea
+            value={data.razonNoRenovo||''}
+            onChange={e=>update({ razonNoRenovo: e.target.value })}
+            rows={4}
+            placeholder="Compártenos tu experiencia como Abonado para ayudarnos a mejorar"
+          />
+        </label>
+      )}
+
+      <fieldset>
+        <legend>¿Qué beneficio te llamaría más la atención en Club Charros? (máx 4)</legend>
+        {beneficios.map((beneficio) => (
+          <label key={beneficio} className="checkbox">
+            <input
+              type="checkbox"
+              value={beneficio}
+              checked={(data.beneficioPreferido || []).includes(beneficio)}
+              onChange={maxChoices(4, 'beneficioPreferido', data, update)}
+            />
+            {beneficio}
+          </label>
+        ))}
+      </fieldset>
     </section>
   )
 }

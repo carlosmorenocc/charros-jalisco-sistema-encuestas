@@ -73,7 +73,16 @@ export const stepValidations = {
       { rule: 'required', message: 'Ingresa tu municipio o ciudad.' }
     ],
     telefono: [
+      { rule: 'required', message: 'El teléfono es obligatorio.' },
       { rule: 'phone', message: 'El teléfono debe tener al menos 10 dígitos.' }
+    ],
+    myCashlessId: [
+      { rule: 'required', message: 'El ID de MyCashless es obligatorio.' }
+    ]
+  },
+  experience: {
+    comentarioMyCashless: [
+      { rule: 'required', message: 'Comparte tu opinión sobre la atención en módulos MyCashless.' }
     ]
   },
   privacy: {

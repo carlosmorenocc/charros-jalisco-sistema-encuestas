@@ -86,6 +86,9 @@ export default function MultiStepForm() {
       }
 
       const payload = {
+        submissionId: typeof crypto !== 'undefined' && crypto.randomUUID
+          ? crypto.randomUUID()
+          : `sub_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`,
         timestamp: new Date().toISOString(),
         campaignName: data.campaignName,
         source: data.source,
@@ -93,17 +96,22 @@ export default function MultiStepForm() {
         apellido: data.apellido || '',
         email: data.email || '',
         telefono: data.telefono || '',
+        myCashlessId: data.myCashlessId || '',
         rangoEdad: data.rangoEdad || '',
         sexo: data.sexo || '',
         municipio: data.municipio || '',
-        relacionCharros: data.relacionCharros || '',
+        relacionCharros: data.abonadoClubStatus || data.relacionCharros || '',
         antiguedad: data.antiguedad || '',
         acompanantes: data.acompanantes || '',
         motivacion: data.motivacion || '',
         calificacionExperiencia: data.calificacionExperiencia || '',
         aspectosDisfrutados: coerceArray(data.aspectosDisfrutados || data.aspectosDisfrutadosText),
+        aspectosDisfrutadosOtro: data.aspectosDisfrutadosOtro || '',
         aspectosMejorar: coerceArray(data.aspectosMejorar || data.aspectosMejorarText),
-        consumoEstadio: data.consumoEstadio || '',
+        comentarioExperiencia: data.comentarioExperiencia || '',
+        facilidadMyCashless: data.facilidadMyCashless || '',
+        comentarioMyCashless: data.comentarioMyCashless || '',
+        consumoEstadio: data.facilidadMyCashless || data.consumoEstadio || '',
         interesClubCharros: data.interesClubCharros || '',
         razonAbonado: coerceArray(data.razonAbonado || data.razonAbonadoText),
         razonNoRenovo: data.razonNoRenovo || '',
@@ -112,6 +120,7 @@ export default function MultiStepForm() {
         probabilidadCompra: data.probabilidadCompra || '',
         canalPromociones: coerceArray(data.canalPromociones || data.canalPromocionesMain),
         tipoInformacion: coerceArray(data.tipoInformacion || data.tipoInformacionText || data.tipoInformacion),
+        tipoInformacionOtro: data.tipoInformacionOtro || '',
         comentario: data.comentario || '',
         aceptaAvisoPrivacidad: !!data.aceptaAvisoPrivacidad,
         aceptaComunicaciones: !!data.aceptaComunicaciones
