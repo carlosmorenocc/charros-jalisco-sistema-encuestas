@@ -4,6 +4,8 @@ import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import rateLimit from 'express-rate-limit'
+import swaggerUi from 'swagger-ui-express'
+import yaml from 'js-yaml'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -14,6 +16,7 @@ const dataDir = process.env.CSV_DATA_DIR
   ? path.resolve(process.env.CSV_DATA_DIR)
   : path.join(__dirname, 'data')
 const csvPath = path.join(dataDir, 'submissions.csv')
+const openApiPath = path.join(__dirname, 'docs', 'openapi.yaml')
 const flushIntervalMs = Number(process.env.CSV_FLUSH_INTERVAL_MS || 250)
 const maxQueueSize = Number(process.env.CSV_MAX_QUEUE_SIZE || 10000)
 const maxBatchSize = Number(process.env.CSV_MAX_BATCH_SIZE || 250)
@@ -65,6 +68,27 @@ const pendingRows = []
 const recentSubmissionIds = new Map()
 let flushTimer = null
 let isFlushing = false
+
+function loadOpenApiSpec() {
+  if (!fs.existsSync(openApiPath)) return null
+  try {
+    const rawSpec = fs.readFileSync(openApiPath, 'utf8')
+    const spec = yaml.load(rawSpec)
+    if (!spec || typeof spec !== 'object') return null
+
+    const publicBaseUrl = process.env.PUBLIC_API_BASE_URL || ''
+    if (publicBaseUrl) {
+      spec.servers = [{ url: publicBaseUrl }]
+    }
+
+    return spec
+  } catch (error) {
+    console.error('OpenAPI load error', error)
+    return null
+  }
+}
+
+const openApiSpec = loadOpenApiSpec()
 
 function ensureDataFile() {
   fs.mkdirSync(dataDir, { recursive: true })
@@ -181,6 +205,22 @@ const submitLimiter = rateLimit({
 app.get('/healthz', (_req, res) => {
   res.json({ ok: true, status: 'ready', queueSize: pendingRows.length })
 })
+
+app.get('/api/openapi.yaml', (_req, res) => {
+  if (!fs.existsSync(openApiPath)) {
+    return res.status(404).json({ ok: false, error: 'OpenAPI file not found' })
+  }
+  res.type('application/yaml')
+  return fs.createReadStream(openApiPath).pipe(res)
+})
+
+if (openApiSpec) {
+  app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(openApiSpec))
+} else {
+  app.get('/api/docs', (_req, res) => {
+    res.status(503).json({ ok: false, error: 'OpenAPI spec unavailable' })
+  })
+}
 
 app.post('/api/submit', submitLimiter, (req, res) => {
   try {
