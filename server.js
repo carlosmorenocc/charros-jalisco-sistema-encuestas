@@ -50,11 +50,8 @@ const CSV_COLUMNS = [
   'comentarioMyCashless',
   'consumoEstadio',
   'interesClubCharros',
-  'razonAbonado',
   'razonNoRenovo',
-  'barreraCompra',
   'beneficioPreferido',
-  'probabilidadCompra',
   'canalPromociones',
   'tipoInformacion',
   'comentario',
@@ -92,9 +89,22 @@ const openApiSpec = loadOpenApiSpec()
 
 function ensureDataFile() {
   fs.mkdirSync(dataDir, { recursive: true })
+  const expectedHeader = CSV_COLUMNS.join(',')
+
+  if (fs.existsSync(csvPath)) {
+    const firstLine = fs.readFileSync(csvPath, 'utf8').split(/\r?\n/, 1)[0]
+    if (firstLine && firstLine !== expectedHeader) {
+      const legacyPath = path.join(
+        dataDir,
+        `submissions_legacy_${new Date().toISOString().replace(/[:.]/g, '-')}.csv`
+      )
+      fs.renameSync(csvPath, legacyPath)
+      console.log(`CSV schema changed. Legacy file saved to: ${legacyPath}`)
+    }
+  }
+
   if (!fs.existsSync(csvPath)) {
-    const header = CSV_COLUMNS.join(',') + '\n'
-    fs.writeFileSync(csvPath, header, 'utf8')
+    fs.writeFileSync(csvPath, `${expectedHeader}\n`, 'utf8')
   }
 }
 

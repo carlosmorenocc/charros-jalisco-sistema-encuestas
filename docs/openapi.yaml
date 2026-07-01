@@ -90,18 +90,12 @@ paths:
                   type: string
                 interesClubCharros:
                   type: string
-                razonAbonado:
-                    type: string
                 razonNoRenovo:
                   type: string
-                barreraCompra:
-                    type: string
                 beneficioPreferido:
                   type: array
                   items:
                     type: string
-                probabilidadCompra:
-                  type: string
                 canalPromociones:
                   type: array
                   items:
