@@ -260,9 +260,15 @@ app.get('/api/submissions.csv', async (_req, res) => {
     fs.createReadStream(csvPath).pipe(res)
   } catch (error) {
     console.error('CSV download error', error)
-    res.status(500).json({ ok: false, error: 'Unable to read CSV' })
+    res.status(500).json({ ok: false, error: 'Unable to read CSV', detail: error?.message || 'unknown error' })
   }
 })
+
+try {
+  ensureDataFile()
+} catch (error) {
+  console.error('CSV init error', error)
+}
 
 process.on('SIGINT', async () => {
   try {
