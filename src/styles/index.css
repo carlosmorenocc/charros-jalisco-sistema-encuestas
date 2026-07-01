@@ -98,7 +98,8 @@ body {
   width: min(640px, 92%);
   margin: 8px auto 0;
   text-align: center;
-  transform: translateX(clamp(56px, 9vw, 180px));
+  transform: none;
+  overflow-wrap: anywhere;
 }
 
 .hero-metrics {
@@ -497,6 +498,10 @@ legend {
   flex-wrap: wrap;
 }
 
+.thank-you .actions .btn {
+  min-width: 220px;
+}
+
 .btn {
   display: inline-block;
   padding: 12px 24px;
@@ -581,6 +586,39 @@ legend {
 
   .thank-you .actions {
     gap: 16px;
+  }
+}
+
+@media (max-width: 639px) {
+  .hero {
+    padding: 32px 16px;
+  }
+
+  .hero-description {
+    width: 100%;
+    max-width: 100%;
+  }
+
+  .hero-metrics {
+    gap: 12px;
+  }
+
+  .hero-metrics > div {
+    flex: 1 1 140px;
+  }
+
+  .thank-you {
+    padding: 28px 16px;
+  }
+
+  .thank-you .actions {
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .thank-you .actions .btn {
+    width: min(320px, 100%);
+    margin: 0;
   }
 }
 

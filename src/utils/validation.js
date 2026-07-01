@@ -80,9 +80,51 @@ export const stepValidations = {
       { rule: 'required', message: 'El ID de MyCashless es obligatorio.' }
     ]
   },
+  profile: {
+    relacionCharros: [
+      { rule: 'required', message: 'Selecciona tu relación con Charros.' }
+    ],
+    antiguedad: [
+      { rule: 'required', message: 'Selecciona desde cuándo asistes.' }
+    ],
+    acompanantes: [
+      { rule: 'required', message: 'Selecciona con quién sueles venir.' }
+    ],
+    motivacion: [
+      { rule: 'required', message: 'Selecciona tu principal razón para venir.' }
+    ]
+  },
   experience: {
+    calificacionExperiencia: [
+      { rule: 'required', message: 'Selecciona una calificación de experiencia.' }
+    ],
+    aspectosDisfrutados: [
+      { rule: 'required', message: 'Selecciona al menos un aspecto que disfrutas.' }
+    ],
+    facilidadMyCashless: [
+      { rule: 'required', message: 'Selecciona qué tan fácil te resulta usar MyCashless.' }
+    ],
     comentarioMyCashless: [
       { rule: 'required', message: 'Comparte tu opinión sobre la atención en módulos MyCashless.' }
+    ]
+  },
+  club: {
+    interesClubCharros: [
+      { rule: 'required', message: 'Selecciona tu interés en Club Charros.' }
+    ],
+    abonadoClubStatus: [
+      { rule: 'required', message: 'Selecciona si eres abonado.' }
+    ],
+    beneficioPreferido: [
+      { rule: 'required', message: 'Selecciona al menos un beneficio preferido.' }
+    ]
+  },
+  promotions: {
+    canalPromocionesMain: [
+      { rule: 'required', message: 'Selecciona tu canal principal de promociones.' }
+    ],
+    tipoInformacion: [
+      { rule: 'required', message: 'Selecciona al menos un tipo de información.' }
     ]
   },
   privacy: {

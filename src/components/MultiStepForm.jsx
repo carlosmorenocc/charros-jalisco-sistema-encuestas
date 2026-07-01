@@ -40,15 +40,42 @@ export default function MultiStepForm() {
 
   function validateCurrentStep() {
     const rules = stepValidations[currentStepId]
-    if (!rules) return true
-
-    const errors = validateStep(data, rules)
+    const errors = getStepErrors(currentStepId, data)
     if (Object.keys(errors).length > 0) {
       setStepErrors(errors)
       return false
     }
     setStepErrors({})
     return true
+  }
+
+  function getStepErrors(stepId, formData) {
+    const rules = stepValidations[stepId]
+    const baseErrors = rules ? validateStep(formData, rules) : {}
+
+    if (stepId === 'club' && formData.abonadoClubStatus === 'fui-abonado' && !String(formData.razonNoRenovo || '').trim()) {
+      baseErrors.razonNoRenovo = 'Comparte tu experiencia como ex abonado.'
+    }
+
+    if (stepId === 'promotions') {
+      const hasOther = Array.isArray(formData.tipoInformacion) && formData.tipoInformacion.includes('Otro')
+      if (hasOther && !String(formData.tipoInformacionOtro || '').trim()) {
+        baseErrors.tipoInformacionOtro = 'Especifica el otro tipo de información.'
+      }
+    }
+
+    return baseErrors
+  }
+
+  function getFirstInvalidStep(formData) {
+    for (let i = 0; i < STEPS.length; i += 1) {
+      const stepId = STEPS[i].id
+      const errors = getStepErrors(stepId, formData)
+      if (Object.keys(errors).length > 0) {
+        return { index: i, stepId, errors }
+      }
+    }
+    return null
   }
 
   async function handleNext() {
@@ -78,6 +105,14 @@ export default function MultiStepForm() {
     setSending(true)
     setError('')
     try {
+      const invalidStep = getFirstInvalidStep(data)
+      if (invalidStep) {
+        setIndex(invalidStep.index)
+        setStepErrors(invalidStep.errors)
+        setError(`Faltan respuestas por completar en "${STEPS[invalidStep.index].label}".`)
+        return
+      }
+
       const coerceArray = (v) => {
         if (!v && v !== 0) return []
         if (Array.isArray(v)) return v
