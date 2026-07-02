@@ -184,7 +184,7 @@ export default function LeadMultiStepForm() {
           ← Atrás
         </button>
         <button type="submit" disabled={sending}>
-          {index < LEAD_STEPS.length - 1 ? 'Siguiente →' : (sending ? 'Registrando...' : 'Registrar lead')}
+          {index < LEAD_STEPS.length - 1 ? 'Siguiente →' : (sending ? 'Registrando...' : 'Registrarme')}
         </button>
       </div>
     </form>

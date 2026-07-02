@@ -40,7 +40,7 @@ export default function LeadStepPrivacy({ data, update, errors = {} }) {
           checked={!!data.aceptaRegistroDiario}
           onChange={(e) => update({ aceptaRegistroDiario: e.target.checked })}
         />
-        Confirmo que este correo solo registrará un lead por día. *
+        Confirmo que se maneja un registro por correo al día.
       </label>
       {errors.aceptaRegistroDiario && <div className="error-message">{errors.aceptaRegistroDiario}</div>}
     </section>
