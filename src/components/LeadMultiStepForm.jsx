@@ -53,7 +53,7 @@ export default function LeadMultiStepForm() {
   const [error, setError] = useState('')
   const [stepErrors, setStepErrors] = useState({})
   const [data, setData] = useState({
-    campaignName: 'Leads Estadio Charros',
+    campaignName: 'Registro de Correos Estadio Charros',
     source: 'stadium-leads'
   })
   const formRef = useRef(null)
@@ -156,9 +156,9 @@ export default function LeadMultiStepForm() {
     } catch (err) {
       const message = String(err?.message || '')
       if (message.includes('409') || message.toLowerCase().includes('daily email limit')) {
-        setError('Este correo ya registró un lead hoy. Intenta nuevamente en el siguiente juego.')
+        setError('Este correo ya se registró hoy. Intenta nuevamente en el siguiente juego.')
       } else {
-        setError('Ocurrió un error al registrar el lead. Intenta más tarde.')
+        setError('Ocurrió un error al registrar el correo. Intenta más tarde.')
       }
       console.error(err)
     } finally {

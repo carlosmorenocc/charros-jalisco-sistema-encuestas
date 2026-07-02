@@ -3,7 +3,7 @@ import React from 'react'
 export default function LeadStepContact({ data, update, errors = {} }) {
   return (
     <section>
-      <h3>Registro de lead en estadio</h3>
+      <h3>Registro de correo en estadio</h3>
 
       <label>
         Nombre *
