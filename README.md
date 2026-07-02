@@ -29,13 +29,25 @@ npm run dev
 ```
 Abre [http://localhost:5173](http://localhost:5173)
 
+Encuesta de leads en estadio (versión corta de 3 ventanas):
+
+[http://localhost:5173/leads](http://localhost:5173/leads)
+
 Con esto, cada respuesta se almacena automáticamente en:
 
 `data/submissions.csv`
 
+Y los leads de estadio en:
+
+`data/submissions_leads.csv`
+
 También puedes descargar el CSV desde:
 
 `http://localhost:3001/api/submissions.csv`
+
+Y para leads:
+
+`http://localhost:3001/api/leads-submissions.csv`
 
 ### 3. Configura Power Automate (opcional)
 Copia `.env.example` a `.env` y añade tu endpoint:
@@ -118,7 +130,14 @@ npm run preview      # Vista previa
 - La API de captura está en `server.js`.
 - Endpoint de escritura: `POST /api/submit`.
 - Endpoint de descarga: `GET /api/submissions.csv`.
+- Endpoint de escritura (leads): `POST /api/lead-submit`.
+- Endpoint de descarga (leads): `GET /api/leads-submissions.csv`.
 - En desarrollo, el frontend usa por defecto `http://localhost:3001/api/submit` si no defines otro endpoint.
+
+### Regla especial para encuesta de leads
+
+- Un mismo correo solo puede registrar **1 lead por día** (bloqueo en backend).
+- Puede volver a registrarse en otro juego al día siguiente.
 
 ### Producción recomendada
 
@@ -127,6 +146,10 @@ npm run preview      # Vista previa
 3. Configura en Vercel la variable:
 
 `VITE_SUBMISSION_ENDPOINT=https://TU-API/api/submit`
+
+Para la encuesta corta de leads (ruta `/leads`), define también:
+
+`VITE_LEADS_SUBMISSION_ENDPOINT=https://TU-API/api/lead-submit`
 
 Esto evita que las respuestas se queden solo en `localStorage` y garantiza guardado centralizado.
 

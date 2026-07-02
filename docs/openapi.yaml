@@ -1,7 +1,7 @@
 openapi: 3.0.0
 info:
   title: Encuesta Oficial Charros - Submit API
-  version: 1.1.0
+  version: 1.2.0
   description: API HTTP para recibir y exportar respuestas de la landing Encuesta Oficial Charros 2026-2027.
 
 servers:
@@ -140,6 +140,74 @@ paths:
       responses:
         '200':
           description: Archivo CSV con respuestas
+          content:
+            text/csv:
+              schema:
+                type: string
+
+  /api/lead-submit:
+    post:
+      summary: Registra un lead de estadio (solo 1 por correo al día)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                timestamp:
+                  type: string
+                  format: date-time
+                submissionId:
+                  type: string
+                campaignName:
+                  type: string
+                source:
+                  type: string
+                nombre:
+                  type: string
+                apellido:
+                  type: string
+                email:
+                  type: string
+                  format: email
+                telefono:
+                  type: string
+                municipio:
+                  type: string
+                frecuenciaVisita:
+                  type: string
+                aceptaAvisoPrivacidad:
+                  type: boolean
+                aceptaComunicaciones:
+                  type: boolean
+                aceptaRegistroDiario:
+                  type: boolean
+              required:
+                - nombre
+                - apellido
+                - email
+                - telefono
+                - municipio
+                - frecuenciaVisita
+                - aceptaAvisoPrivacidad
+                - aceptaRegistroDiario
+      responses:
+        '202':
+          description: Lead encolado para persistencia
+        '400':
+          description: Faltan campos requeridos
+        '409':
+          description: El correo ya registró un lead hoy
+        '503':
+          description: Cola saturada, intenta de nuevo
+
+  /api/leads-submissions.csv:
+    get:
+      summary: Descarga de leads en CSV
+      responses:
+        '200':
+          description: Archivo CSV con leads de estadio
           content:
             text/csv:
               schema:
