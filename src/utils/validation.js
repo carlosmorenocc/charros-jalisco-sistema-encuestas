@@ -75,9 +75,6 @@ export const stepValidations = {
     telefono: [
       { rule: 'required', message: 'El teléfono es obligatorio.' },
       { rule: 'phone', message: 'El teléfono debe tener al menos 10 dígitos.' }
-    ],
-    myCashlessId: [
-      { rule: 'required', message: 'El ID de MyCashless es obligatorio.' }
     ]
   },
   profile: {

@@ -54,7 +54,7 @@ export default function StepContact({ data, update, errors = {} }) {
 
       <div className="form-field mycashless-field">
         <label htmlFor="myCashlessId" className="form-label">
-          ID de MyCashless <span style={{ color: 'var(--red)' }}> *</span>
+          ID de MyCashless (opcional)
           <span
             className="tooltip-anchor"
             tabIndex={0}

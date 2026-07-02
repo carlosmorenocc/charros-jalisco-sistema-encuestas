@@ -76,7 +76,7 @@ const LEADS_CSV_COLUMNS = [
   'aceptaRegistroDiario'
 ]
 
-const REQUIRED_FIELDS = ['nombre', 'apellido', 'email', 'myCashlessId']
+const REQUIRED_FIELDS = ['nombre', 'apellido', 'email']
 const REQUIRED_LEAD_FIELDS = ['nombre', 'apellido', 'email', 'telefono', 'municipio', 'frecuenciaVisita']
 
 const pendingRows = []

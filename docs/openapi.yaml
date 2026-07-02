@@ -114,7 +114,6 @@ paths:
                 - nombre
                 - apellido
                 - email
-                - myCashlessId
       responses:
         '202':
           description: Respuesta encolada para persistencia
