@@ -1,0 +1,31 @@
+InternalName,DisplayName,Type,Notes
+Title,Title,Single line,Concatenate Nombre Apellido
+Timestamp,Timestamp,DateTime,
+CampaignName,CampaignName,Single line,
+Source,Source,Single line,
+Nombre,Nombre,Single line,
+Apellido,Apellido,Single line,
+Email,Email,Single line,
+Telefono,Telefono,Single line,
+RangoEdad,RangoEdad,Single line,
+Sexo,Sexo,Single line,
+Municipio,Municipio,Single line,
+RelacionCharros,RelacionCharros,Single line,
+Antiguedad,Antiguedad,Single line,
+Acompanantes,Acompanantes,Single line,
+Motivacion,Motivacion,Single line,
+CalificacionExperiencia,CalificacionExperiencia,Single line,
+AspectosDisfrutados,AspectosDisfrutados,Multiple lines,Comma-separated values
+AspectosMejorar,AspectosMejorar,Multiple lines,Comma-separated values
+ConsumoEstadio,ConsumoEstadio,Single line,
+InteresClubCharros,InteresClubCharros,Single line,
+RazonAbonado,RazonAbonado,Multiple lines,Comma-separated values
+RazonNoRenovo,RazonNoRenovo,Single line,
+BarreraCompra,BarreraCompra,Multiple lines,Comma-separated values
+BeneficioPreferido,BeneficioPreferido,Multiple lines,Comma-separated values
+ProbabilidadCompra,ProbabilidadCompra,Single line,
+CanalPromociones,CanalPromociones,Multiple lines,Comma-separated values
+TipoInformacion,TipoInformacion,Multiple lines,Comma-separated values
+Comentario,Comentario,Multiple lines,
+AceptaAvisoPrivacidad,AceptaAvisoPrivacidad,Yes/No,
+AceptaComunicaciones,AceptaComunicaciones,Yes/No,

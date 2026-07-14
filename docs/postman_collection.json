@@ -1,0 +1,38 @@
+{
+  "info": {
+    "_postman_id": "encuesta-charros-collection",
+    "name": "Encuesta Oficial Charros - Submit",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Enviar respuesta (placeholder)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"timestamp\": \"2026-06-26T12:00:00Z\",\n  \"campaignName\": \"Encuesta Oficial Charros 2026-2027\",\n  \"source\": \"landing\",\n  \"nombre\": \"Test\",\n  \"apellido\": \"User\",\n  \"email\": \"test@example.com\",\n  \"telefono\": \"3331234567\",\n  \"municipio\": \"Guadalajara\",\n  \"aceptaAvisoPrivacidad\": true\n}"
+        },
+        "url": {
+          "raw": "{{power_automate_url}}",
+          "host": [
+            "{{power_automate_url}}"
+          ]
+        }
+      },
+      "response": []
+    }
+  ],
+  "variable": [
+    {
+      "key": "power_automate_url",
+      "value": "https://<FLOW_HTTP_TRIGGER_URL>"
+    }
+  ]
+}
