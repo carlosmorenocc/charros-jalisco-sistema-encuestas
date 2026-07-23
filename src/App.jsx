@@ -1,11 +1,38 @@
-import React from 'react'
+import React, { lazy, Suspense } from 'react'
 import Hero from './components/Hero'
 import MultiStepForm from './components/MultiStepForm'
 import LeadMultiStepForm from './components/LeadMultiStepForm'
 
+const SorteosApp = lazy(() => import('./features/sorteos/SorteosApp'))
+
 export default function App() {
   const pathname = typeof window !== 'undefined' ? window.location.pathname : '/'
+  const isSorteosMode = pathname.startsWith('/sorteos')
   const isLeadsMode = pathname.startsWith('/leads')
+
+  if (isSorteosMode) {
+    return (
+      <Suspense
+        fallback={(
+          <div
+            role="status"
+            style={{
+              minHeight: '100vh',
+              display: 'grid',
+              placeItems: 'center',
+              background: '#082d59',
+              color: '#ffffff',
+              fontWeight: 700
+            }}
+          >
+            Preparando el sorteo…
+          </div>
+        )}
+      >
+        <SorteosApp />
+      </Suspense>
+    )
+  }
 
   const heroProps = isLeadsMode
     ? {
