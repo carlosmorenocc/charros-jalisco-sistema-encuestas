@@ -5,7 +5,6 @@
   --raffle-blue-light: #2a84db;
   --raffle-gold: #e0b130;
   --raffle-gold-light: #f5d36b;
-  --raffle-red: #d42b2b;
   --raffle-white: #ffffff;
   position: relative;
   isolation: isolate;
@@ -768,7 +767,7 @@
       #0b4aa6 0deg 7.5deg,
       #0a4388 7.5deg 15deg,
       #f7f7f7 15deg 22.5deg,
-      #d42b2b 22.5deg 30deg,
+      var(--raffle-blue-light) 22.5deg 30deg,
       #e0b130 30deg 37.5deg,
       #0a4388 37.5deg 45deg
     );
@@ -828,7 +827,7 @@
   content: "";
   border: 4px solid var(--raffle-gold-light);
   border-radius: 12px 12px 50% 50%;
-  background: linear-gradient(180deg, #ed4747, var(--raffle-red));
+  background: linear-gradient(180deg, var(--raffle-gold-light), var(--raffle-gold));
   clip-path: polygon(0 0, 100% 0, 50% 100%);
 }
 
@@ -1199,7 +1198,7 @@
 
 .confetti span:nth-child(3n) {
   border-radius: 50%;
-  background: var(--raffle-red);
+  background: var(--raffle-blue);
 }
 
 .confetti span:nth-child(3n + 1) {
