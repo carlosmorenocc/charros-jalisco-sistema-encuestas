@@ -20,7 +20,7 @@ export default function App() {
               minHeight: '100vh',
               display: 'grid',
               placeItems: 'center',
-              background: '#082d59',
+              background: '#0a4388',
               color: '#ffffff',
               fontWeight: 700
             }}

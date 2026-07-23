@@ -26,6 +26,7 @@ function createDemoParticipants(total = 500) {
     id: `DEMO-${String(index + 1).padStart(4, '0')}`,
     name: `Aficionado Charro ${String(index + 1).padStart(4, '0')}`,
     ticket: `B-${String(10001 + index)}`,
+    email: `aficionado${String(index + 1).padStart(4, '0')}@demo.charros.invalid`,
     rowNumber: index + 2
   }))
 }
@@ -182,6 +183,20 @@ export default function SorteosApp() {
     if (fileInputRef.current) fileInputRef.current.value = ''
   }
 
+  function resetParticipants() {
+    if (isBusy || participants.length === 0) return
+    setExcludedIds(new Set())
+    setHistory([])
+    setWinner(null)
+    setCountdown(null)
+    setTickerIndex(0)
+    setError('')
+    setStatus('ready')
+    setLiveMessage(
+      `${formatNumber(participants.length)} participantes restablecidos y nuevamente elegibles.`
+    )
+  }
+
   async function applyParticipants(nextParticipants, details, nextWarnings = []) {
     const nextHash = await hashRoster(nextParticipants)
     setParticipants(nextParticipants)
@@ -265,10 +280,10 @@ export default function SorteosApp() {
 
   function downloadSample() {
     const sample = [
-      'id_participante,nombre,id_boleto',
-      'P-0001,Aficionado Charro Uno,B-10001',
-      'P-0002,"Aficionado Charro, Dos",B-10002',
-      'P-0003,Aficionado Charro Tres,B-10003'
+      'id_participante,nombre,correo,id_boleto',
+      'P-0001,Aficionado Charro Uno,aficionado1@example.com,B-10001',
+      'P-0002,"Aficionado Charro, Dos",aficionado2@example.com,B-10002',
+      'P-0003,Aficionado Charro Tres,aficionado3@example.com,B-10003'
     ].join('\r\n')
     downloadText(`\uFEFF${sample}\r\n`, 'plantilla-participantes-charros.csv', 'text/csv;charset=utf-8')
   }
@@ -377,7 +392,9 @@ export default function SorteosApp() {
       })
       setWinner(selectedWinner)
       setStatus('winner')
-      setLiveMessage(`Ganador: ${selectedWinner.name}.`)
+      setLiveMessage(
+        `Ganador: ${selectedWinner.name}. Correo: ${selectedWinner.email || 'no disponible'}.`
+      )
       playTone(soundEnabled, 660, 0.22, 0.055)
       window.setTimeout(() => playTone(soundEnabled, 880, 0.35, 0.05), 180)
     } catch (drawError) {
@@ -567,8 +584,23 @@ export default function SorteosApp() {
               {isBusy ? 'Sorteo en curso…' : 'Iniciar sorteo'}
             </button>
 
+            {participants.length > 0 && (
+              <button
+                type="button"
+                className={styles.resetButton}
+                onClick={resetParticipants}
+                disabled={isBusy || (excludedIds.size === 0 && history.length === 0)}
+              >
+                <span aria-hidden="true">↻</span>
+                Restablecer participantes
+              </button>
+            )}
+
             <p className={styles.ruleNote}>
               Una oportunidad por persona. Cada ganador se retira automáticamente.
+              {participants.length > 0 && (
+                <span> Restablecer conserva el CSV y devuelve el conteo completo.</span>
+              )}
             </p>
           </section>
 
@@ -705,6 +737,10 @@ export default function SorteosApp() {
                 <h2 id="winner-title" ref={winnerTitleRef} tabIndex="-1">
                   {winner.name}
                 </h2>
+                <div className={styles.winnerContact}>
+                  <span>Correo del ganador</span>
+                  <strong>{winner.email || 'Correo no disponible en la base'}</strong>
+                </div>
                 <p>{prize || 'Sorteo Oficial Charros'}</p>
                 <div className={styles.winnerMeta}>
                   <span>Sorteo #{history.length}</span>

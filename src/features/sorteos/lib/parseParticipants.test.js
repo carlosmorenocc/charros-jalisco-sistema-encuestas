@@ -7,14 +7,32 @@ import {
 describe('parseParticipantCsv', () => {
   it('importa CSV con BOM, CRLF y comas entre comillas', () => {
     const result = parseParticipantCsv(
-      '\uFEFFid_participante,nombre,id_boleto\r\nP-01,"José, Ramírez",B-01\r\nP-02,Ana Pérez,B-02\r\n'
+      '\uFEFFid_participante,nombre,id_boleto,correo\r\nP-01,"José, Ramírez",B-01,jose@example.com\r\nP-02,Ana Pérez,B-02,ana@example.com\r\n'
     )
 
     expect(result.participants).toEqual([
-      { id: 'P-01', name: 'José, Ramírez', ticket: 'B-01', rowNumber: 2 },
-      { id: 'P-02', name: 'Ana Pérez', ticket: 'B-02', rowNumber: 3 }
+      { id: 'P-01', name: 'José, Ramírez', ticket: 'B-01', email: 'jose@example.com', rowNumber: 2 },
+      { id: 'P-02', name: 'Ana Pérez', ticket: 'B-02', email: 'ana@example.com', rowNumber: 3 }
     ])
     expect(result.stats.validParticipants).toBe(2)
+  })
+
+  it('reconoce aliases de correo y conserva el dato para mostrar al ganador', () => {
+    const result = parseParticipantCsv(
+      'id,nombre,correo_electronico\n001,María López,maria@example.com\n'
+    )
+
+    expect(result.participants[0].email).toBe('maria@example.com')
+    expect(result.stats.missingEmailRows).toBe(0)
+  })
+
+  it('mantiene compatibles las bases sin correo y genera una advertencia', () => {
+    const result = parseParticipantCsv(
+      'id,nombre\n001,María López\n'
+    )
+
+    expect(result.participants[0].email).toBe('')
+    expect(result.warnings.join(' ')).toContain('Correo no disponible')
   })
 
   it('detecta CSV separado por punto y coma', () => {

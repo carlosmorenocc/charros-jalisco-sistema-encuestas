@@ -3,7 +3,8 @@ export const MAX_PARTICIPANTS = 3000
 const HEADER_ALIASES = {
   name: ['nombre', 'name', 'participante', 'nombre_completo', 'nombres'],
   id: ['id_participante', 'id', 'folio', 'participant_id', 'numero_participante', 'clave'],
-  ticket: ['id_boleto', 'boleto', 'ticket', 'ticket_id']
+  ticket: ['id_boleto', 'boleto', 'ticket', 'ticket_id'],
+  email: ['correo', 'email', 'correo_electronico', 'email_address', 'e_mail', 'mail']
 }
 
 export class CsvValidationError extends Error {
@@ -151,6 +152,7 @@ export function parseParticipantCsv(input) {
   const nameIndex = findColumn(headers, HEADER_ALIASES.name)
   const idIndex = findColumn(headers, HEADER_ALIASES.id)
   const ticketIndex = findColumn(headers, HEADER_ALIASES.ticket)
+  const emailIndex = findColumn(headers, HEADER_ALIASES.email)
 
   if (nameIndex < 0) {
     throw new CsvValidationError(
@@ -166,6 +168,7 @@ export function parseParticipantCsv(input) {
   let duplicateRows = 0
   let emptyRows = 0
   let rejectedRows = 0
+  let missingEmailRows = 0
 
   for (let index = 1; index < rows.length; index += 1) {
     const values = rows[index]
@@ -184,6 +187,9 @@ export function parseParticipantCsv(input) {
 
     const sourceId = idIndex >= 0 ? normalizeText(values[idIndex]) : ''
     const ticket = ticketIndex >= 0 ? normalizeText(values[ticketIndex]) : ''
+    const sourceEmail = emailIndex >= 0 ? String(values[emailIndex] ?? '').trim().normalize('NFC') : ''
+    const email = sourceEmail.length <= 254 ? sourceEmail : ''
+    if (emailIndex >= 0 && !email) missingEmailRows += 1
     const personKey = sourceId
       ? `id:${identityText(sourceId)}`
       : `name:${identityText(name)}`
@@ -198,6 +204,7 @@ export function parseParticipantCsv(input) {
       id: sourceId || `fila-${rowNumber}`,
       name,
       ticket,
+      email,
       rowNumber
     })
 
@@ -220,6 +227,16 @@ export function parseParticipantCsv(input) {
   if (idIndex < 0) {
     warnings.push(
       'El archivo no incluye un identificador. Los nombres repetidos se consideran la misma persona.'
+    )
+  }
+
+  if (emailIndex < 0) {
+    warnings.push(
+      'El archivo no incluye una columna de correo. El ganador se mostrará como “Correo no disponible”.'
+    )
+  } else if (missingEmailRows > 0) {
+    warnings.push(
+      `${missingEmailRows.toLocaleString('es-MX')} participante(s) no tienen un correo disponible.`
     )
   }
 
@@ -250,7 +267,8 @@ export function parseParticipantCsv(input) {
       validParticipants: participants.length,
       duplicateRows,
       emptyRows,
-      rejectedRows
+      rejectedRows,
+      missingEmailRows
     },
     warnings
   }
