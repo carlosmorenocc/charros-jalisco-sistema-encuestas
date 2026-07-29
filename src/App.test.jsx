@@ -11,6 +11,7 @@ describe('App routing', () => {
 
   afterEach(() => {
     window.history.pushState({}, '', originalPath)
+    vi.unstubAllEnvs()
   })
 
   it('carga el módulo aislado de sorteos en /sorteos', async () => {
@@ -21,4 +22,18 @@ describe('App routing', () => {
     expect(await screen.findByText('Sorteos Charros cargado')).toBeInTheDocument()
     expect(screen.queryByText('Aviso de privacidad:')).not.toBeInTheDocument()
   })
+
+  it.each(['/', '/leads', '/cualquier-ruta'])(
+    'mantiene cerrados los formularios públicos en %s',
+    (pathname) => {
+      window.history.pushState({}, '', pathname)
+
+      render(<App />)
+
+      expect(
+        screen.getByRole('heading', { name: 'Registro temporalmente no disponible' })
+      ).toBeInTheDocument()
+      expect(screen.queryByText('Aviso de privacidad:')).not.toBeInTheDocument()
+    }
+  )
 })

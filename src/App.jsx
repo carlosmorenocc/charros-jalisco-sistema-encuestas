@@ -2,6 +2,7 @@ import React, { lazy, Suspense } from 'react'
 import Hero from './components/Hero'
 import MultiStepForm from './components/MultiStepForm'
 import LeadMultiStepForm from './components/LeadMultiStepForm'
+import FormsPaused from './components/FormsPaused'
 
 const SorteosApp = lazy(() => import('./features/sorteos/SorteosApp'))
 
@@ -32,6 +33,12 @@ export default function App() {
         <SorteosApp />
       </Suspense>
     )
+  }
+
+  const publicFormsEnabled = import.meta.env.VITE_PUBLIC_FORMS_ENABLED === 'true'
+
+  if (!publicFormsEnabled) {
+    return <FormsPaused />
   }
 
   const heroProps = isLeadsMode

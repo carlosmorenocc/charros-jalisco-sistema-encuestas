@@ -24,6 +24,7 @@ const maxBatchSize = Number(process.env.CSV_MAX_BATCH_SIZE || 250)
 const dedupeWindowMs = Number(process.env.CSV_DEDUPE_WINDOW_MS || 24 * 60 * 60 * 1000)
 const submitRateLimit = Number(process.env.SUBMIT_RATE_LIMIT_PER_MIN || 180)
 const allowedOrigins = (process.env.ALLOWED_ORIGINS || '').split(',').map((v) => v.trim()).filter(Boolean)
+const publicFormsEnabled = process.env.PUBLIC_FORMS_ENABLED === 'true'
 
 const CSV_COLUMNS = [
   'submissionId',
@@ -372,11 +373,27 @@ const submitLimiter = rateLimit({
   legacyHeaders: false
 })
 
+function requirePublicFormsEnabled(req, res, next) {
+  if (publicFormsEnabled) return next()
+
+  res.setHeader('Cache-Control', 'no-store')
+  const isReadRequest = req.method === 'GET' || req.method === 'HEAD'
+  return res.status(isReadRequest ? 404 : 503).json({
+    ok: false,
+    error: 'Public forms are temporarily disabled'
+  })
+}
+
 app.get('/healthz', (_req, res) => {
-  res.json({ ok: true, status: 'ready', queueSize: pendingRows.length })
+  res.json({
+    ok: true,
+    status: 'ready',
+    publicFormsEnabled,
+    queueSize: pendingRows.length
+  })
 })
 
-app.get('/api/openapi.yaml', (_req, res) => {
+app.get('/api/openapi.yaml', requirePublicFormsEnabled, (_req, res) => {
   if (!fs.existsSync(openApiPath)) {
     return res.status(404).json({ ok: false, error: 'OpenAPI file not found' })
   }
@@ -385,14 +402,19 @@ app.get('/api/openapi.yaml', (_req, res) => {
 })
 
 if (openApiSpec) {
-  app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(openApiSpec))
+  app.use(
+    '/api/docs',
+    requirePublicFormsEnabled,
+    swaggerUi.serve,
+    swaggerUi.setup(openApiSpec)
+  )
 } else {
-  app.get('/api/docs', (_req, res) => {
+  app.get('/api/docs', requirePublicFormsEnabled, (_req, res) => {
     res.status(503).json({ ok: false, error: 'OpenAPI spec unavailable' })
   })
 }
 
-app.post('/api/submit', submitLimiter, (req, res) => {
+app.post('/api/submit', requirePublicFormsEnabled, submitLimiter, (req, res) => {
   try {
     const payload = normalizePayload(req.body)
     const validation = validatePayload(payload)
@@ -421,7 +443,7 @@ app.post('/api/submit', submitLimiter, (req, res) => {
   }
 })
 
-app.post('/api/lead-submit', submitLimiter, (req, res) => {
+app.post('/api/lead-submit', requirePublicFormsEnabled, submitLimiter, (req, res) => {
   try {
     const payload = normalizeLeadPayload(req.body)
     const validation = validateLeadPayload(payload)
@@ -463,7 +485,7 @@ app.post('/api/lead-submit', submitLimiter, (req, res) => {
   }
 })
 
-app.get('/api/submissions.csv', async (_req, res) => {
+app.get('/api/submissions.csv', requirePublicFormsEnabled, async (_req, res) => {
   try {
     await flushQueue()
     ensureDataFile()
@@ -476,7 +498,7 @@ app.get('/api/submissions.csv', async (_req, res) => {
   }
 })
 
-app.get('/api/leads-submissions.csv', async (_req, res) => {
+app.get('/api/leads-submissions.csv', requirePublicFormsEnabled, async (_req, res) => {
   try {
     await flushLeadQueue()
     ensureLeadsDataFile()
