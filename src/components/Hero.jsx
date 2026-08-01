@@ -26,7 +26,8 @@ export default function Hero({
   shareTitle = 'Encuesta Oficial Charros 2026-2027',
   shareText = 'Comparte esta encuesta con la afición Charros.',
   shareButtonText = 'Compartir enlace para participar por premios',
-  metrics = defaultMetrics
+  metrics = defaultMetrics,
+  showEngagementRow = true
 }){
   const [copied, setCopied] = useState(false)
 
@@ -71,17 +72,19 @@ export default function Hero({
         <p className="slogan">{slogan}</p>
         <p className="hero-description">{description}</p>
 
-        <div className="hero-metrics">
-          <button type="button" className="btn hero-share-btn" onClick={shareLink}>
-            {copied ? 'Enlace copiado' : shareButtonText}
-          </button>
-          {metrics.map((metric) => (
-            <div key={metric.title}>
-              <strong>{metric.title}</strong>
-              <div>{metric.text}</div>
-            </div>
-          ))}
-        </div>
+        {showEngagementRow && (
+          <div className="hero-metrics">
+            <button type="button" className="btn hero-share-btn" onClick={shareLink}>
+              {copied ? 'Enlace copiado' : shareButtonText}
+            </button>
+            {metrics.map((metric) => (
+              <div key={metric.title}>
+                <strong>{metric.title}</strong>
+                <div>{metric.text}</div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </header>
   )

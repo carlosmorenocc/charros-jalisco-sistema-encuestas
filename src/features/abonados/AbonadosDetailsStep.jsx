@@ -12,8 +12,7 @@ export default function AbonadosDetailsStep({ data, update, errors = {} }) {
     <section aria-labelledby="abonados-details-title">
       <h3 id="abonados-details-title">Datos del abonado</h3>
       <p>
-        Registra tus datos y selecciona una talla. La captura de talla no confirma por sí sola
-        disponibilidad ni entrega del jersey.
+        Registra tus datos y selecciona tu talla de preferencia.
       </p>
 
       <div className="form-field">

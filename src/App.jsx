@@ -47,16 +47,9 @@ export default function App() {
   const heroProps = isAbonadosMode
     ? {
       title: 'Registro de Abonados LMP 2026-2027',
-      slogan: 'Tu jersey, tu talla, tu temporada',
+      slogan: 'Tu jersey, tu temporada',
       description: 'Completa este registro breve para indicar tu talla de jersey como abonado de Charros de Jalisco para la temporada LMP 2026-2027.',
-      shareTitle: 'Registro de Abonados LMP 2026-2027',
-      shareText: 'Comparte este registro con otro abonado de Charros de Jalisco.',
-      shareButtonText: 'Compartir registro de abonados',
-      metrics: [
-        { title: 'Registro rápido', text: '1 minuto' },
-        { title: 'Temporada', text: 'LMP 2026-2027' },
-        { title: 'Tallas', text: 'S a 2XL' }
-      ]
+      showEngagementRow: false
     }
     : isLeadsMode
     ? {

@@ -24,6 +24,12 @@ describe('AbonadosMultiStepForm', () => {
 
   it('exige una talla de la lista antes de avanzar', async () => {
     render(<AbonadosMultiStepForm />)
+
+    expect(
+      screen.getByText('Registra tus datos y selecciona tu talla de preferencia.')
+    ).toBeInTheDocument()
+    expect(screen.queryByText('Datos y talla')).not.toBeInTheDocument()
+
     completeDetails({ selectSize: false })
 
     fireEvent.click(screen.getByRole('button', { name: /Siguiente/i }))

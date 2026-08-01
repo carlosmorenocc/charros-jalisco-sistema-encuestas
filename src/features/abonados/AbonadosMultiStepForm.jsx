@@ -162,9 +162,6 @@ export default function AbonadosMultiStepForm() {
       }}
     >
       <ProgressBar current={index + 1} total={STEPS.length} />
-      <div style={{ marginBottom: 16 }}>
-        <strong>{currentStep.label}</strong>
-      </div>
 
       <StepComponent data={data} update={update} errors={stepErrors} />
 
