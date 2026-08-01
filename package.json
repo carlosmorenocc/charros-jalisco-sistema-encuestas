@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "server": "node server.js",
     "test": "vitest",
+    "test:backend": "node --test tests/backend-abonados.test.mjs",
     "test:ui": "vitest --ui"
   },
   "dependencies": {

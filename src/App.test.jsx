@@ -6,6 +6,10 @@ vi.mock('./features/sorteos/SorteosApp', () => ({
   default: () => <main>Sorteos Charros cargado</main>
 }))
 
+vi.mock('./features/abonados/AbonadosMultiStepForm', () => ({
+  default: () => <section>Formulario de abonados cargado</section>
+}))
+
 describe('App routing', () => {
   const originalPath = window.location.pathname
 
@@ -23,7 +27,7 @@ describe('App routing', () => {
     expect(screen.queryByText('Aviso de privacidad:')).not.toBeInTheDocument()
   })
 
-  it.each(['/', '/leads', '/cualquier-ruta'])(
+  it.each(['/', '/leads', '/abonados', '/abonados-lmp-26-27', '/cualquier-ruta'])(
     'mantiene cerrados los formularios públicos en %s',
     (pathname) => {
       window.history.pushState({}, '', pathname)
@@ -34,6 +38,25 @@ describe('App routing', () => {
         screen.getByRole('heading', { name: 'Registro temporalmente no disponible' })
       ).toBeInTheDocument()
       expect(screen.queryByText('Aviso de privacidad:')).not.toBeInTheDocument()
+    }
+  )
+
+  it.each(['/abonados', '/abonados-lmp-26-27'])(
+    'habilita la campaña de abonados de forma independiente en %s',
+    (pathname) => {
+      vi.stubEnv('VITE_PUBLIC_FORMS_ENABLED', 'false')
+      vi.stubEnv('VITE_SUBSCRIBER_FORM_ENABLED', 'true')
+      window.history.pushState({}, '', pathname)
+
+      render(<App />)
+
+      expect(
+        screen.getByRole('heading', { name: 'Registro de Abonados LMP 2026-2027' })
+      ).toBeInTheDocument()
+      expect(screen.getByText('Formulario de abonados cargado')).toBeInTheDocument()
+      expect(
+        screen.queryByRole('heading', { name: 'Registro temporalmente no disponible' })
+      ).not.toBeInTheDocument()
     }
   )
 })

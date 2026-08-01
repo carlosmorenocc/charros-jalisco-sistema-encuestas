@@ -3,12 +3,14 @@ import Hero from './components/Hero'
 import MultiStepForm from './components/MultiStepForm'
 import LeadMultiStepForm from './components/LeadMultiStepForm'
 import FormsPaused from './components/FormsPaused'
+import AbonadosMultiStepForm from './features/abonados/AbonadosMultiStepForm'
 
 const SorteosApp = lazy(() => import('./features/sorteos/SorteosApp'))
 
 export default function App() {
   const pathname = typeof window !== 'undefined' ? window.location.pathname : '/'
   const isSorteosMode = pathname.startsWith('/sorteos')
+  const isAbonadosMode = pathname.startsWith('/abonados')
   const isLeadsMode = pathname.startsWith('/leads')
 
   if (isSorteosMode) {
@@ -36,12 +38,27 @@ export default function App() {
   }
 
   const publicFormsEnabled = import.meta.env.VITE_PUBLIC_FORMS_ENABLED === 'true'
+  const subscriberFormEnabled = import.meta.env.VITE_SUBSCRIBER_FORM_ENABLED === 'true'
 
-  if (!publicFormsEnabled) {
+  if ((isAbonadosMode && !subscriberFormEnabled) || (!isAbonadosMode && !publicFormsEnabled)) {
     return <FormsPaused />
   }
 
-  const heroProps = isLeadsMode
+  const heroProps = isAbonadosMode
+    ? {
+      title: 'Registro de Abonados LMP 2026-2027',
+      slogan: 'Tu jersey, tu talla, tu temporada',
+      description: 'Completa este registro breve para indicar tu talla de jersey como abonado de Charros de Jalisco para la temporada LMP 2026-2027.',
+      shareTitle: 'Registro de Abonados LMP 2026-2027',
+      shareText: 'Comparte este registro con otro abonado de Charros de Jalisco.',
+      shareButtonText: 'Compartir registro de abonados',
+      metrics: [
+        { title: 'Registro rápido', text: '1 minuto' },
+        { title: 'Temporada', text: 'LMP 2026-2027' },
+        { title: 'Tallas', text: 'S a 2XL' }
+      ]
+    }
+    : isLeadsMode
     ? {
       title: 'Registro Oficial de Charros de Jalisco',
       slogan: 'Súmate a la base oficial en estadio',
@@ -62,12 +79,14 @@ export default function App() {
       <Hero {...heroProps} />
 
       <main className="container">
-        {isLeadsMode ? <LeadMultiStepForm /> : <MultiStepForm />}
+        {isAbonadosMode
+          ? <AbonadosMultiStepForm />
+          : (isLeadsMode ? <LeadMultiStepForm /> : <MultiStepForm />)}
       </main>
 
       <footer className="site-footer" style={{textAlign:'center',padding:12}}>
         <small>
-          Aviso de privacidad: <a href="https://www.charrosjalisco.com/aviso-de-privacidad" target="_blank">Ver documento</a>
+          Aviso de privacidad: <a href="https://www.charrosjalisco.com/aviso-de-privacidad" target="_blank" rel="noreferrer">Ver documento</a>
         </small>
       </footer>
     </div>

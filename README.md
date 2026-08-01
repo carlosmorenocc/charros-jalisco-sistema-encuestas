@@ -41,13 +41,24 @@ Y los leads de estadio en:
 
 `data/submissions_leads.csv`
 
-También puedes descargar el CSV desde:
+Los registros de abonados LMP 2026-2027 se guardan de forma independiente en:
+
+`data/submissions_abonados_lmp_2026_2027.csv`
+
+Las descargas CSV requieren `Authorization: Bearer <CSV_EXPORT_TOKEN>`. La exportación
+queda cerrada con `503` cuando el token no está configurado.
+
+Encuesta general:
 
 `http://localhost:3001/api/submissions.csv`
 
 Y para leads:
 
 `http://localhost:3001/api/leads-submissions.csv`
+
+Y para abonados:
+
+`http://localhost:3001/api/abonados-lmp-submissions.csv`
 
 ### 3. Configura Power Automate (opcional)
 Copia `.env.example` a `.env` y añade tu endpoint:
@@ -115,6 +126,7 @@ docs/
 
 ```bash
 npm test              # Tests unitarios
+npm run test:backend  # Integración del almacenamiento seguro de abonados
 npm test:ui          # Con interfaz
 ```
 
@@ -132,12 +144,58 @@ npm run preview      # Vista previa
 - Endpoint de descarga: `GET /api/submissions.csv`.
 - Endpoint de escritura (leads): `POST /api/lead-submit`.
 - Endpoint de descarga (leads): `GET /api/leads-submissions.csv`.
+- Endpoint de escritura (abonados): `POST /api/abonados-lmp-submit`.
+- Endpoint de descarga protegida (abonados): `GET /api/abonados-lmp-submissions.csv`.
 - En desarrollo, el frontend usa por defecto `http://localhost:3001/api/submit` si no defines otro endpoint.
 
 ### Regla especial para encuesta de leads
 
 - Un mismo correo solo puede registrar **1 lead por día** (bloqueo en backend).
 - Puede volver a registrarse en otro juego al día siguiente.
+
+### Registro de abonados LMP 2026-2027
+
+- Se habilita de manera independiente con `SUBSCRIBER_FORM_ENABLED=true`.
+- Admite exclusivamente las tallas `S`, `M`, `L`, `XL` y `2XL`.
+- Exige que `aceptaAvisoPrivacidad` sea el booleano `true`.
+- Guarda nombre, apellido, correo, teléfono, talla y consentimientos en un CSV propio.
+- El servidor genera el identificador, fecha, campaña, origen y metadatos del aviso; ignora esos valores si llegan desde el cliente.
+- Solo permite un registro por correo normalizado para toda la campaña y reconstruye esta deduplicación desde el CSV al reiniciar.
+- Confirma `201 Created` únicamente después de que la fila fue escrita.
+
+Payload público:
+
+```json
+{
+  "nombre": "Ana",
+  "apellido": "Charra",
+  "email": "ana@example.com",
+  "telefono": "3312345678",
+  "tallaJersey": "M",
+  "aceptaAvisoPrivacidad": true,
+  "aceptaComunicaciones": false
+}
+```
+
+### Seguridad de exportaciones CSV
+
+Configura un secreto largo y aleatorio en el backend:
+
+```text
+CSV_EXPORT_TOKEN=<secreto-aleatorio>
+```
+
+No uses el prefijo `VITE_` ni expongas este valor en Vercel o en el código del navegador.
+El mismo token protege las tres exportaciones CSV. Ejemplo local:
+
+```bash
+curl -H "Authorization: Bearer $CSV_EXPORT_TOKEN" \
+  http://localhost:3001/api/abonados-lmp-submissions.csv
+```
+
+`ALLOWED_ORIGINS` debe listar el dominio exacto del frontend, pero CORS no reemplaza
+la autenticación de las exportaciones. En Render, `CSV_DATA_DIR` debe apuntar a un
+disco persistente.
 
 ### Producción recomendada
 
@@ -150,6 +208,20 @@ npm run preview      # Vista previa
 Para la encuesta corta de leads (ruta `/leads`), define también:
 
 `VITE_LEADS_SUBMISSION_ENDPOINT=https://TU-API/api/lead-submit`
+
+Para la encuesta temporal de abonados, configura en Vercel:
+
+```text
+VITE_SUBSCRIBER_FORM_ENABLED=true
+VITE_ABONADOS_SUBMISSION_ENDPOINT=https://TU-API/api/abonados-lmp-submit
+```
+
+Y en el backend de Render:
+
+```text
+SUBSCRIBER_FORM_ENABLED=true
+CSV_EXPORT_TOKEN=<secreto-largo-y-aleatorio>
+```
 
 Esto evita que las respuestas se queden solo en `localStorage` y garantiza guardado centralizado.
 

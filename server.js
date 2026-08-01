@@ -2,6 +2,7 @@ import express from 'express'
 import cors from 'cors'
 import fs from 'fs'
 import path from 'path'
+import { randomUUID, timingSafeEqual } from 'node:crypto'
 import { fileURLToPath } from 'url'
 import rateLimit from 'express-rate-limit'
 import swaggerUi from 'swagger-ui-express'
@@ -17,6 +18,7 @@ const dataDir = process.env.CSV_DATA_DIR
   : path.join(__dirname, 'data')
 const csvPath = path.join(dataDir, 'submissions.csv')
 const leadsCsvPath = path.join(dataDir, 'submissions_leads.csv')
+const subscriberCsvPath = path.join(dataDir, 'submissions_abonados_lmp_2026_2027.csv')
 const openApiPath = path.join(__dirname, 'docs', 'openapi.yaml')
 const flushIntervalMs = Number(process.env.CSV_FLUSH_INTERVAL_MS || 250)
 const maxQueueSize = Number(process.env.CSV_MAX_QUEUE_SIZE || 10000)
@@ -25,6 +27,13 @@ const dedupeWindowMs = Number(process.env.CSV_DEDUPE_WINDOW_MS || 24 * 60 * 60 *
 const submitRateLimit = Number(process.env.SUBMIT_RATE_LIMIT_PER_MIN || 180)
 const allowedOrigins = (process.env.ALLOWED_ORIGINS || '').split(',').map((v) => v.trim()).filter(Boolean)
 const publicFormsEnabled = process.env.PUBLIC_FORMS_ENABLED === 'true'
+const subscriberFormEnabled = process.env.SUBSCRIBER_FORM_ENABLED === 'true'
+const csvExportToken = process.env.CSV_EXPORT_TOKEN || ''
+
+const SUBSCRIBER_CAMPAIGN_NAME = 'Abonados LMP 2026-2027'
+const SUBSCRIBER_SOURCE = 'abonados-lmp-26-27'
+const SUBSCRIBER_PRIVACY_NOTICE_VERSION = '2026-07-31'
+const SUBSCRIBER_JERSEY_SIZES = new Set(['S', 'M', 'L', 'XL', '2XL'])
 
 const CSV_COLUMNS = [
   'submissionId',
@@ -77,6 +86,22 @@ const LEADS_CSV_COLUMNS = [
   'aceptaRegistroDiario'
 ]
 
+const SUBSCRIBER_CSV_COLUMNS = [
+  'submissionId',
+  'timestamp',
+  'campaignName',
+  'source',
+  'nombre',
+  'apellido',
+  'email',
+  'telefono',
+  'tallaJersey',
+  'aceptaAvisoPrivacidad',
+  'aceptaComunicaciones',
+  'privacyNoticeVersion',
+  'consentTimestamp'
+]
+
 const REQUIRED_FIELDS = ['nombre', 'apellido', 'email']
 const REQUIRED_LEAD_FIELDS = ['nombre', 'apellido', 'email', 'telefono', 'municipio', 'frecuenciaVisita']
 
@@ -89,6 +114,9 @@ const leadPendingRows = []
 let leadFlushTimer = null
 let isLeadFlushing = false
 const leadDailyEmailRegistry = new Map()
+
+const subscriberEmailRegistry = new Set()
+let subscriberWriteChain = Promise.resolve()
 
 function loadOpenApiSpec() {
   if (!fs.existsSync(openApiPath)) return null
@@ -140,10 +168,27 @@ function ensureLeadsDataFile() {
   ensureCsvFile(leadsCsvPath, LEADS_CSV_COLUMNS, 'submissions_leads')
 }
 
+function ensureSubscriberDataFile() {
+  ensureCsvFile(
+    subscriberCsvPath,
+    SUBSCRIBER_CSV_COLUMNS,
+    'submissions_abonados_lmp_2026_2027'
+  )
+}
+
+function sanitizeCsvText(value) {
+  const normalized = String(value)
+    .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '')
+    .replace(/[\r\n\t]+/g, ' ')
+    .trim()
+
+  return /^\s*[=+\-@]/.test(normalized) ? `'${normalized}` : normalized
+}
+
 function toCsvValue(value) {
   if (value === null || value === undefined) return ''
   if (Array.isArray(value)) value = value.join(' | ')
-  const text = String(value)
+  const text = sanitizeCsvText(value)
   return `"${text.replace(/"/g, '""')}"`
 }
 
@@ -153,6 +198,10 @@ function buildCsvRow(payload) {
 
 function buildLeadsCsvRow(payload) {
   return LEADS_CSV_COLUMNS.map((column) => toCsvValue(payload[column])).join(',') + '\n'
+}
+
+function buildSubscriberCsvRow(payload) {
+  return SUBSCRIBER_CSV_COLUMNS.map((column) => toCsvValue(payload[column])).join(',') + '\n'
 }
 
 function parseCsvLine(line) {
@@ -214,6 +263,29 @@ function loadLeadDailyEmailRegistry() {
     const timestamp = values[timestampIdx]
     const key = leadEmailDayKey(email, timestamp)
     if (key) leadDailyEmailRegistry.set(key, true)
+  }
+}
+
+function normalizeEmail(email) {
+  return typeof email === 'string' ? email.trim().toLowerCase() : ''
+}
+
+function loadSubscriberEmailRegistry() {
+  subscriberEmailRegistry.clear()
+  if (!fs.existsSync(subscriberCsvPath)) return
+
+  const content = fs.readFileSync(subscriberCsvPath, 'utf8')
+  const lines = content.split(/\r?\n/).filter(Boolean)
+  if (lines.length < 2) return
+
+  const header = parseCsvLine(lines[0])
+  const emailIdx = header.indexOf('email')
+  if (emailIdx < 0) return
+
+  for (let i = 1; i < lines.length; i += 1) {
+    const values = parseCsvLine(lines[i])
+    const email = normalizeEmail(values[emailIdx])
+    if (email) subscriberEmailRegistry.add(email)
   }
 }
 
@@ -287,6 +359,67 @@ function normalizeLeadPayload(input) {
   }
 
   return normalized
+}
+
+function normalizeSubscriberPayload(input) {
+  const raw = input && typeof input === 'object' && !Array.isArray(input) ? input : {}
+  const timestamp = new Date().toISOString()
+
+  return {
+    submissionId: randomUUID(),
+    timestamp,
+    campaignName: SUBSCRIBER_CAMPAIGN_NAME,
+    source: SUBSCRIBER_SOURCE,
+    nombre: typeof raw.nombre === 'string' ? raw.nombre.trim() : '',
+    apellido: typeof raw.apellido === 'string' ? raw.apellido.trim() : '',
+    email: normalizeEmail(raw.email),
+    telefono: typeof raw.telefono === 'string' ? raw.telefono.trim() : '',
+    tallaJersey: typeof raw.tallaJersey === 'string' ? raw.tallaJersey.trim().toUpperCase() : '',
+    aceptaAvisoPrivacidad: raw.aceptaAvisoPrivacidad === true,
+    aceptaComunicaciones: raw.aceptaComunicaciones === true,
+    privacyNoticeVersion: SUBSCRIBER_PRIVACY_NOTICE_VERSION,
+    consentTimestamp: timestamp,
+    communicationsTypeValid:
+      raw.aceptaComunicaciones === undefined || typeof raw.aceptaComunicaciones === 'boolean',
+    privacyTypeValid: typeof raw.aceptaAvisoPrivacidad === 'boolean'
+  }
+}
+
+function validateSubscriberPayload(payload) {
+  const invalid = []
+  const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+  const phoneDigits = payload.telefono.replace(/\D/g, '')
+
+  if (payload.nombre.length < 2 || payload.nombre.length > 100) invalid.push('nombre')
+  if (payload.apellido.length < 2 || payload.apellido.length > 100) invalid.push('apellido')
+  if (payload.email.length > 254 || !emailPattern.test(payload.email)) invalid.push('email')
+  if (payload.telefono.length > 32 || phoneDigits.length < 10 || phoneDigits.length > 15) {
+    invalid.push('telefono')
+  }
+  if (!SUBSCRIBER_JERSEY_SIZES.has(payload.tallaJersey)) invalid.push('tallaJersey')
+  if (!payload.privacyTypeValid || payload.aceptaAvisoPrivacidad !== true) {
+    invalid.push('aceptaAvisoPrivacidad')
+  }
+  if (!payload.communicationsTypeValid) invalid.push('aceptaComunicaciones')
+
+  return {
+    valid: invalid.length === 0,
+    invalid
+  }
+}
+
+function appendSubscriberRow(row) {
+  const writeOperation = subscriberWriteChain.then(async () => {
+    ensureSubscriberDataFile()
+    await fs.promises.appendFile(subscriberCsvPath, row, 'utf8')
+  })
+
+  subscriberWriteChain = writeOperation.catch(() => {})
+  return writeOperation
+}
+
+async function flushSubscriberWrites() {
+  await subscriberWriteChain
 }
 
 function enqueueRow(row) {
@@ -384,11 +517,56 @@ function requirePublicFormsEnabled(req, res, next) {
   })
 }
 
+function requireSubscriberFormEnabled(_req, res, next) {
+  if (subscriberFormEnabled) return next()
+
+  res.setHeader('Cache-Control', 'no-store')
+  return res.status(503).json({
+    ok: false,
+    error: 'Subscriber form is temporarily disabled'
+  })
+}
+
+function secureTokenEquals(received, expected) {
+  const receivedBuffer = Buffer.from(received)
+  const expectedBuffer = Buffer.from(expected)
+  if (receivedBuffer.length !== expectedBuffer.length) return false
+  return timingSafeEqual(receivedBuffer, expectedBuffer)
+}
+
+function requireCsvExportToken(req, res, next) {
+  res.setHeader('Cache-Control', 'private, no-store, max-age=0')
+  res.setHeader('Pragma', 'no-cache')
+  res.setHeader('X-Content-Type-Options', 'nosniff')
+
+  if (!csvExportToken) {
+    return res.status(503).json({
+      ok: false,
+      error: 'CSV export is not configured'
+    })
+  }
+
+  const authorization = req.get('authorization') || ''
+  const bearerMatch = authorization.match(/^Bearer\s+([^\s]+)$/i)
+  const receivedToken = bearerMatch?.[1] || ''
+
+  if (!receivedToken || !secureTokenEquals(receivedToken, csvExportToken)) {
+    res.setHeader('WWW-Authenticate', 'Bearer')
+    return res.status(401).json({
+      ok: false,
+      error: 'Unauthorized CSV export'
+    })
+  }
+
+  return next()
+}
+
 app.get('/healthz', (_req, res) => {
   res.json({
     ok: true,
     status: 'ready',
     publicFormsEnabled,
+    subscriberFormEnabled,
     queueSize: pendingRows.length
   })
 })
@@ -485,7 +663,51 @@ app.post('/api/lead-submit', requirePublicFormsEnabled, submitLimiter, (req, res
   }
 })
 
-app.get('/api/submissions.csv', requirePublicFormsEnabled, async (_req, res) => {
+app.post(
+  '/api/abonados-lmp-submit',
+  requireSubscriberFormEnabled,
+  submitLimiter,
+  async (req, res) => {
+    const payload = normalizeSubscriberPayload(req.body)
+    const validation = validateSubscriberPayload(payload)
+
+    if (!validation.valid) {
+      return res.status(400).json({
+        ok: false,
+        error: 'Invalid subscriber fields',
+        invalid: validation.invalid
+      })
+    }
+
+    const emailKey = payload.email
+    if (subscriberEmailRegistry.has(emailKey)) {
+      return res.status(409).json({
+        ok: false,
+        error: 'Subscriber email already registered'
+      })
+    }
+
+    subscriberEmailRegistry.add(emailKey)
+
+    try {
+      await appendSubscriberRow(buildSubscriberCsvRow(payload))
+      return res.status(201).json({
+        ok: true,
+        stored: true,
+        submissionId: payload.submissionId
+      })
+    } catch (error) {
+      subscriberEmailRegistry.delete(emailKey)
+      console.error('Subscriber CSV persistence error', error)
+      return res.status(500).json({
+        ok: false,
+        error: 'Unable to persist subscriber submission'
+      })
+    }
+  }
+)
+
+app.get('/api/submissions.csv', requireCsvExportToken, async (_req, res) => {
   try {
     await flushQueue()
     ensureDataFile()
@@ -494,11 +716,11 @@ app.get('/api/submissions.csv', requirePublicFormsEnabled, async (_req, res) => 
     fs.createReadStream(csvPath).pipe(res)
   } catch (error) {
     console.error('CSV download error', error)
-    res.status(500).json({ ok: false, error: 'Unable to read CSV', detail: error?.message || 'unknown error' })
+    res.status(500).json({ ok: false, error: 'Unable to read CSV' })
   }
 })
 
-app.get('/api/leads-submissions.csv', requirePublicFormsEnabled, async (_req, res) => {
+app.get('/api/leads-submissions.csv', requireCsvExportToken, async (_req, res) => {
   try {
     await flushLeadQueue()
     ensureLeadsDataFile()
@@ -507,14 +729,35 @@ app.get('/api/leads-submissions.csv', requirePublicFormsEnabled, async (_req, re
     fs.createReadStream(leadsCsvPath).pipe(res)
   } catch (error) {
     console.error('Leads CSV download error', error)
-    res.status(500).json({ ok: false, error: 'Unable to read leads CSV', detail: error?.message || 'unknown error' })
+    res.status(500).json({ ok: false, error: 'Unable to read leads CSV' })
+  }
+})
+
+app.get('/api/abonados-lmp-submissions.csv', requireCsvExportToken, async (_req, res) => {
+  try {
+    await flushSubscriberWrites()
+    ensureSubscriberDataFile()
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8')
+    res.setHeader(
+      'Content-Disposition',
+      'attachment; filename="submissions_abonados_lmp_2026_2027.csv"'
+    )
+    return fs.createReadStream(subscriberCsvPath).pipe(res)
+  } catch (error) {
+    console.error('Subscriber CSV download error', error)
+    return res.status(500).json({
+      ok: false,
+      error: 'Unable to read subscriber CSV'
+    })
   }
 })
 
 try {
   ensureDataFile()
   ensureLeadsDataFile()
+  ensureSubscriberDataFile()
   loadLeadDailyEmailRegistry()
+  loadSubscriberEmailRegistry()
 } catch (error) {
   console.error('CSV init error', error)
 }
@@ -523,6 +766,7 @@ process.on('SIGINT', async () => {
   try {
     await flushQueue()
     await flushLeadQueue()
+    await flushSubscriberWrites()
   } finally {
     process.exit(0)
   }
@@ -532,6 +776,7 @@ process.on('SIGTERM', async () => {
   try {
     await flushQueue()
     await flushLeadQueue()
+    await flushSubscriberWrites()
   } finally {
     process.exit(0)
   }
@@ -540,4 +785,5 @@ process.on('SIGTERM', async () => {
 app.listen(port, () => {
   console.log(`Submission API listening on port ${port}`)
   console.log(`CSV storage path: ${csvPath}`)
+  console.log(`Subscriber CSV storage path: ${subscriberCsvPath}`)
 })

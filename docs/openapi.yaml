@@ -1,8 +1,8 @@
 openapi: 3.0.0
 info:
   title: Encuesta Oficial Charros - Submit API
-  version: 1.2.0
-  description: API HTTP para recibir y exportar respuestas de la landing Encuesta Oficial Charros 2026-2027.
+  version: 1.3.0
+  description: API HTTP para recibir respuestas de encuestas y registros de Charros de Jalisco.
 
 servers:
   - url: https://tu-api.onrender.com
@@ -25,6 +25,10 @@ paths:
                     type: string
                   queueSize:
                     type: integer
+                  publicFormsEnabled:
+                    type: boolean
+                  subscriberFormEnabled:
+                    type: boolean
 
   /api/submit:
     post:
@@ -135,7 +139,9 @@ paths:
 
   /api/submissions.csv:
     get:
-      summary: Descarga de respuestas en CSV
+      summary: Descarga protegida de respuestas en CSV
+      security:
+        - csvExportToken: []
       responses:
         '200':
           description: Archivo CSV con respuestas
@@ -143,6 +149,10 @@ paths:
             text/csv:
               schema:
                 type: string
+        '401':
+          description: Token ausente o incorrecto
+        '503':
+          description: Exportación deshabilitada porque CSV_EXPORT_TOKEN no está configurado
 
   /api/lead-submit:
     post:
@@ -203,7 +213,9 @@ paths:
 
   /api/leads-submissions.csv:
     get:
-      summary: Descarga de leads en CSV
+      summary: Descarga protegida de leads en CSV
+      security:
+        - csvExportToken: []
       responses:
         '200':
           description: Archivo CSV con leads de estadio
@@ -211,3 +223,99 @@ paths:
             text/csv:
               schema:
                 type: string
+        '401':
+          description: Token ausente o incorrecto
+        '503':
+          description: Exportación deshabilitada porque CSV_EXPORT_TOKEN no está configurado
+
+  /api/abonados-lmp-submit:
+    post:
+      summary: Registra la talla de jersey de un abonado para LMP 2026-2027
+      description: >-
+        El servidor genera submissionId, timestamp, campaignName, source,
+        privacyNoticeVersion y consentTimestamp. Solo se permite un registro por
+        correo normalizado en esta campaña.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                nombre:
+                  type: string
+                  minLength: 2
+                  maxLength: 100
+                apellido:
+                  type: string
+                  minLength: 2
+                  maxLength: 100
+                email:
+                  type: string
+                  format: email
+                  maxLength: 254
+                telefono:
+                  type: string
+                  maxLength: 32
+                tallaJersey:
+                  type: string
+                  enum: [S, M, L, XL, 2XL]
+                aceptaAvisoPrivacidad:
+                  type: boolean
+                  enum: [true]
+                aceptaComunicaciones:
+                  type: boolean
+                  default: false
+              required:
+                - nombre
+                - apellido
+                - email
+                - telefono
+                - tallaJersey
+                - aceptaAvisoPrivacidad
+      responses:
+        '201':
+          description: Registro escrito y confirmado en el archivo independiente
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  stored:
+                    type: boolean
+                  submissionId:
+                    type: string
+                    format: uuid
+        '400':
+          description: Campos inválidos, talla fuera del catálogo o aviso no aceptado
+        '409':
+          description: El correo ya fue registrado en esta campaña
+        '503':
+          description: La captura de abonados está temporalmente deshabilitada
+
+  /api/abonados-lmp-submissions.csv:
+    get:
+      summary: Descarga protegida del CSV independiente de abonados LMP 2026-2027
+      security:
+        - csvExportToken: []
+      responses:
+        '200':
+          description: Archivo CSV con registros de abonados
+          content:
+            text/csv:
+              schema:
+                type: string
+        '401':
+          description: Token ausente o incorrecto
+        '503':
+          description: Exportación deshabilitada porque CSV_EXPORT_TOKEN no está configurado
+
+components:
+  securitySchemes:
+    csvExportToken:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque token configured with CSV_EXPORT_TOKEN

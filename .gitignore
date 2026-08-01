@@ -6,5 +6,5 @@ dist/
 .vscode/
 .DS_Store
 coverage/
-data/submissions.csv
+data/*.csv
 .vercel
