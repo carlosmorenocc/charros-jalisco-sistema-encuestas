@@ -230,11 +230,14 @@ paths:
 
   /api/abonados-lmp-submit:
     post:
-      summary: Registra la talla de jersey de un abonado para LMP 2026-2027
+      summary: Registra las tallas de jersey de un abonado para LMP 2026-2027
       description: >-
         El servidor genera submissionId, timestamp, campaignName, source,
         privacyNoticeVersion y consentTimestamp. Solo se permite un registro por
-        correo normalizado en esta campaña.
+        correo normalizado en esta campaña. cantidadAbonos debe coincidir exactamente
+        con la longitud de tallasJersey. Durante la transición, el backend también
+        acepta el campo legado tallaJersey y deja cantidadAbonos vacío, ya que ese
+        dato no se recopilaba en el formulario anterior.
       requestBody:
         required: true
         content:
@@ -258,9 +261,23 @@ paths:
                 telefono:
                   type: string
                   maxLength: 32
+                cantidadAbonos:
+                  type: integer
+                  minimum: 1
+                  maximum: 25
+                tallasJersey:
+                  type: array
+                  minItems: 1
+                  maxItems: 25
+                  items:
+                    type: string
+                    enum: [S, M, L, XL, 2XL]
+                  description: Debe contener exactamente una talla por cada abono.
                 tallaJersey:
                   type: string
                   enum: [S, M, L, XL, 2XL]
+                  deprecated: true
+                  description: Compatibilidad temporal con el formulario anterior.
                 aceptaAvisoPrivacidad:
                   type: boolean
                   enum: [true]
@@ -272,8 +289,17 @@ paths:
                 - apellido
                 - email
                 - telefono
-                - tallaJersey
                 - aceptaAvisoPrivacidad
+              oneOf:
+                - required:
+                    - cantidadAbonos
+                    - tallasJersey
+                - required:
+                    - tallaJersey
+                  not:
+                    anyOf:
+                      - required: [cantidadAbonos]
+                      - required: [tallasJersey]
       responses:
         '201':
           description: Registro escrito y confirmado en el archivo independiente
@@ -290,7 +316,7 @@ paths:
                     type: string
                     format: uuid
         '400':
-          description: Campos inválidos, talla fuera del catálogo o aviso no aceptado
+          description: Campos inválidos, cantidades/tallas inconsistentes o aviso no aceptado
         '409':
           description: El correo ya fue registrado en esta campaña
         '503':

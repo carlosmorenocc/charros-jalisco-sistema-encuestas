@@ -5,9 +5,10 @@ import AbonadosDetailsStep, { JERSEY_SIZES } from './AbonadosDetailsStep'
 import AbonadosPrivacyStep from './AbonadosPrivacyStep'
 import AbonadosThankYou from './AbonadosThankYou'
 import { submitAbonadoForm } from './submitAbonadoForm'
+import { getJerseyOrdinal, MAX_ABONOS } from './jerseyOrdinals'
 
 const STEPS = [
-  { id: 'details', label: 'Datos y talla', component: AbonadosDetailsStep },
+  { id: 'details', label: 'Datos del abonado', component: AbonadosDetailsStep },
   { id: 'privacy', label: 'Aviso', component: AbonadosPrivacyStep }
 ]
 
@@ -32,8 +33,8 @@ const STEP_VALIDATIONS = {
       { rule: 'required', message: 'El teléfono es obligatorio.' },
       { rule: 'phone', message: 'Ingresa un teléfono de 10 dígitos.' }
     ],
-    tallaJersey: [
-      { rule: 'required', message: 'Selecciona tu talla de jersey.' }
+    cantidadAbonos: [
+      { rule: 'required', message: 'Selecciona cuántos abonos tienes.' }
     ]
   },
   privacy: {
@@ -46,8 +47,27 @@ const STEP_VALIDATIONS = {
 function getStepErrors(stepId, data) {
   const errors = validateStep(data, STEP_VALIDATIONS[stepId] || {})
 
-  if (stepId === 'details' && data.tallaJersey && !JERSEY_SIZES.includes(data.tallaJersey)) {
-    errors.tallaJersey = 'Selecciona una talla válida.'
+  if (stepId === 'details') {
+    const cantidadAbonos = Number(data.cantidadAbonos)
+    const hasValidQuantity = Number.isInteger(cantidadAbonos)
+      && cantidadAbonos >= 1
+      && cantidadAbonos <= MAX_ABONOS
+
+    if (data.cantidadAbonos && !hasValidQuantity) {
+      errors.cantidadAbonos = `Selecciona una cantidad válida entre 1 y ${MAX_ABONOS}.`
+    }
+
+    if (hasValidQuantity) {
+      const tallasJersey = Array.isArray(data.tallasJersey) ? data.tallasJersey : []
+      const sizeErrors = Array.from({ length: cantidadAbonos }, (_, index) => {
+        const size = tallasJersey[index]
+        if (!size) return `Selecciona la talla de tu ${getJerseyOrdinal(index + 1)} jersey.`
+        if (!JERSEY_SIZES.includes(size)) return 'Selecciona una talla válida.'
+        return ''
+      })
+
+      if (sizeErrors.some(Boolean)) errors.tallasJersey = sizeErrors
+    }
   }
 
   return errors
@@ -109,14 +129,15 @@ export default function AbonadosMultiStepForm() {
         apellido: data.apellido.trim(),
         email: data.email.trim().toLowerCase(),
         telefono: data.telefono.trim(),
-        tallaJersey: data.tallaJersey,
+        cantidadAbonos: Number(data.cantidadAbonos),
+        tallasJersey: data.tallasJersey.slice(0, Number(data.cantidadAbonos)),
         aceptaAvisoPrivacidad: Boolean(data.aceptaAvisoPrivacidad),
         aceptaComunicaciones: Boolean(data.aceptaComunicaciones)
       })
       setDone(true)
     } catch (submissionError) {
       if (submissionError?.status === 409) {
-        setError('Este correo ya tiene una talla registrada para la temporada LMP 2026-2027.')
+        setError('Este correo ya cuenta con un registro para la temporada LMP 2026-2027.')
       } else {
         setError('No pudimos guardar tu registro. Revisa tu conexión e intenta nuevamente.')
       }

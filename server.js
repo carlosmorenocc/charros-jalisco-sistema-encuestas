@@ -33,8 +33,9 @@ const abonadosCsvExportToken = process.env.ABONADOS_CSV_EXPORT_TOKEN || ''
 
 const SUBSCRIBER_CAMPAIGN_NAME = 'Abonados LMP 2026-2027'
 const SUBSCRIBER_SOURCE = 'abonados-lmp-26-27'
-const SUBSCRIBER_PRIVACY_NOTICE_VERSION = '2026-07-31'
+const SUBSCRIBER_PRIVACY_NOTICE_VERSION = '2026-08-01'
 const SUBSCRIBER_JERSEY_SIZES = new Set(['S', 'M', 'L', 'XL', '2XL'])
+const SUBSCRIBER_MAX_SEASON_TICKETS = 25
 
 const CSV_COLUMNS = [
   'submissionId',
@@ -87,7 +88,7 @@ const LEADS_CSV_COLUMNS = [
   'aceptaRegistroDiario'
 ]
 
-const SUBSCRIBER_CSV_COLUMNS = [
+const LEGACY_SUBSCRIBER_CSV_COLUMNS = [
   'submissionId',
   'timestamp',
   'campaignName',
@@ -97,6 +98,28 @@ const SUBSCRIBER_CSV_COLUMNS = [
   'email',
   'telefono',
   'tallaJersey',
+  'aceptaAvisoPrivacidad',
+  'aceptaComunicaciones',
+  'privacyNoticeVersion',
+  'consentTimestamp'
+]
+
+const SUBSCRIBER_JERSEY_CSV_COLUMNS = Array.from(
+  { length: SUBSCRIBER_MAX_SEASON_TICKETS },
+  (_, index) => `tallaJersey${index + 1}`
+)
+
+const SUBSCRIBER_CSV_COLUMNS = [
+  'submissionId',
+  'timestamp',
+  'campaignName',
+  'source',
+  'nombre',
+  'apellido',
+  'email',
+  'telefono',
+  'cantidadAbonos',
+  ...SUBSCRIBER_JERSEY_CSV_COLUMNS,
   'aceptaAvisoPrivacidad',
   'aceptaComunicaciones',
   'privacyNoticeVersion',
@@ -170,11 +193,78 @@ function ensureLeadsDataFile() {
 }
 
 function ensureSubscriberDataFile() {
-  ensureCsvFile(
-    subscriberCsvPath,
-    SUBSCRIBER_CSV_COLUMNS,
-    'submissions_abonados_lmp_2026_2027'
+  fs.mkdirSync(dataDir, { recursive: true })
+  const expectedHeader = SUBSCRIBER_CSV_COLUMNS.join(',')
+
+  if (!fs.existsSync(subscriberCsvPath)) {
+    fs.writeFileSync(subscriberCsvPath, `${expectedHeader}\n`, 'utf8')
+    return
+  }
+
+  const legacyContent = fs.readFileSync(subscriberCsvPath, 'utf8')
+  const firstLine = legacyContent.split(/\r?\n/, 1)[0].replace(/^\uFEFF/, '')
+  if (firstLine === expectedHeader) return
+
+  const legacyHeader = LEGACY_SUBSCRIBER_CSV_COLUMNS.join(',')
+  if (firstLine !== legacyHeader) {
+    throw new Error(
+      `Unsupported subscriber CSV schema at ${subscriberCsvPath}; existing data was preserved`
+    )
+  }
+
+  const migratedContent = migrateLegacySubscriberCsv(legacyContent)
+  const backupPath = ensureSubscriberMigrationBackup(legacyContent)
+  const migrationPath = `${subscriberCsvPath}.migration.tmp`
+
+  fs.writeFileSync(migrationPath, migratedContent, 'utf8')
+  fs.renameSync(migrationPath, subscriberCsvPath)
+  console.log(`Subscriber CSV migrated. Original file saved to: ${backupPath}`)
+}
+
+function ensureSubscriberMigrationBackup(legacyContent) {
+  const backupBase = path.join(
+    dataDir,
+    'submissions_abonados_lmp_2026_2027_legacy_single_size_backup'
   )
+
+  for (let suffix = 0; ; suffix += 1) {
+    const backupPath = `${backupBase}${suffix === 0 ? '' : `_${suffix + 1}`}.csv`
+
+    if (fs.existsSync(backupPath)) {
+      if (fs.readFileSync(backupPath, 'utf8') === legacyContent) return backupPath
+      continue
+    }
+
+    fs.copyFileSync(subscriberCsvPath, backupPath, fs.constants.COPYFILE_EXCL)
+    return backupPath
+  }
+}
+
+function migrateLegacySubscriberCsv(legacyContent) {
+  const lines = legacyContent.split(/\r?\n/)
+  const header = parseCsvLine(lines[0].replace(/^\uFEFF/, ''))
+  const migratedRows = []
+
+  for (const line of lines.slice(1)) {
+    if (!line.trim()) continue
+
+    const values = parseCsvLine(line)
+    if (values.length !== header.length) {
+      throw new Error('Unable to safely migrate malformed subscriber CSV row')
+    }
+
+    const legacyRow = Object.fromEntries(header.map((column, index) => [column, values[index]]))
+    const migratedRow = {
+      ...legacyRow,
+      // The legacy form never asked how many season tickets the person held.
+      // Preserve that fact instead of inferring a value that was not collected.
+      cantidadAbonos: '',
+      tallaJersey1: legacyRow.tallaJersey
+    }
+    migratedRows.push(buildSubscriberCsvRow(migratedRow).trimEnd())
+  }
+
+  return `${SUBSCRIBER_CSV_COLUMNS.join(',')}\n${migratedRows.join('\n')}${migratedRows.length ? '\n' : ''}`
 }
 
 function sanitizeCsvText(value) {
@@ -365,6 +455,13 @@ function normalizeLeadPayload(input) {
 function normalizeSubscriberPayload(input) {
   const raw = input && typeof input === 'object' && !Array.isArray(input) ? input : {}
   const timestamp = new Date().toISOString()
+  const hasNewTicketFields = Object.hasOwn(raw, 'cantidadAbonos') || Object.hasOwn(raw, 'tallasJersey')
+  const isLegacySingleSizePayload = !hasNewTicketFields && typeof raw.tallaJersey === 'string'
+  const cantidadAbonos = isLegacySingleSizePayload ? '' : raw.cantidadAbonos
+  const rawJerseySizes = isLegacySingleSizePayload ? [raw.tallaJersey] : raw.tallasJersey
+  const tallasJersey = Array.isArray(rawJerseySizes)
+    ? rawJerseySizes.map((size) => typeof size === 'string' ? size.trim().toUpperCase() : size)
+    : rawJerseySizes
 
   return {
     submissionId: randomUUID(),
@@ -375,7 +472,15 @@ function normalizeSubscriberPayload(input) {
     apellido: typeof raw.apellido === 'string' ? raw.apellido.trim() : '',
     email: normalizeEmail(raw.email),
     telefono: typeof raw.telefono === 'string' ? raw.telefono.trim() : '',
-    tallaJersey: typeof raw.tallaJersey === 'string' ? raw.tallaJersey.trim().toUpperCase() : '',
+    cantidadAbonos,
+    tallasJersey,
+    isLegacySingleSizePayload,
+    ...Object.fromEntries(
+      SUBSCRIBER_JERSEY_CSV_COLUMNS.map((column, index) => [
+        column,
+        Array.isArray(tallasJersey) ? tallasJersey[index] || '' : ''
+      ])
+    ),
     aceptaAvisoPrivacidad: raw.aceptaAvisoPrivacidad === true,
     aceptaComunicaciones: raw.aceptaComunicaciones === true,
     privacyNoticeVersion: SUBSCRIBER_PRIVACY_NOTICE_VERSION,
@@ -397,7 +502,19 @@ function validateSubscriberPayload(payload) {
   if (payload.telefono.length > 32 || phoneDigits.length < 10 || phoneDigits.length > 15) {
     invalid.push('telefono')
   }
-  if (!SUBSCRIBER_JERSEY_SIZES.has(payload.tallaJersey)) invalid.push('tallaJersey')
+  const hasValidTicketCount = Number.isInteger(payload.cantidadAbonos)
+    && payload.cantidadAbonos >= 1
+    && payload.cantidadAbonos <= SUBSCRIBER_MAX_SEASON_TICKETS
+  if (!payload.isLegacySingleSizePayload && !hasValidTicketCount) invalid.push('cantidadAbonos')
+
+  const hasValidJerseySizes = Array.isArray(payload.tallasJersey)
+    && payload.tallasJersey.every((size) => SUBSCRIBER_JERSEY_SIZES.has(size))
+  const hasMatchingJerseySizeCount = payload.isLegacySingleSizePayload
+    ? Array.isArray(payload.tallasJersey) && payload.tallasJersey.length === 1
+    : hasValidTicketCount
+      && Array.isArray(payload.tallasJersey)
+      && payload.tallasJersey.length === payload.cantidadAbonos
+  if (!hasValidJerseySizes || !hasMatchingJerseySizeCount) invalid.push('tallasJersey')
   if (!payload.privacyTypeValid || payload.aceptaAvisoPrivacidad !== true) {
     invalid.push('aceptaAvisoPrivacidad')
   }
@@ -766,6 +883,7 @@ try {
   loadSubscriberEmailRegistry()
 } catch (error) {
   console.error('CSV init error', error)
+  throw error
 }
 
 process.on('SIGINT', async () => {

@@ -1,6 +1,16 @@
 import React from 'react'
+import { getJerseySizeQuestion, MAX_ABONOS } from './jerseyOrdinals'
 
 export const JERSEY_SIZES = ['S', 'M', 'L', 'XL', '2XL']
+
+const ABONOS_OPTIONS = Array.from({ length: MAX_ABONOS }, (_, index) => index + 1)
+
+function getSelectedQuantity(value) {
+  const quantity = Number(value)
+  return Number.isInteger(quantity) && quantity >= 1 && quantity <= MAX_ABONOS
+    ? quantity
+    : 0
+}
 
 function ErrorMessage({ id, message }) {
   if (!message) return null
@@ -8,11 +18,13 @@ function ErrorMessage({ id, message }) {
 }
 
 export default function AbonadosDetailsStep({ data, update, errors = {} }) {
+  const selectedQuantity = getSelectedQuantity(data.cantidadAbonos)
+
   return (
     <section aria-labelledby="abonados-details-title">
       <h3 id="abonados-details-title">Datos del abonado</h3>
       <p>
-        Registra tus datos y selecciona tu talla de preferencia.
+        Registra tus datos e indica la talla de jersey correspondiente a cada uno de tus abonos.
       </p>
 
       <div className="form-field">
@@ -84,22 +96,74 @@ export default function AbonadosDetailsStep({ data, update, errors = {} }) {
       </div>
 
       <div className="form-field">
-        <label htmlFor="abonado-talla">¿Cuál es tu talla de jersey? *</label>
+        <label htmlFor="abonado-cantidad-abonos">¿Cuántos abonos tienes? *</label>
         <select
-          id="abonado-talla"
-          name="tallaJersey"
-          value={data.tallaJersey || ''}
-          onChange={(event) => update({ tallaJersey: event.target.value })}
-          aria-invalid={Boolean(errors.tallaJersey)}
-          aria-describedby={errors.tallaJersey ? 'abonado-talla-error' : undefined}
+          id="abonado-cantidad-abonos"
+          name="cantidadAbonos"
+          value={data.cantidadAbonos ?? ''}
+          onChange={(event) => {
+            const rawValue = event.target.value
+            if (!rawValue) {
+              update({ cantidadAbonos: '', tallasJersey: [] })
+              return
+            }
+
+            const cantidadAbonos = Number(rawValue)
+            const currentSizes = Array.isArray(data.tallasJersey) ? data.tallasJersey : []
+            update({
+              cantidadAbonos,
+              tallasJersey: Array.from(
+                { length: cantidadAbonos },
+                (_, index) => currentSizes[index] || ''
+              )
+            })
+          }}
+          required
+          aria-invalid={Boolean(errors.cantidadAbonos)}
+          aria-describedby={errors.cantidadAbonos ? 'abonado-cantidad-abonos-error' : undefined}
         >
-          <option value="">-- Selecciona una talla --</option>
-          {JERSEY_SIZES.map((size) => (
-            <option key={size} value={size}>{size}</option>
+          <option value="">-- Selecciona una cantidad --</option>
+          {ABONOS_OPTIONS.map((quantity) => (
+            <option key={quantity} value={quantity}>{quantity}</option>
           ))}
         </select>
-        <ErrorMessage id="abonado-talla-error" message={errors.tallaJersey} />
+        <ErrorMessage id="abonado-cantidad-abonos-error" message={errors.cantidadAbonos} />
       </div>
+
+      {Array.from({ length: selectedQuantity }, (_, index) => {
+        const position = index + 1
+        const fieldId = `abonado-talla-${position}`
+        const errorId = `${fieldId}-error`
+        const fieldError = errors.tallasJersey?.[index]
+
+        return (
+          <div className="form-field" key={fieldId}>
+            <label htmlFor={fieldId}>{getJerseySizeQuestion(position)} *</label>
+            <select
+              id={fieldId}
+              name={`tallasJersey[${index}]`}
+              value={data.tallasJersey?.[index] || ''}
+              onChange={(event) => {
+                const tallasJersey = Array.from(
+                  { length: selectedQuantity },
+                  (_, sizeIndex) => data.tallasJersey?.[sizeIndex] || ''
+                )
+                tallasJersey[index] = event.target.value
+                update({ tallasJersey })
+              }}
+              required
+              aria-invalid={Boolean(fieldError)}
+              aria-describedby={fieldError ? errorId : undefined}
+            >
+              <option value="">-- Selecciona una talla --</option>
+              {JERSEY_SIZES.map((size) => (
+                <option key={size} value={size}>{size}</option>
+              ))}
+            </select>
+            <ErrorMessage id={errorId} message={fieldError} />
+          </div>
+        )
+      })}
     </section>
   )
 }

@@ -8,8 +8,9 @@ export default function AbonadosPrivacyStep({ data, update, errors = {} }) {
       <h3 id="abonados-privacy-title">Aviso de privacidad</h3>
       <p>
         Los datos personales recabados serán utilizados por Charros de Jalisco para gestionar tu
-        registro de talla de jersey como abonado LMP 2026-2027, validar la información capturada,
-        dar seguimiento a esta campaña y realizar análisis operativo relacionado con ella.
+        registro de las tallas de jersey asociadas a tus abonos LMP 2026-2027, validar la
+        información capturada, dar seguimiento a esta campaña y realizar análisis operativo
+        relacionado con ella.
       </p>
       <p>
         Consulta el aviso completo en{' '}

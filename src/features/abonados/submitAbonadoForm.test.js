@@ -13,7 +13,8 @@ describe('submitAbonadoForm', () => {
       apellido: 'López',
       email: 'maria@example.com',
       telefono: '3331234567',
-      tallaJersey: 'M',
+      cantidadAbonos: 2,
+      tallasJersey: ['M', 'XL'],
       aceptaAvisoPrivacidad: true,
       aceptaComunicaciones: false
     }
@@ -22,6 +23,7 @@ describe('submitAbonadoForm', () => {
       status: 201,
       text: async () => JSON.stringify({ ok: true, stored: true })
     })
+    const storageSpy = vi.spyOn(Storage.prototype, 'setItem')
 
     await expect(submitAbonadoForm(payload)).resolves.toEqual({ ok: true, stored: true })
     expect(fetchMock).toHaveBeenCalledWith(
@@ -32,6 +34,7 @@ describe('submitAbonadoForm', () => {
         body: JSON.stringify(payload)
       }
     )
+    expect(storageSpy).not.toHaveBeenCalled()
   })
 
   it('propaga el fallo remoto y nunca guarda PII en localStorage', async () => {
