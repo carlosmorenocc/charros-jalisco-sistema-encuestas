@@ -61,7 +61,15 @@ describe('AbonadosMultiStepForm', () => {
       })
     })
     expect(
-      await screen.findByRole('heading', { name: '¡Tu talla quedó registrada!' })
+      await screen.findByRole('heading', { name: '¡Has completado tu registro exitosamente!' })
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText('Recibimos correctamente tus datos para la campaña de abonados LMP 2026-2027.')
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        'En Club Charros nos emociona darte la bienvenida esta próxima temporada. Te esperamos en tu casa. #TodosSomosCharros'
+      )
     ).toBeInTheDocument()
   })
 
@@ -77,7 +85,9 @@ describe('AbonadosMultiStepForm', () => {
     expect(
       await screen.findByText('No pudimos guardar tu registro. Revisa tu conexión e intenta nuevamente.')
     ).toBeInTheDocument()
-    expect(screen.queryByRole('heading', { name: '¡Tu talla quedó registrada!' })).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('heading', { name: '¡Has completado tu registro exitosamente!' })
+    ).not.toBeInTheDocument()
   })
 
   it('ofrece únicamente las cinco tallas autorizadas', () => {
