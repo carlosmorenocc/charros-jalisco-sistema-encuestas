@@ -47,7 +47,7 @@ describe('AbonadosMultiStepForm', () => {
     fireEvent.click(screen.getByRole('button', { name: /Siguiente/i }))
     fireEvent.click(screen.getByLabelText(/He leído y acepto/i))
     fireEvent.click(screen.getByLabelText(/Acepto recibir información/i))
-    fireEvent.click(screen.getByRole('button', { name: 'Registrar mi talla' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Terminar de registrarme' }))
 
     await waitFor(() => {
       expect(submitAbonadoForm).toHaveBeenCalledWith({
@@ -72,7 +72,7 @@ describe('AbonadosMultiStepForm', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /Siguiente/i }))
     fireEvent.click(screen.getByLabelText(/He leído y acepto/i))
-    fireEvent.click(screen.getByRole('button', { name: 'Registrar mi talla' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Terminar de registrarme' }))
 
     expect(
       await screen.findByText('No pudimos guardar tu registro. Revisa tu conexión e intenta nuevamente.')

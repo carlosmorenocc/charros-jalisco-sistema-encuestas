@@ -178,7 +178,7 @@ export default function AbonadosMultiStepForm() {
         <button type="submit" disabled={sending}>
           {index < STEPS.length - 1
             ? 'Siguiente →'
-            : (sending ? 'Guardando...' : 'Registrar mi talla')}
+            : (sending ? 'Guardando...' : 'Terminar de registrarme')}
         </button>
       </div>
     </form>
