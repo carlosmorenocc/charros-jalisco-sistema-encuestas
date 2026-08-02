@@ -61,7 +61,7 @@ function getStepErrors(stepId, data) {
       const tallasJersey = Array.isArray(data.tallasJersey) ? data.tallasJersey : []
       const sizeErrors = Array.from({ length: cantidadAbonos }, (_, index) => {
         const size = tallasJersey[index]
-        if (!size) return `Selecciona la talla de tu ${getJerseyOrdinal(index + 1)} jersey.`
+        if (!size) return `Selecciona una talla para tu ${getJerseyOrdinal(index + 1)} jersey.`
         if (!JERSEY_SIZES.includes(size)) return 'Selecciona una talla válida.'
         return ''
       })

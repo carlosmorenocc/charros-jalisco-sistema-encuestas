@@ -37,5 +37,5 @@ export function getJerseyOrdinal(position) {
 }
 
 export function getJerseySizeQuestion(position) {
-  return `¿Cuál es la talla de tu ${getJerseyOrdinal(position)} jersey?`
+  return `¿Qué talla te gustaría para tu ${getJerseyOrdinal(position)} jersey?`
 }

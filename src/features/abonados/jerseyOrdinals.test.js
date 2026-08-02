@@ -32,8 +32,8 @@ describe('ordinales de jerseys', () => {
   })
 
   it('construye una pregunta completa y rechaza posiciones fuera del rango', () => {
-    expect(getJerseySizeQuestion(1)).toBe('¿Cuál es la talla de tu primer jersey?')
-    expect(getJerseySizeQuestion(25)).toBe('¿Cuál es la talla de tu vigésimo quinto jersey?')
+    expect(getJerseySizeQuestion(1)).toBe('¿Qué talla te gustaría para tu primer jersey?')
+    expect(getJerseySizeQuestion(25)).toBe('¿Qué talla te gustaría para tu vigésimo quinto jersey?')
     expect(() => getJerseySizeQuestion(0)).toThrow(RangeError)
     expect(() => getJerseySizeQuestion(26)).toThrow(RangeError)
     expect(() => getJerseySizeQuestion(1.5)).toThrow(RangeError)
