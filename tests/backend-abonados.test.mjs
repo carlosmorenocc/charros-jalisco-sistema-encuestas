@@ -10,6 +10,22 @@ import { fileURLToPath } from 'node:url'
 const projectRoot = path.resolve(fileURLToPath(new URL('../', import.meta.url)))
 const subscriberCsvFilename = 'submissions_abonados_lmp_2026_2027.csv'
 const jerseyColumns = Array.from({ length: 25 }, (_, index) => `tallaJersey${index + 1}`)
+const subscriberColumns = [
+  'submissionId',
+  'timestamp',
+  'campaignName',
+  'source',
+  'nombre',
+  'apellido',
+  'email',
+  'telefono',
+  'cantidadAbonos',
+  ...jerseyColumns,
+  'aceptaAvisoPrivacidad',
+  'aceptaComunicaciones',
+  'privacyNoticeVersion',
+  'consentTimestamp'
+]
 const legacySubscriberColumns = [
   'submissionId',
   'timestamp',
@@ -167,7 +183,7 @@ function csvValue(value) {
   return `"${String(value ?? '').replace(/"/g, '""')}"`
 }
 
-test('backend de abonados persiste 1-25 tallas, deduplica y protege exportaciones', async (t) => {
+test('backend de abonados persiste 1-20 tallas, deduplica y protege exportaciones', async (t) => {
   const dataDir = await mkdtemp(path.join(os.tmpdir(), 'fantrack-abonados-'))
   let backend
 
@@ -190,7 +206,7 @@ test('backend de abonados persiste 1-25 tallas, deduplica y protege exportacione
   })
 
   await t.test('valida cantidad de abonos, límites y correspondencia de tallas', async () => {
-    for (const cantidadAbonos of [0, 26, 1.5, '2']) {
+    for (const cantidadAbonos of [0, 21, 1.5, '2']) {
       const response = await postJson(
         backend.baseUrl,
         '/api/abonados-lmp-submit',
@@ -211,7 +227,7 @@ test('backend de abonados persiste 1-25 tallas, deduplica y protege exportacione
     const tooManySizes = await postJson(
       backend.baseUrl,
       '/api/abonados-lmp-submit',
-      subscriberBody({ cantidadAbonos: 25, tallasJersey: Array(26).fill('M') })
+      subscriberBody({ cantidadAbonos: 20, tallasJersey: Array(21).fill('M') })
     )
     assert.equal(tooManySizes.status, 400)
     assert.deepEqual((await tooManySizes.json()).invalid, ['tallasJersey'])
@@ -290,23 +306,24 @@ test('backend de abonados persiste 1-25 tallas, deduplica y protege exportacione
     assert.ok(jerseyColumns.slice(1).every((column) => rows.at(-1)[column] === ''))
   })
 
-  await t.test('acepta el límite superior de 25 abonos y 25 tallas', async () => {
+  await t.test('acepta el límite superior de 20 y conserva las 25 columnas históricas', async () => {
     const response = await postJson(
       backend.baseUrl,
       '/api/abonados-lmp-submit',
       subscriberBody({
-        email: 'veinticinco@example.com',
-        cantidadAbonos: 25,
-        tallasJersey: Array.from({ length: 25 }, (_, index) => index % 2 ? 'XL' : 'S')
+        email: 'veinte@example.com',
+        cantidadAbonos: 20,
+        tallasJersey: Array.from({ length: 20 }, (_, index) => index % 2 ? 'XL' : 'S')
       })
     )
 
     assert.equal(response.status, 201)
     const csv = await readFile(path.join(dataDir, subscriberCsvFilename), 'utf8')
     const { rows } = parseCsv(csv)
-    assert.equal(rows.at(-1).cantidadAbonos, '25')
+    assert.equal(rows.at(-1).cantidadAbonos, '20')
     assert.equal(rows.at(-1).tallaJersey1, 'S')
-    assert.equal(rows.at(-1).tallaJersey25, 'S')
+    assert.equal(rows.at(-1).tallaJersey20, 'XL')
+    assert.ok(jerseyColumns.slice(20).every((column) => rows.at(-1)[column] === ''))
   })
 
   await t.test('rechaza el mismo correo normalizado', async () => {
@@ -396,6 +413,61 @@ test('backend de abonados persiste 1-25 tallas, deduplica y protege exportacione
     assert.equal(response.status, 503)
     assert.equal(response.headers.get('cache-control'), 'private, no-store, max-age=0')
   })
+})
+
+test('conserva un registro histórico de 25 abonos en el esquema actual', async (t) => {
+  const dataDir = await mkdtemp(path.join(os.tmpdir(), 'fantrack-abonados-current-schema-'))
+  const csvPath = path.join(dataDir, subscriberCsvFilename)
+  const historicalRow = {
+    submissionId: 'historical-25-id',
+    timestamp: '2026-08-01T12:00:00.000Z',
+    campaignName: 'Abonados LMP 2026-2027',
+    source: 'abonados-lmp-26-27',
+    nombre: 'Histórico',
+    apellido: 'Charro',
+    email: 'historico25@example.com',
+    telefono: '3312345678',
+    cantidadAbonos: 25,
+    ...Object.fromEntries(jerseyColumns.map((column) => [column, 'M'])),
+    aceptaAvisoPrivacidad: true,
+    aceptaComunicaciones: false,
+    privacyNoticeVersion: '2026-08-01',
+    consentTimestamp: '2026-08-01T12:00:00.000Z'
+  }
+  const currentContent = `${subscriberColumns.join(',')}\n${
+    subscriberColumns.map((column) => csvValue(historicalRow[column])).join(',')
+  }\n`
+  let backend
+
+  await writeFile(csvPath, currentContent, 'utf8')
+
+  t.after(async () => {
+    await stopBackend(backend?.child)
+    await rm(dataDir, { recursive: true, force: true })
+  })
+
+  backend = await startBackend(dataDir)
+
+  assert.equal(await readFile(csvPath, 'utf8'), currentContent)
+  const exported = await fetch(`${backend.baseUrl}/api/abonados-lmp-submissions.csv`, {
+    headers: { Authorization: 'Bearer test-abonados-export-token' }
+  })
+  assert.equal(exported.status, 200)
+  const parsedExport = parseCsv(await exported.text())
+  assert.equal(parsedExport.rows[0].cantidadAbonos, '25')
+  assert.equal(parsedExport.rows[0].tallaJersey25, 'M')
+
+  const duplicate = await postJson(
+    backend.baseUrl,
+    '/api/abonados-lmp-submit',
+    subscriberBody({ email: ' HISTORICO25@EXAMPLE.COM ' })
+  )
+  assert.equal(duplicate.status, 409)
+
+  const relatedFiles = (await readdir(dataDir)).filter((filename) => (
+    filename.startsWith('submissions_abonados_lmp_2026_2027')
+  ))
+  assert.deepEqual(relatedFiles, [subscriberCsvFilename])
 })
 
 test('migra de forma segura e idempotente el CSV legado de una talla', async (t) => {

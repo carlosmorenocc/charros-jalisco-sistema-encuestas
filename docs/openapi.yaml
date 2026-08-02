@@ -264,11 +264,11 @@ paths:
                 cantidadAbonos:
                   type: integer
                   minimum: 1
-                  maximum: 25
+                  maximum: 20
                 tallasJersey:
                   type: array
                   minItems: 1
-                  maxItems: 25
+                  maxItems: 20
                   items:
                     type: string
                     enum: [S, M, L, XL, 2XL]

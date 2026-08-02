@@ -1,4 +1,4 @@
-export const MAX_ABONOS = 25
+export const MAX_ABONOS = 20
 
 const JERSEY_ORDINALS = Object.freeze([
   'primer',
@@ -20,12 +20,7 @@ const JERSEY_ORDINALS = Object.freeze([
   'decimoséptimo',
   'decimoctavo',
   'decimonoveno',
-  'vigésimo',
-  'vigésimo primer',
-  'vigésimo segundo',
-  'vigésimo tercer',
-  'vigésimo cuarto',
-  'vigésimo quinto'
+  'vigésimo'
 ])
 
 export function getJerseyOrdinal(position) {

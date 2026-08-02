@@ -35,7 +35,9 @@ const SUBSCRIBER_CAMPAIGN_NAME = 'Abonados LMP 2026-2027'
 const SUBSCRIBER_SOURCE = 'abonados-lmp-26-27'
 const SUBSCRIBER_PRIVACY_NOTICE_VERSION = '2026-08-01'
 const SUBSCRIBER_JERSEY_SIZES = new Set(['S', 'M', 'L', 'XL', '2XL'])
-const SUBSCRIBER_MAX_SEASON_TICKETS = 25
+const SUBSCRIBER_MAX_SEASON_TICKETS = 20
+// Preserve the deployed 25-column CSV schema so historical records remain readable.
+const SUBSCRIBER_JERSEY_CSV_CAPACITY = 25
 
 const CSV_COLUMNS = [
   'submissionId',
@@ -105,7 +107,7 @@ const LEGACY_SUBSCRIBER_CSV_COLUMNS = [
 ]
 
 const SUBSCRIBER_JERSEY_CSV_COLUMNS = Array.from(
-  { length: SUBSCRIBER_MAX_SEASON_TICKETS },
+  { length: SUBSCRIBER_JERSEY_CSV_CAPACITY },
   (_, index) => `tallaJersey${index + 1}`
 )
 

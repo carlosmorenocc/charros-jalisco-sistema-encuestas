@@ -1,7 +1,7 @@
 import { getJerseyOrdinal, getJerseySizeQuestion, MAX_ABONOS } from './jerseyOrdinals'
 
 describe('ordinales de jerseys', () => {
-  it('define los ordinales profesionales de las 25 posiciones', () => {
+  it('define los ordinales profesionales de las 20 posiciones', () => {
     expect(Array.from({ length: MAX_ABONOS }, (_, index) => getJerseyOrdinal(index + 1))).toEqual([
       'primer',
       'segundo',
@@ -22,20 +22,15 @@ describe('ordinales de jerseys', () => {
       'decimoséptimo',
       'decimoctavo',
       'decimonoveno',
-      'vigésimo',
-      'vigésimo primer',
-      'vigésimo segundo',
-      'vigésimo tercer',
-      'vigésimo cuarto',
-      'vigésimo quinto'
+      'vigésimo'
     ])
   })
 
   it('construye una pregunta completa y rechaza posiciones fuera del rango', () => {
     expect(getJerseySizeQuestion(1)).toBe('¿Qué talla te gustaría para tu primer jersey?')
-    expect(getJerseySizeQuestion(25)).toBe('¿Qué talla te gustaría para tu vigésimo quinto jersey?')
+    expect(getJerseySizeQuestion(20)).toBe('¿Qué talla te gustaría para tu vigésimo jersey?')
     expect(() => getJerseySizeQuestion(0)).toThrow(RangeError)
-    expect(() => getJerseySizeQuestion(26)).toThrow(RangeError)
+    expect(() => getJerseySizeQuestion(21)).toThrow(RangeError)
     expect(() => getJerseySizeQuestion(1.5)).toThrow(RangeError)
   })
 })

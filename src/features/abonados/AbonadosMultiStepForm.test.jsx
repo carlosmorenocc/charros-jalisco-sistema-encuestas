@@ -48,7 +48,7 @@ describe('AbonadosMultiStepForm', () => {
     expect(quantitySelect).toHaveValue('')
     expect(Array.from(quantitySelect.options, (option) => option.value)).toEqual([
       '',
-      ...Array.from({ length: 25 }, (_, index) => String(index + 1))
+      ...Array.from({ length: 20 }, (_, index) => String(index + 1))
     ])
     expect(screen.queryByLabelText(/talla te gustaría para tu .* jersey/i)).not.toBeInTheDocument()
   })
@@ -108,15 +108,15 @@ describe('AbonadosMultiStepForm', () => {
     expect(screen.getByLabelText(/talla te gustaría para tu tercer jersey/i)).toHaveValue('')
   })
 
-  it('muestra correctamente la pregunta para el vigésimo quinto jersey', () => {
+  it('muestra correctamente la pregunta para el vigésimo jersey', () => {
     render(<AbonadosMultiStepForm />)
 
     fireEvent.change(screen.getByLabelText(/¿Cuántos abonos tienes\?/i), {
-      target: { value: '25' }
+      target: { value: '20' }
     })
 
-    expect(screen.getByLabelText(/talla te gustaría para tu vigésimo quinto jersey/i)).toBeInTheDocument()
-    expect(screen.getAllByLabelText(/talla te gustaría para tu .* jersey/i)).toHaveLength(25)
+    expect(screen.getByLabelText(/talla te gustaría para tu vigésimo jersey/i)).toBeInTheDocument()
+    expect(screen.getAllByLabelText(/talla te gustaría para tu .* jersey/i)).toHaveLength(20)
   })
 
   it('envía únicamente el payload acordado y muestra confirmación tras guardar', async () => {

@@ -158,10 +158,10 @@ npm run preview      # Vista previa
 ### Registro de abonados LMP 2026-2027
 
 - Se habilita de manera independiente con `SUBSCRIBER_FORM_ENABLED=true`.
-- Admite de `1` a `25` abonos y exige exactamente una talla por cada abono.
+- Admite de `1` a `20` abonos y exige exactamente una talla por cada abono.
 - Admite exclusivamente las tallas `S`, `M`, `L`, `XL` y `2XL`.
 - Exige que `aceptaAvisoPrivacidad` sea el booleano `true`.
-- Guarda nombre, apellido, correo, teléfono, cantidad de abonos, hasta 25 tallas y consentimientos en un CSV propio.
+- Guarda nombre, apellido, correo, teléfono, cantidad de abonos, hasta 20 tallas nuevas y consentimientos en un CSV propio.
 - El servidor genera el identificador, fecha, campaña, origen y metadatos del aviso; ignora esos valores si llegan desde el cliente.
 - Solo permite un registro por correo normalizado para toda la campaña y reconstruye esta deduplicación desde el CSV al reiniciar.
 - Confirma `201 Created` únicamente después de que la fila fue escrita.
@@ -182,7 +182,9 @@ Payload público:
 ```
 
 El CSV independiente usa columnas planas compatibles con Excel:
-`cantidadAbonos`, `tallaJersey1`, ..., `tallaJersey25`. Al iniciar por primera vez
+`cantidadAbonos`, `tallaJersey1`, ..., `tallaJersey25`. Las cinco columnas finales
+se conservan únicamente por compatibilidad con registros históricos; las nuevas
+capturas aceptan como máximo 20 abonos. Al iniciar por primera vez
 con un CSV anterior que solo contenía `tallaJersey`, el backend crea un respaldo
 en el mismo directorio y migra cada talla a `tallaJersey1`. `cantidadAbonos` queda
 vacío en esas filas históricas porque ese dato no fue recopilado. La migración es
