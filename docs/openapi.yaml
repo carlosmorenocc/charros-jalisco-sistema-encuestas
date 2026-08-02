@@ -300,7 +300,7 @@ paths:
     get:
       summary: Descarga protegida del CSV independiente de abonados LMP 2026-2027
       security:
-        - csvExportToken: []
+        - abonadosCsvExportToken: []
       responses:
         '200':
           description: Archivo CSV con registros de abonados
@@ -311,7 +311,7 @@ paths:
         '401':
           description: Token ausente o incorrecto
         '503':
-          description: Exportación deshabilitada porque CSV_EXPORT_TOKEN no está configurado
+          description: Exportación deshabilitada porque ABONADOS_CSV_EXPORT_TOKEN no está configurado
 
 components:
   securitySchemes:
@@ -319,3 +319,7 @@ components:
       type: http
       scheme: bearer
       bearerFormat: opaque token configured with CSV_EXPORT_TOKEN
+    abonadosCsvExportToken:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque token configured with ABONADOS_CSV_EXPORT_TOKEN

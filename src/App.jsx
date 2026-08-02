@@ -4,14 +4,17 @@ import MultiStepForm from './components/MultiStepForm'
 import LeadMultiStepForm from './components/LeadMultiStepForm'
 import FormsPaused from './components/FormsPaused'
 import AbonadosMultiStepForm from './features/abonados/AbonadosMultiStepForm'
+import AbonadosCsvDownloadPage from './features/abonados/admin/AbonadosCsvDownloadPage'
 
 const SorteosApp = lazy(() => import('./features/sorteos/SorteosApp'))
 
 export default function App() {
   const pathname = typeof window !== 'undefined' ? window.location.pathname : '/'
+  const normalizedPathname = pathname.replace(/\/+$/, '') || '/'
   const isSorteosMode = pathname.startsWith('/sorteos')
   const isAbonadosMode = pathname.startsWith('/abonados')
   const isLeadsMode = pathname.startsWith('/leads')
+  const isAbonadosAdminMode = normalizedPathname === '/admin/abonados'
 
   if (isSorteosMode) {
     return (
@@ -35,6 +38,10 @@ export default function App() {
         <SorteosApp />
       </Suspense>
     )
+  }
+
+  if (isAbonadosAdminMode) {
+    return <AbonadosCsvDownloadPage />
   }
 
   const publicFormsEnabled = import.meta.env.VITE_PUBLIC_FORMS_ENABLED === 'true'

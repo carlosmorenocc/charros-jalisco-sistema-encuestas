@@ -45,8 +45,10 @@ Los registros de abonados LMP 2026-2027 se guardan de forma independiente en:
 
 `data/submissions_abonados_lmp_2026_2027.csv`
 
-Las descargas CSV requieren `Authorization: Bearer <CSV_EXPORT_TOKEN>`. La exportación
-queda cerrada con `503` cuando el token no está configurado.
+Las descargas de encuesta general y leads requieren
+`Authorization: Bearer <CSV_EXPORT_TOKEN>`. La descarga de abonados usa un secreto
+independiente: `Authorization: Bearer <ABONADOS_CSV_EXPORT_TOKEN>`. Cada exportación
+queda cerrada con `503` cuando su token correspondiente no está configurado.
 
 Encuesta general:
 
@@ -183,13 +185,16 @@ Configura un secreto largo y aleatorio en el backend:
 
 ```text
 CSV_EXPORT_TOKEN=<secreto-aleatorio>
+ABONADOS_CSV_EXPORT_TOKEN=<otro-secreto-aleatorio>
 ```
 
 No uses el prefijo `VITE_` ni expongas este valor en Vercel o en el código del navegador.
-El mismo token protege las tres exportaciones CSV. Ejemplo local:
+`CSV_EXPORT_TOKEN` protege las exportaciones de encuesta general y leads;
+`ABONADOS_CSV_EXPORT_TOKEN` protege exclusivamente la exportación de abonados.
+Usa secretos distintos para mantener la separación de privilegios. Ejemplo local:
 
 ```bash
-curl -H "Authorization: Bearer $CSV_EXPORT_TOKEN" \
+curl -H "Authorization: Bearer $ABONADOS_CSV_EXPORT_TOKEN" \
   http://localhost:3001/api/abonados-lmp-submissions.csv
 ```
 
@@ -221,6 +226,7 @@ Y en el backend de Render:
 ```text
 SUBSCRIBER_FORM_ENABLED=true
 CSV_EXPORT_TOKEN=<secreto-largo-y-aleatorio>
+ABONADOS_CSV_EXPORT_TOKEN=<otro-secreto-largo-y-aleatorio>
 ```
 
 Esto evita que las respuestas se queden solo en `localStorage` y garantiza guardado centralizado.

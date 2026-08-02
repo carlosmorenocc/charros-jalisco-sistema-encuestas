@@ -22,7 +22,14 @@ async function getAvailablePort() {
   return port
 }
 
-async function startBackend(dataDir, { exportToken = 'test-export-token', enabled = true } = {}) {
+async function startBackend(
+  dataDir,
+  {
+    exportToken = 'test-export-token',
+    abonadosExportToken = 'test-abonados-export-token',
+    enabled = true
+  } = {}
+) {
   const port = await getAvailablePort()
   const child = spawn(process.execPath, ['server.js'], {
     cwd: projectRoot,
@@ -33,6 +40,7 @@ async function startBackend(dataDir, { exportToken = 'test-export-token', enable
       PUBLIC_FORMS_ENABLED: 'false',
       SUBSCRIBER_FORM_ENABLED: enabled ? 'true' : 'false',
       CSV_EXPORT_TOKEN: exportToken,
+      ABONADOS_CSV_EXPORT_TOKEN: abonadosExportToken,
       ALLOWED_ORIGINS: 'http://localhost:5173',
       SUBMIT_RATE_LIMIT_PER_MIN: '1000'
     },
@@ -174,7 +182,7 @@ test('backend de abonados persiste, deduplica y protege las exportaciones', asyn
     assert.equal(response.status, 409)
   })
 
-  await t.test('requiere Bearer para los tres CSV y permite el token correcto', async () => {
+  await t.test('separa los permisos de exportación general y de abonados', async () => {
     for (const pathname of [
       '/api/submissions.csv',
       '/api/leads-submissions.csv',
@@ -185,8 +193,26 @@ test('backend de abonados persiste, deduplica y protege las exportaciones', asyn
       assert.equal(response.headers.get('cache-control'), 'private, no-store, max-age=0')
     }
 
+    for (const pathname of ['/api/submissions.csv', '/api/leads-submissions.csv']) {
+      const authorized = await fetch(`${backend.baseUrl}${pathname}`, {
+        headers: { Authorization: 'Bearer test-export-token' }
+      })
+      assert.equal(authorized.status, 200, pathname)
+
+      const subscriberTokenRejected = await fetch(`${backend.baseUrl}${pathname}`, {
+        headers: { Authorization: 'Bearer test-abonados-export-token' }
+      })
+      assert.equal(subscriberTokenRejected.status, 401, pathname)
+    }
+
+    const generalTokenRejected = await fetch(
+      `${backend.baseUrl}/api/abonados-lmp-submissions.csv`,
+      { headers: { Authorization: 'Bearer test-export-token' } }
+    )
+    assert.equal(generalTokenRejected.status, 401)
+
     const authorized = await fetch(`${backend.baseUrl}/api/abonados-lmp-submissions.csv`, {
-      headers: { Authorization: 'Bearer test-export-token' }
+      headers: { Authorization: 'Bearer test-abonados-export-token' }
     })
     assert.equal(authorized.status, 200)
     assert.match(authorized.headers.get('content-disposition') || '', /submissions_abonados_lmp_2026_2027\.csv/)
@@ -211,21 +237,27 @@ test('backend de abonados persiste, deduplica y protege las exportaciones', asyn
   })
 
   await stopBackend(backend.child)
-  backend = await startBackend(dataDir, { exportToken: '', enabled: false })
+  backend = await startBackend(dataDir, {
+    exportToken: 'test-export-token',
+    abonadosExportToken: '',
+    enabled: false
+  })
 
-  await t.test('mantiene captura apagada y exportaciones cerradas si falta configuración', async () => {
+  await t.test('mantiene captura apagada y cierra solo abonados si falta su token dedicado', async () => {
     const disabledSubmit = await postJson(backend.baseUrl, '/api/abonados-lmp-submit', {})
     assert.equal(disabledSubmit.status, 503)
 
-    for (const pathname of [
-      '/api/submissions.csv',
-      '/api/leads-submissions.csv',
-      '/api/abonados-lmp-submissions.csv'
-    ]) {
+    for (const pathname of ['/api/submissions.csv', '/api/leads-submissions.csv']) {
       const response = await fetch(`${backend.baseUrl}${pathname}`, {
-        headers: { Authorization: 'Bearer cualquier-token' }
+        headers: { Authorization: 'Bearer test-export-token' }
       })
-      assert.equal(response.status, 503, pathname)
+      assert.equal(response.status, 200, pathname)
     }
+
+    const response = await fetch(`${backend.baseUrl}/api/abonados-lmp-submissions.csv`, {
+      headers: { Authorization: 'Bearer test-export-token' }
+    })
+    assert.equal(response.status, 503)
+    assert.equal(response.headers.get('cache-control'), 'private, no-store, max-age=0')
   })
 })

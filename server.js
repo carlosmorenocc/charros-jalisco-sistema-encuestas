@@ -29,6 +29,7 @@ const allowedOrigins = (process.env.ALLOWED_ORIGINS || '').split(',').map((v) =>
 const publicFormsEnabled = process.env.PUBLIC_FORMS_ENABLED === 'true'
 const subscriberFormEnabled = process.env.SUBSCRIBER_FORM_ENABLED === 'true'
 const csvExportToken = process.env.CSV_EXPORT_TOKEN || ''
+const abonadosCsvExportToken = process.env.ABONADOS_CSV_EXPORT_TOKEN || ''
 
 const SUBSCRIBER_CAMPAIGN_NAME = 'Abonados LMP 2026-2027'
 const SUBSCRIBER_SOURCE = 'abonados-lmp-26-27'
@@ -534,32 +535,37 @@ function secureTokenEquals(received, expected) {
   return timingSafeEqual(receivedBuffer, expectedBuffer)
 }
 
-function requireCsvExportToken(req, res, next) {
-  res.setHeader('Cache-Control', 'private, no-store, max-age=0')
-  res.setHeader('Pragma', 'no-cache')
-  res.setHeader('X-Content-Type-Options', 'nosniff')
+function requireBearerExportToken(expectedToken) {
+  return (req, res, next) => {
+    res.setHeader('Cache-Control', 'private, no-store, max-age=0')
+    res.setHeader('Pragma', 'no-cache')
+    res.setHeader('X-Content-Type-Options', 'nosniff')
 
-  if (!csvExportToken) {
-    return res.status(503).json({
-      ok: false,
-      error: 'CSV export is not configured'
-    })
+    if (!expectedToken) {
+      return res.status(503).json({
+        ok: false,
+        error: 'CSV export is not configured'
+      })
+    }
+
+    const authorization = req.get('authorization') || ''
+    const bearerMatch = authorization.match(/^Bearer\s+([^\s]+)$/i)
+    const receivedToken = bearerMatch?.[1] || ''
+
+    if (!receivedToken || !secureTokenEquals(receivedToken, expectedToken)) {
+      res.setHeader('WWW-Authenticate', 'Bearer')
+      return res.status(401).json({
+        ok: false,
+        error: 'Unauthorized CSV export'
+      })
+    }
+
+    return next()
   }
-
-  const authorization = req.get('authorization') || ''
-  const bearerMatch = authorization.match(/^Bearer\s+([^\s]+)$/i)
-  const receivedToken = bearerMatch?.[1] || ''
-
-  if (!receivedToken || !secureTokenEquals(receivedToken, csvExportToken)) {
-    res.setHeader('WWW-Authenticate', 'Bearer')
-    return res.status(401).json({
-      ok: false,
-      error: 'Unauthorized CSV export'
-    })
-  }
-
-  return next()
 }
+
+const requireCsvExportToken = requireBearerExportToken(csvExportToken)
+const requireAbonadosCsvExportToken = requireBearerExportToken(abonadosCsvExportToken)
 
 app.get('/healthz', (_req, res) => {
   res.json({
@@ -733,7 +739,7 @@ app.get('/api/leads-submissions.csv', requireCsvExportToken, async (_req, res) =
   }
 })
 
-app.get('/api/abonados-lmp-submissions.csv', requireCsvExportToken, async (_req, res) => {
+app.get('/api/abonados-lmp-submissions.csv', requireAbonadosCsvExportToken, async (_req, res) => {
   try {
     await flushSubscriberWrites()
     ensureSubscriberDataFile()

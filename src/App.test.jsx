@@ -10,6 +10,10 @@ vi.mock('./features/abonados/AbonadosMultiStepForm', () => ({
   default: () => <section>Formulario de abonados cargado</section>
 }))
 
+vi.mock('./features/abonados/admin/AbonadosCsvDownloadPage', () => ({
+  default: () => <main>Exportación privada de abonados cargada</main>
+}))
+
 describe('App routing', () => {
   const originalPath = window.location.pathname
 
@@ -61,6 +65,23 @@ describe('App routing', () => {
       expect(
         screen.queryByRole('heading', { name: 'Registro temporalmente no disponible' })
       ).not.toBeInTheDocument()
+    }
+  )
+
+  it.each(['/admin/abonados', '/admin/abonados/'])(
+    'carga la exportación privada antes del bloqueo de formularios en %s',
+    (pathname) => {
+      vi.stubEnv('VITE_PUBLIC_FORMS_ENABLED', 'false')
+      vi.stubEnv('VITE_SUBSCRIBER_FORM_ENABLED', 'false')
+      window.history.pushState({}, '', pathname)
+
+      render(<App />)
+
+      expect(screen.getByText('Exportación privada de abonados cargada')).toBeInTheDocument()
+      expect(
+        screen.queryByRole('heading', { name: 'Registro temporalmente no disponible' })
+      ).not.toBeInTheDocument()
+      expect(screen.queryByText('Aviso de privacidad:')).not.toBeInTheDocument()
     }
   )
 })
