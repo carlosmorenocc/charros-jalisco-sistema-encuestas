@@ -21,33 +21,46 @@ describe('resolveRegistrosCsvEndpoint', () => {
 
   it('prioriza el endpoint de exportación configurado', () => {
     vi.stubEnv(
-      'VITE_REGISTROS_EXPORT_ENDPOINT',
-      'https://api.example.com/api/submissions.csv'
+      'VITE_REGISTRO_CORTO_EXPORT_ENDPOINT',
+      'https://api.example.com/api/leads-submissions.csv'
     )
     vi.stubEnv('VITE_SUBMISSION_ENDPOINT', 'https://otra-api.example.com/api/submit')
 
     expect(resolveRegistrosCsvEndpoint()).toBe(
-      'https://api.example.com/api/submissions.csv'
+      'https://api.example.com/api/leads-submissions.csv'
     )
   })
 
-  it('deriva la descarga desde el endpoint de captura principal', () => {
-    vi.stubEnv('VITE_REGISTROS_EXPORT_ENDPOINT', '')
+  it('deriva la descarga desde el endpoint de captura del registro corto', () => {
+    vi.stubEnv('VITE_REGISTRO_CORTO_EXPORT_ENDPOINT', '')
+    vi.stubEnv('VITE_LEADS_SUBMISSION_ENDPOINT', 'https://api.example.com/api/lead-submit')
+
+    expect(resolveRegistrosCsvEndpoint()).toBe(
+      'https://api.example.com/api/leads-submissions.csv'
+    )
+  })
+
+  it('deriva la descarga desde el endpoint de captura principal como respaldo', () => {
+    vi.stubEnv('VITE_REGISTRO_CORTO_EXPORT_ENDPOINT', '')
+    vi.stubEnv('VITE_LEADS_SUBMISSION_ENDPOINT', '')
     vi.stubEnv('VITE_SUBMISSION_ENDPOINT', 'https://api.example.com/api/submit')
 
     expect(resolveRegistrosCsvEndpoint()).toBe(
-      'https://api.example.com/api/submissions.csv'
+      'https://api.example.com/api/leads-submissions.csv'
     )
   })
 })
 
 describe('downloadRegistrosCsv', () => {
-  const endpoint = 'https://api.example.com/api/submissions.csv'
+  const endpoint = 'https://api.example.com/api/leads-submissions.csv'
 
   it('envía el token solo en Authorization y descarga el CSV con fecha', async () => {
-    const csvBlob = new Blob(['nombre,email\nAna,ana@example.com\n'], { type: 'text/csv' })
+    const csvText = (
+      'nombre,email,frecuenciaVisita,aceptaRegistroDiario\n' +
+      'Ana,ana@example.com,Primera vez,true\n'
+    )
     const fetchImpl = vi.fn().mockResolvedValue(
-      new Response(csvBlob, {
+      new Response(csvText, {
         status: 200,
         headers: { 'Content-Type': 'text/csv; charset=utf-8' }
       })
@@ -92,7 +105,7 @@ describe('downloadRegistrosCsv', () => {
       referrerPolicy: 'no-referrer'
     })
     expect(fetchImpl.mock.calls[0][0]).not.toContain('token-super-secreto')
-    expect(filename).toBe('registros-oficiales-charros-2026-08-02.csv')
+    expect(filename).toBe('registros-cortos-oficiales-charros-2026-08-02.csv')
     expect(link.download).toBe(filename)
     expect(link.click).toHaveBeenCalledOnce()
     expect(link.remove).toHaveBeenCalledOnce()
@@ -123,7 +136,7 @@ describe('downloadRegistrosCsv', () => {
     await expect(
       downloadRegistrosCsv({ token: 'incorrecto', endpoint, fetchImpl, urlApi })
     ).rejects.toMatchObject({
-      name: 'RegistrosCsvDownloadError',
+      name: 'ProtectedCsvDownloadError',
       code,
       status
     })
@@ -141,6 +154,19 @@ describe('downloadRegistrosCsv', () => {
     await expect(
       downloadRegistrosCsv({ token: 'secreto', endpoint, fetchImpl })
     ).rejects.toMatchObject({ code: 'invalid-response' })
+  })
+
+  it('rechaza un CSV de la encuesta larga aunque responda como text/csv', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      new Response('nombre,email,myCashlessId,calificacionExperiencia\nAna,a@example.com,1,10\n', {
+        status: 200,
+        headers: { 'Content-Type': 'text/csv; charset=utf-8' }
+      })
+    )
+
+    await expect(
+      downloadRegistrosCsv({ token: 'secreto', endpoint, fetchImpl })
+    ).rejects.toMatchObject({ code: 'invalid-schema' })
   })
 
   it('no acepta solicitudes sin token o sin endpoint configurado', async () => {
@@ -170,7 +196,7 @@ describe('downloadRegistrosCsv', () => {
 describe('createRegistrosCsvFilename', () => {
   it('usa la fecha local de México aunque UTC ya esté en el día siguiente', () => {
     expect(createRegistrosCsvFilename(new Date('2026-08-02T04:30:00.000Z'))).toBe(
-      'registros-oficiales-charros-2026-08-01.csv'
+      'registros-cortos-oficiales-charros-2026-08-01.csv'
     )
   })
 })

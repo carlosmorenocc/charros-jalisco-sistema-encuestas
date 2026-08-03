@@ -64,7 +64,8 @@ Y para abonados:
 
 Portales administrativos (las claves nunca se guardan en el navegador):
 
-- Registro Oficial: `http://localhost:5173/admin/registros` con `CSV_EXPORT_TOKEN`.
+- Registro Oficial corto: `http://localhost:5173/admin/registros` con `CSV_EXPORT_TOKEN`.
+- Encuesta larga: `http://localhost:5173/admin/encuesta-larga` con `CSV_EXPORT_TOKEN`.
 - Abonados: `http://localhost:5173/admin/abonados` con `ABONADOS_CSV_EXPORT_TOKEN`.
 
 ### 3. Configura Power Automate (opcional)
@@ -244,11 +245,12 @@ VITE_SUBSCRIBER_FORM_ENABLED=true
 VITE_ABONADOS_SUBMISSION_ENDPOINT=https://TU-API/api/abonados-lmp-submit
 ```
 
-Para habilitar el portal de descarga del Registro Oficial, configura únicamente la URL
-pública del endpoint; la clave privada permanece exclusivamente en Render:
+Para habilitar los portales separados del registro corto y la encuesta larga, configura
+únicamente las URLs públicas; la clave privada permanece exclusivamente en Render:
 
 ```text
-VITE_REGISTROS_EXPORT_ENDPOINT=https://TU-API/api/submissions.csv
+VITE_REGISTRO_CORTO_EXPORT_ENDPOINT=https://TU-API/api/leads-submissions.csv
+VITE_ENCUESTA_LARGA_EXPORT_ENDPOINT=https://TU-API/api/submissions.csv
 ```
 
 Y en el backend de Render:

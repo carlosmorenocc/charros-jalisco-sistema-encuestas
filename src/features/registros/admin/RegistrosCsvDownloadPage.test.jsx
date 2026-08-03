@@ -9,8 +9,8 @@ describe('RegistrosCsvDownloadPage', () => {
 
   beforeEach(() => {
     vi.stubEnv(
-      'VITE_REGISTROS_EXPORT_ENDPOINT',
-      'https://api.example.com/api/submissions.csv'
+      'VITE_REGISTRO_CORTO_EXPORT_ENDPOINT',
+      'https://api.example.com/api/leads-submissions.csv'
     )
     createObjectUrlSpy = vi.fn().mockReturnValue('blob:registros-csv')
     revokeObjectUrlSpy = vi.fn()
@@ -30,7 +30,10 @@ describe('RegistrosCsvDownloadPage', () => {
   it('solicita CSV_EXPORT_TOKEN como contraseña y marca la ruta para no indexarse', () => {
     render(<RegistrosCsvDownloadPage />)
 
-    expect(screen.getByRole('heading', { name: 'Registro Oficial' })).toBeInTheDocument()
+    expect(
+      screen.getByRole('heading', { name: 'Registro Oficial — registro corto' })
+    ).toBeInTheDocument()
+    expect(screen.getByText(/registro corto de estadio/i)).toBeInTheDocument()
     const input = screen.getByLabelText('Clave de descarga')
     expect(input).toHaveAttribute('type', 'password')
     expect(input).not.toHaveAttribute('name')
@@ -48,7 +51,7 @@ describe('RegistrosCsvDownloadPage', () => {
     vi.stubGlobal('fetch', fetchMock)
     render(<RegistrosCsvDownloadPage />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Descargar Registro Oficial CSV' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Descargar registro corto CSV' }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Ingresa la clave de descarga.')
     expect(fetchMock).not.toHaveBeenCalled()
@@ -56,7 +59,7 @@ describe('RegistrosCsvDownloadPage', () => {
 
   it('descarga el archivo sin persistir la clave y la limpia después del éxito', async () => {
     const fetchMock = vi.fn().mockResolvedValue(
-      new Response('nombre,email\nAna,ana@example.com\n', {
+      new Response('nombre,email,frecuenciaVisita,aceptaRegistroDiario\nAna,ana@example.com,Primera vez,true\n', {
         status: 200,
         headers: { 'Content-Type': 'text/csv; charset=utf-8' }
       })
@@ -67,11 +70,14 @@ describe('RegistrosCsvDownloadPage', () => {
 
     const input = screen.getByLabelText('Clave de descarga')
     fireEvent.change(input, { target: { value: 'token-privado' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Descargar Registro Oficial CSV' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Descargar registro corto CSV' }))
 
     expect(await screen.findByText(/Descarga completada:/)).toBeInTheDocument()
     expect(input).toHaveValue('')
     expect(fetchMock.mock.calls[0][0]).not.toContain('token-privado')
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      'https://api.example.com/api/leads-submissions.csv'
+    )
     expect(fetchMock.mock.calls[0][1].headers.Authorization).toBe('Bearer token-privado')
     expect(storageSpy).not.toHaveBeenCalled()
     expect(anchorClickSpy).toHaveBeenCalledOnce()
@@ -93,12 +99,12 @@ describe('RegistrosCsvDownloadPage', () => {
 
     const input = screen.getByLabelText('Clave de descarga')
     fireEvent.change(input, { target: { value: 'token-incorrecto' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Descargar Registro Oficial CSV' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Descargar registro corto CSV' }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent('La clave no es válida.')
     expect(input).toHaveValue('')
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: 'Descargar Registro Oficial CSV' })).toBeEnabled()
+      expect(screen.getByRole('button', { name: 'Descargar registro corto CSV' })).toBeEnabled()
     })
   })
 })

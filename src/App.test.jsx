@@ -15,7 +15,11 @@ vi.mock('./features/abonados/admin/AbonadosCsvDownloadPage', () => ({
 }))
 
 vi.mock('./features/registros/admin/RegistrosCsvDownloadPage', () => ({
-  default: () => <main>Exportación privada del Registro Oficial cargada</main>
+  default: () => <main>Exportación privada del registro corto cargada</main>
+}))
+
+vi.mock('./features/registros/admin/EncuestaLargaCsvDownloadPage', () => ({
+  default: () => <main>Exportación privada de la encuesta larga cargada</main>
 }))
 
 describe('App routing', () => {
@@ -99,7 +103,25 @@ describe('App routing', () => {
 
       render(<App />)
 
-      expect(screen.getByText('Exportación privada del Registro Oficial cargada')).toBeInTheDocument()
+      expect(screen.getByText('Exportación privada del registro corto cargada')).toBeInTheDocument()
+      expect(
+        screen.queryByRole('heading', { name: 'Registro temporalmente no disponible' })
+      ).not.toBeInTheDocument()
+      expect(screen.queryByText('Aviso de privacidad:')).not.toBeInTheDocument()
+    }
+  )
+
+  it.each(['/admin/encuesta-larga', '/admin/encuesta-larga/'])(
+    'preserva la exportación separada de la encuesta larga en %s',
+    (pathname) => {
+      vi.stubEnv('VITE_PUBLIC_FORMS_ENABLED', 'false')
+      vi.stubEnv('VITE_SUBSCRIBER_FORM_ENABLED', 'false')
+      window.history.pushState({}, '', pathname)
+
+      render(<App />)
+
+      expect(screen.getByText('Exportación privada de la encuesta larga cargada')).toBeInTheDocument()
+      expect(screen.queryByText('Exportación privada del registro corto cargada')).not.toBeInTheDocument()
       expect(
         screen.queryByRole('heading', { name: 'Registro temporalmente no disponible' })
       ).not.toBeInTheDocument()
