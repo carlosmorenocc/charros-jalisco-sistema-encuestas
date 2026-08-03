@@ -5,6 +5,7 @@ import LeadMultiStepForm from './components/LeadMultiStepForm'
 import FormsPaused from './components/FormsPaused'
 import AbonadosMultiStepForm from './features/abonados/AbonadosMultiStepForm'
 import AbonadosCsvDownloadPage from './features/abonados/admin/AbonadosCsvDownloadPage'
+import RegistrosCsvDownloadPage from './features/registros/admin/RegistrosCsvDownloadPage'
 
 const SorteosApp = lazy(() => import('./features/sorteos/SorteosApp'))
 
@@ -15,6 +16,7 @@ export default function App() {
   const isAbonadosMode = pathname.startsWith('/abonados')
   const isLeadsMode = pathname.startsWith('/leads')
   const isAbonadosAdminMode = normalizedPathname === '/admin/abonados'
+  const isRegistrosAdminMode = normalizedPathname === '/admin/registros'
 
   if (isSorteosMode) {
     return (
@@ -42,6 +44,10 @@ export default function App() {
 
   if (isAbonadosAdminMode) {
     return <AbonadosCsvDownloadPage />
+  }
+
+  if (isRegistrosAdminMode) {
+    return <RegistrosCsvDownloadPage />
   }
 
   const publicFormsEnabled = import.meta.env.VITE_PUBLIC_FORMS_ENABLED === 'true'
