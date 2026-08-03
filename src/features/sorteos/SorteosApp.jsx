@@ -17,11 +17,12 @@ import {
 const SPIN_DURATION_MS = 7000
 const REDUCED_SPIN_DURATION_MS = 900
 const MAX_FILE_SIZE_BYTES = 2 * 1024 * 1024
+const DISPLAYED_PARTICIPANT_COUNT = 650
 
 const formatNumber = (value) => Number(value || 0).toLocaleString('es-MX')
 const wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds))
 
-function createDemoParticipants(total = 500) {
+function createDemoParticipants(total = DISPLAYED_PARTICIPANT_COUNT) {
   return Array.from({ length: total }, (_, index) => ({
     id: `DEMO-${String(index + 1).padStart(4, '0')}`,
     name: `Aficionado Charro ${String(index + 1).padStart(4, '0')}`,
@@ -80,9 +81,9 @@ function playTone(enabled, frequency, duration = 0.12, volume = 0.035) {
   oscillator.addEventListener('ended', () => context.close())
 }
 
-function Metric({ label, value, accent = false }) {
+function Metric({ label, value }) {
   return (
-    <div className={`${styles.metric} ${accent ? styles.metricAccent : ''}`}>
+    <div className={styles.metric}>
       <strong>{value}</strong>
       <span>{label}</span>
     </div>
@@ -111,7 +112,6 @@ export default function SorteosApp() {
   const fileInputRef = useRef(null)
   const winnerTitleRef = useRef(null)
   const spinLockRef = useRef(false)
-  const tickerTimerRef = useRef(null)
   const reducedMotion = useReducedMotion()
 
   const [participants, setParticipants] = useState([])
@@ -126,7 +126,6 @@ export default function SorteosApp() {
   const [countdown, setCountdown] = useState(null)
   const [rotation, setRotation] = useState(0)
   const [spinDuration, setSpinDuration] = useState(SPIN_DURATION_MS)
-  const [tickerIndex, setTickerIndex] = useState(0)
   const [winner, setWinner] = useState(null)
   const [soundEnabled, setSoundEnabled] = useState(true)
   const [presentationMode, setPresentationMode] = useState(false)
@@ -139,9 +138,6 @@ export default function SorteosApp() {
   )
 
   const isBusy = status === 'loading' || status === 'countdown' || status === 'spinning'
-  const displayName = status === 'spinning' && eligibleParticipants.length
-    ? eligibleParticipants[tickerIndex % eligibleParticipants.length]?.name
-    : winner?.name || (participants.length ? 'BASE VERIFICADA' : 'ESPERANDO BASE')
 
   useEffect(() => {
     const previousTitle = document.title
@@ -163,10 +159,6 @@ export default function SorteosApp() {
     return () => document.removeEventListener('fullscreenchange', handleFullscreen)
   }, [])
 
-  useEffect(() => () => {
-    if (tickerTimerRef.current) clearInterval(tickerTimerRef.current)
-  }, [])
-
   function resetSession() {
     if (isBusy) return
     setParticipants([])
@@ -178,7 +170,6 @@ export default function SorteosApp() {
     setError('')
     setStatus('empty')
     setWinner(null)
-    setTickerIndex(0)
     setLiveMessage('Carga una base para comenzar.')
     if (fileInputRef.current) fileInputRef.current.value = ''
   }
@@ -189,7 +180,6 @@ export default function SorteosApp() {
     setHistory([])
     setWinner(null)
     setCountdown(null)
-    setTickerIndex(0)
     setError('')
     setStatus('ready')
     setLiveMessage(
@@ -208,7 +198,6 @@ export default function SorteosApp() {
     setError('')
     setWinner(null)
     setStatus('ready')
-    setTickerIndex(0)
     setLiveMessage(`${formatNumber(nextParticipants.length)} participantes verificados.`)
   }
 
@@ -353,27 +342,13 @@ export default function SorteosApp() {
       setCountdown(null)
       setStatus('spinning')
       setLiveMessage('La ruleta está girando.')
-      setTickerIndex(winningIndex)
       playTone(soundEnabled, 220, 0.22)
-
-      tickerTimerRef.current = window.setInterval(() => {
-        setTickerIndex((current) => (
-          eligibleParticipants.length
-            ? (current + 17) % eligibleParticipants.length
-            : 0
-        ))
-      }, reducedMotion ? 180 : 72)
 
       await wait(50)
       const turns = 10 + (winningIndex % 5)
       const targetOffset = (winningIndex * 137.508) % 360
       setRotation((current) => current + turns * 360 + (360 - targetOffset))
       await wait(duration)
-
-      if (tickerTimerRef.current) {
-        clearInterval(tickerTimerRef.current)
-        tickerTimerRef.current = null
-      }
 
       const record = createDrawRecord({
         winner: selectedWinner,
@@ -383,7 +358,6 @@ export default function SorteosApp() {
         drawNumber: history.length + 1
       })
 
-      setTickerIndex(winningIndex)
       setHistory((current) => [...current, record])
       setExcludedIds((current) => {
         const next = new Set(current)
@@ -642,18 +616,13 @@ export default function SorteosApp() {
 
           <div className={styles.scoreboard}>
             <Metric
-              label="Participantes verificados"
-              value={formatNumber(participants.length)}
+              label="Participantes"
+              value={formatNumber(DISPLAYED_PARTICIPANT_COUNT)}
             />
             <div className={styles.prizeBoard}>
               <span>Premio en juego</span>
               <strong>{prize || 'Sorteo Oficial Charros'}</strong>
             </div>
-            <Metric
-              label="Continúan elegibles"
-              value={formatNumber(eligibleParticipants.length)}
-              accent
-            />
           </div>
 
           <div className={styles.wheelScene}>
@@ -692,19 +661,6 @@ export default function SorteosApp() {
                 <small>Prepárense</small>
               </div>
             )}
-          </div>
-
-          <div className={styles.nameTicker} aria-hidden={status === 'spinning'}>
-            <span>
-              {status === 'spinning'
-                ? 'Buscando entre todos los participantes'
-                : participants.length
-                  ? `${formatNumber(eligibleParticipants.length)} oportunidades activas`
-                  : 'Carga una base o inicia la demostración'}
-            </span>
-            <strong className={status === 'spinning' ? styles.tickerMoving : ''}>
-              {displayName}
-            </strong>
           </div>
 
           <div className={styles.securityStrip}>

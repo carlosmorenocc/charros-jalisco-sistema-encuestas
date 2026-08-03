@@ -1,5 +1,5 @@
 import React from 'react'
-import { act, fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import SorteosApp from './SorteosApp'
 
 vi.mock('./lib/secureRandom', () => ({
@@ -53,14 +53,21 @@ describe('SorteosApp: flujo de sorteo y restablecimiento', () => {
 
     const { container } = render(<SorteosApp />)
     const fileInput = container.querySelector('input[type="file"]')
+    const stage = screen.getByRole('region', { name: 'Escenario del sorteo' })
+
+    expect(within(stage).getByText('Participantes').previousElementSibling)
+      .toHaveTextContent('650')
+    expect(within(stage).queryByText('Participantes verificados')).not.toBeInTheDocument()
+    expect(within(stage).queryByText('Continúan elegibles')).not.toBeInTheDocument()
+    expect(within(stage).queryByText('ESPERANDO BASE')).not.toBeInTheDocument()
 
     fireEvent.change(fileInput, { target: { files: [file] } })
 
     expect(await screen.findByText('participantes-prueba.csv')).toBeInTheDocument()
-    expect(screen.getByText('Participantes verificados').previousElementSibling)
-      .toHaveTextContent('3')
-    expect(screen.getByText('Continúan elegibles').previousElementSibling)
-      .toHaveTextContent('3')
+    expect(within(stage).getByText('Participantes').previousElementSibling)
+      .toHaveTextContent('650')
+    expect(within(stage).queryByText('BASE VERIFICADA')).not.toBeInTheDocument()
+    expect(within(stage).queryByText('Ana Gómez')).not.toBeInTheDocument()
 
     vi.useFakeTimers()
     fireEvent.click(screen.getAllByRole('button', { name: 'Iniciar sorteo' })[0])
@@ -77,17 +84,15 @@ describe('SorteosApp: flujo de sorteo y restablecimiento', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Continuar con el siguiente' }))
 
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
-    expect(screen.getByText('Continúan elegibles').previousElementSibling)
-      .toHaveTextContent('2')
+    expect(within(stage).getByText('Participantes').previousElementSibling)
+      .toHaveTextContent('650')
     expect(screen.getByRole('heading', { name: 'Ganadores' })).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Restablecer participantes' }))
 
-    expect(screen.getByText('Continúan elegibles').previousElementSibling)
-      .toHaveTextContent('3')
+    expect(within(stage).getByText('Participantes').previousElementSibling)
+      .toHaveTextContent('650')
     expect(screen.queryByRole('heading', { name: 'Ganadores' })).not.toBeInTheDocument()
     expect(screen.getByText('participantes-prueba.csv')).toBeInTheDocument()
-    expect(screen.getByText('Participantes verificados').previousElementSibling)
-      .toHaveTextContent('3')
   })
 })

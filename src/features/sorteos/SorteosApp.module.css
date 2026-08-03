@@ -658,7 +658,7 @@
   position: relative;
   z-index: 3;
   display: grid;
-  grid-template-columns: minmax(135px, 0.75fr) minmax(220px, 1.6fr) minmax(135px, 0.75fr);
+  grid-template-columns: minmax(150px, 0.75fr) minmax(220px, 1.6fr);
   align-items: stretch;
   width: min(900px, 100%);
   overflow: hidden;
@@ -702,12 +702,7 @@
   text-transform: uppercase;
 }
 
-.metricAccent strong {
-  color: var(--raffle-gold-light);
-}
-
 .prizeBoard {
-  border-right: 1px solid rgba(255, 255, 255, 0.1);
   border-left: 1px solid rgba(255, 255, 255, 0.1);
   background: linear-gradient(90deg, rgba(11, 74, 166, 0.22), rgba(224, 177, 48, 0.08), rgba(11, 74, 166, 0.22));
 }
@@ -927,50 +922,6 @@
   font-weight: 900;
   letter-spacing: 0.16em;
   text-transform: uppercase;
-}
-
-.nameTicker {
-  position: relative;
-  z-index: 4;
-  width: min(780px, 100%);
-  overflow: hidden;
-  padding: 10px 18px 12px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 15px;
-  background:
-    linear-gradient(90deg, rgba(42, 132, 219, 0.2), rgba(6, 47, 99, 0.92), rgba(42, 132, 219, 0.2));
-  box-shadow: 0 13px 28px rgba(0, 0, 0, 0.22);
-  text-align: center;
-}
-
-.nameTicker > span,
-.nameTicker > strong {
-  display: block;
-}
-
-.nameTicker > span {
-  color: rgba(255, 255, 255, 0.47);
-  font-size: 0.58rem;
-  font-weight: 850;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-}
-
-.nameTicker > strong {
-  overflow: hidden;
-  margin-top: 2px;
-  color: var(--raffle-white);
-  font-size: clamp(1rem, 2vw, 1.55rem);
-  font-weight: 950;
-  letter-spacing: -0.02em;
-  line-height: 1.2;
-  text-overflow: ellipsis;
-  text-transform: uppercase;
-  white-space: nowrap;
-}
-
-.tickerMoving {
-  animation: tickerFlash 150ms linear infinite;
 }
 
 .securityStrip {
@@ -1270,13 +1221,6 @@
   }
 }
 
-@keyframes tickerFlash {
-  50% {
-    opacity: 0.56;
-    transform: translateY(1px);
-  }
-}
-
 @keyframes winnerReveal {
   from {
     opacity: 0;
@@ -1420,7 +1364,7 @@
   }
 
   .scoreboard {
-    grid-template-columns: 0.78fr 1.5fr 0.78fr;
+    grid-template-columns: 0.78fr 1.5fr;
   }
 
   .metric,
@@ -1446,11 +1390,6 @@
   .wheelScene {
     width: min(48vh, 480px, 89vw);
     margin-top: 30px;
-  }
-
-  .nameTicker {
-    padding-right: 10px;
-    padding-left: 10px;
   }
 
   .winnerOverlay {
