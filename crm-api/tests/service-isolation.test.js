@@ -4,6 +4,7 @@ import { CrmService } from '../src/services/CrmService.js';
 
 const EXECUTIVE_A = { id: 'executive-a', role: 'executive', permissionGrants: [] };
 const EXECUTIVE_B = { id: 'executive-b', role: 'executive', permissionGrants: [] };
+const ADMIN = { id: 'admin', role: 'admin', permissionGrants: [] };
 
 test('Ejecutivo no edita contacto de otro ejecutivo aunque el repositorio lo devuelva', async () => {
   const repository = {
@@ -38,4 +39,27 @@ test('Ejecutivo no actualiza tarea asignada a otro ejecutivo', async () => {
     service.updateTask(EXECUTIVE_A, 'task-b', { status: 'completed' }, {}, 1),
     /Tarea no encontrado|Solo puedes actualizar/
   );
+});
+
+test('alta manual es exclusivamente Admin y conserva un solo comando de repositorio', async () => {
+  let calls = 0;
+  const repository = {
+    async createManualRegistration(data, actor, context, idempotency) {
+      calls += 1;
+      return { data, actor, context, idempotency };
+    }
+  };
+  const service = new CrmService(repository);
+  await assert.rejects(
+    service.createManualRegistration(
+      { id: 'supervisor', role: 'supervisor', permissionGrants: [] },
+      { nextTask: null }, {}, {}
+    ),
+    /Solo el Administrador/
+  );
+  const result = await service.createManualRegistration(
+    ADMIN, { nextTask: null }, { requestId: 'request' }, { idempotencyKey: 'key' }
+  );
+  assert.equal(result.actor, ADMIN);
+  assert.equal(calls, 1);
 });

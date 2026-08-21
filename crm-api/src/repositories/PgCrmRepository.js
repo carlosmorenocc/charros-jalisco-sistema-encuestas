@@ -1,5 +1,5 @@
 import { withTransaction } from '../db/pool.js';
-import { conflict, notFound } from '../lib/errors.js';
+import { conflict, duplicateContact, notFound } from '../lib/errors.js';
 
 function contactRow(row) {
   if (!row) return null;
@@ -18,6 +18,7 @@ function contactRow(row) {
     executiveId: row.executive_id,
     executiveName: row.executive_name,
     source: row.source,
+    acquisitionSource: row.acquisition_source,
     consentStatus: row.consent_status,
     consentAt: row.consent_at,
     privacyNoticeVersion: row.privacy_notice_version,
@@ -26,7 +27,11 @@ function contactRow(row) {
     lastHumanContactChannel: row.last_human_contact_channel,
     nextFollowUpAt: row.next_follow_up_at,
     seatCount: Number(row.seat_count ?? 0),
+    managedSeatCount: Number(row.managed_seat_count ?? row.seat_count ?? 0),
     seasonsCount: Number(row.seasons_count ?? 0),
+    declaredTenureSeasons: row.declared_tenure_seasons == null
+      ? null
+      : Number(row.declared_tenure_seasons),
     nextTaskAt: row.next_task_at,
     overdueTasks: Number(row.overdue_tasks ?? 0),
     createdAt: row.created_at,
@@ -82,6 +87,24 @@ function taskRow(row) {
     completedAt: row.completed_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    rowVersion: Number(row.row_version)
+  };
+}
+
+function membershipRow(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    contactId: row.contact_id,
+    seasonCode: row.season_code,
+    membershipStatus: row.membership_status,
+    seatCount: Number(row.seat_count),
+    seatIdentifier: row.seat_identifier,
+    zone: row.zone,
+    product: row.product,
+    startDate: row.start_date,
+    renewalDate: row.renewal_date,
+    units: row.units ?? [],
     rowVersion: Number(row.row_version)
   };
 }
@@ -516,7 +539,7 @@ export class PgCrmRepository {
     const sort = CONTACT_SORT[filters.sort] ?? CONTACT_SORT.updatedAt;
     const order = filters.order === 'asc' ? 'ASC' : 'DESC';
     const result = await this.pool.query(
-      `SELECT c.*, u.display_name AS executive_name, s.seat_count, s.seasons_count,
+      `SELECT c.*, u.display_name AS executive_name, s.seat_count, s.managed_seat_count, s.seasons_count,
               s.next_task_at, s.overdue_tasks, s.last_human_contact_channel,
               count(*) OVER()::integer AS total_count
        FROM contacts c
@@ -542,7 +565,7 @@ export class PgCrmRepository {
       where.push(`c.executive_id = $${params.length}`);
     }
     const result = await client.query(
-      `SELECT c.*, u.display_name AS executive_name, s.seat_count, s.seasons_count,
+      `SELECT c.*, u.display_name AS executive_name, s.seat_count, s.managed_seat_count, s.seasons_count,
               s.next_task_at, s.overdue_tasks, s.last_human_contact_channel
        FROM contacts c
        LEFT JOIN app_users u ON u.id = c.executive_id
@@ -553,19 +576,59 @@ export class PgCrmRepository {
     return contactRow(result.rows[0]);
   }
 
+  async getMembership(id, { client = this.pool } = {}) {
+    if (!id) return null;
+    const result = await client.query(
+      `SELECT m.*,
+        COALESCE(jsonb_agg(jsonb_build_object(
+          'id',u.id,'unitNumber',u.unit_number,'seatIdentifier',u.seat_identifier,
+          'zone',u.zone,'product',u.product,'jerseySize',u.jersey_size
+        ) ORDER BY u.unit_number) FILTER (WHERE u.id IS NOT NULL), '[]'::jsonb) AS units
+       FROM memberships m
+       LEFT JOIN membership_units u ON u.membership_id=m.id AND u.deleted_at IS NULL
+       WHERE m.id=$1 AND m.deleted_at IS NULL GROUP BY m.id`,
+      [id]
+    );
+    return membershipRow(result.rows[0]);
+  }
+
+  async getInteraction(id, { client = this.pool } = {}) {
+    const result = await client.query(
+      `SELECT i.*,u.display_name AS actor_name,concat(c.first_name,' ',c.last_name) AS contact_name
+       FROM interactions i JOIN app_users u ON u.id=i.actor_id JOIN contacts c ON c.id=i.contact_id
+       WHERE i.id=$1 AND i.voided_at IS NULL`,
+      [id]
+    );
+    return result.rows[0]
+      ? { ...interactionRow(result.rows[0]), contactName: result.rows[0].contact_name }
+      : null;
+  }
+
+  async hydrateManualRegistration(record, actor, client) {
+    const contact = await this.getContact(record.contact_id, actor, { client });
+    if (!contact) throw conflict('El resultado idempotente ya no está disponible como contacto activo.');
+    return {
+      contact,
+      membership: await this.getMembership(record.membership_id, { client }),
+      initialInteraction: await this.getInteraction(record.interaction_id, { client }),
+      nextTask: record.task_id ? await this.getTask(record.task_id, actor, { client }) : null
+    };
+  }
+
   async createContact(data, actor, context) {
     return withTransaction(this.pool, async (client) => {
       if (data.executiveId) await this.assertActiveUser(client, data.executiveId, ['executive']);
       const result = await client.query(
         `INSERT INTO contacts
           (first_name,last_name,email,phone,municipality,subscriber_status,commercial_stage,
-           preferred_channel,executive_id,source,consent_status,consent_at,privacy_notice_version,
+           preferred_channel,executive_id,source,acquisition_source,declared_tenure_seasons,consent_status,consent_at,privacy_notice_version,
            summary_notes,created_by,updated_by)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$15)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$17)
          RETURNING *`,
         [data.firstName, data.lastName, data.email ?? null, data.phone ?? null,
           data.municipality ?? null, data.subscriberStatus, data.commercialStage,
           data.preferredChannel ?? null, data.executiveId ?? null, data.source ?? null,
+          data.acquisitionSource ?? null, data.declaredTenureSeasons ?? null,
           data.consentStatus ?? 'unknown', data.consentAt ?? null,
           data.privacyNoticeVersion ?? null, data.summaryNotes ?? null, actor.id]
       );
@@ -595,6 +658,195 @@ export class PgCrmRepository {
     });
   }
 
+  async createManualRegistration(data, actor, context, { idempotencyKey, requestHash }) {
+    return withTransaction(this.pool, async (client) => {
+      await client.query(
+        'SELECT pg_advisory_xact_lock(hashtextextended($1,0))',
+        [`manual-registration:${idempotencyKey}`]
+      );
+      const prior = await client.query(
+        `SELECT * FROM manual_registration_requests WHERE idempotency_key=$1`,
+        [idempotencyKey]
+      );
+      if (prior.rows[0]) {
+        if (prior.rows[0].request_hash !== requestHash || prior.rows[0].actor_id !== actor.id) {
+          throw conflict('Idempotency-Key ya fue utilizada con una solicitud diferente.');
+        }
+        return {
+          ...(await this.hydrateManualRegistration(prior.rows[0], actor, client)),
+          replayed: true
+        };
+      }
+
+      if (data.contact.executiveId) {
+        await this.assertActiveUser(client, data.contact.executiveId, ['executive']);
+      }
+
+      const identityKeys = [
+        data.contact.email ? `email:${data.contact.email.toLowerCase()}` : null,
+        data.contact.phone ? `phone:${data.contact.phone}` : null
+      ].filter(Boolean).sort();
+      for (const identityKey of identityKeys) {
+        await client.query(
+          'SELECT pg_advisory_xact_lock(hashtextextended($1,0))',
+          [`manual-registration-identity:${identityKey}`]
+        );
+      }
+      const duplicates = await client.query(
+        `SELECT c.id,c.deleted_at FROM contacts c
+         CROSS JOIN LATERAL (
+           SELECT regexp_replace(COALESCE(c.phone,''),'[^0-9]','','g') AS digits
+         ) contact_phone
+         WHERE ($1::text IS NOT NULL AND lower(trim(c.email))=lower(trim($1)))
+            OR ($2::text IS NOT NULL
+              AND CASE
+                WHEN contact_phone.digits ~ '^(52|521)[0-9]{10}$'
+                  THEN right(contact_phone.digits,10)
+                ELSE contact_phone.digits
+              END=$2)
+            OR EXISTS (
+              SELECT 1 FROM contact_aliases a
+              CROSS JOIN LATERAL (
+                SELECT regexp_replace(a.alias_value,'[^0-9]','','g') AS digits
+              ) alias_phone
+              WHERE a.contact_id=c.id AND (
+                ($1::text IS NOT NULL AND a.alias_type='email'
+                  AND lower(trim(a.alias_value))=lower(trim($1)))
+                OR ($2::text IS NOT NULL AND a.alias_type='phone'
+                  AND CASE
+                    WHEN alias_phone.digits ~ '^(52|521)[0-9]{10}$'
+                      THEN right(alias_phone.digits,10)
+                    ELSE alias_phone.digits
+                  END=$2)
+              )
+            )
+         ORDER BY c.id FOR UPDATE OF c`,
+        [data.contact.email ?? null, data.contact.phone ?? null]
+      );
+      if (duplicates.rowCount > 0) {
+        throw duplicateContact(
+          duplicates.rows.map((row) => ({ id: row.id, deleted: Boolean(row.deleted_at) }))
+        );
+      }
+
+      const contactResult = await client.query(
+        `INSERT INTO contacts
+          (first_name,last_name,email,phone,municipality,subscriber_status,commercial_stage,
+           preferred_channel,executive_id,source,acquisition_source,declared_tenure_seasons,
+           consent_status,consent_at,privacy_notice_version,summary_notes,created_by,updated_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,
+           CASE WHEN $13='unknown' THEN NULL ELSE now() END,$14,$15,$16,$16)
+         RETURNING *`,
+        [data.contact.firstName, data.contact.lastName, data.contact.email ?? null,
+          data.contact.phone ?? null, data.contact.municipality ?? null,
+          data.contact.subscriberStatus, data.contact.commercialStage,
+          data.contact.preferredChannel ?? null, data.contact.executiveId ?? null,
+          data.contact.source, data.contact.acquisitionSource,
+          data.contact.declaredTenureSeasons ?? null, data.consent.status,
+          data.consent.privacyNoticeVersion, data.initialObservation.notes, actor.id]
+      );
+      const contactId = contactResult.rows[0].id;
+
+      if (data.contact.executiveId) {
+        await client.query(
+          `INSERT INTO contact_assignments (contact_id,executive_id,assigned_by,reason)
+           VALUES ($1,$2,$3,'manual registration')`,
+          [contactId, data.contact.executiveId, actor.id]
+        );
+      }
+
+      await client.query(
+        `INSERT INTO contact_consents
+          (contact_id,status,purpose,captured_at,source,privacy_notice_version,recorded_by)
+         VALUES ($1,$2,$3,now(),$4,$5,$6)`,
+        [contactId, data.consent.status, data.consent.purpose, data.consent.source,
+          data.consent.privacyNoticeVersion, actor.id]
+      );
+
+      let membershipId = null;
+      if (data.membership) {
+        const membershipResult = await client.query(
+          `INSERT INTO memberships
+            (contact_id,season_code,membership_status,seat_count,seat_identifier,zone,product,
+             start_date,renewal_date,created_by,updated_by)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$10) RETURNING *`,
+          [contactId, data.membership.seasonCode, data.membership.membershipStatus,
+            data.membership.seatCount, data.membership.seatIdentifier ?? null,
+            data.membership.zone ?? null, data.membership.product ?? null,
+            data.membership.startDate ?? null, data.membership.renewalDate ?? null, actor.id]
+        );
+        membershipId = membershipResult.rows[0].id;
+        for (const unit of data.membership.units) {
+          await client.query(
+            `INSERT INTO membership_units
+              (membership_id,unit_number,seat_identifier,zone,product,jersey_size,created_by,updated_by)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$7)`,
+            [membershipId, unit.unitNumber, unit.seatIdentifier ?? null, unit.zone ?? null,
+              unit.product ?? null, unit.jerseySize, actor.id]
+          );
+        }
+      }
+
+      const interactionResult = await client.query(
+        `INSERT INTO interactions
+          (contact_id,actor_id,occurred_at,channel,outcome,notes,is_human_contact)
+         VALUES ($1,$2,now(),'other','manual_registration',$3,false) RETURNING *`,
+        [contactId, actor.id, data.initialObservation.notes]
+      );
+      const interactionId = interactionResult.rows[0].id;
+
+      let taskId = null;
+      if (data.nextTask) {
+        const assignee = await this.assertActiveUser(
+          client, data.nextTask.assignedTo, ['executive', 'supervisor', 'admin']
+        );
+        if (assignee.role === 'executive' && assignee.id !== data.contact.executiveId) {
+          throw conflict('La tarea de un Ejecutivo debe pertenecer a un contacto de su cartera actual.');
+        }
+        const taskResult = await client.query(
+          `INSERT INTO tasks
+            (contact_id,assigned_to,created_by,description,due_at,priority,status)
+           VALUES ($1,$2,$3,$4,$5,$6,'pending') RETURNING *`,
+          [contactId, data.nextTask.assignedTo, actor.id, data.nextTask.description,
+            data.nextTask.dueAt, data.nextTask.priority ?? 'normal']
+        );
+        taskId = taskResult.rows[0].id;
+        await this.recomputeNextFollowUp(client, contactId, actor.id);
+      }
+
+      await client.query(
+        `INSERT INTO manual_registration_requests
+          (idempotency_key,request_hash,actor_id,contact_id,membership_id,interaction_id,task_id)
+         VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+        [idempotencyKey, requestHash, actor.id, contactId, membershipId, interactionId, taskId]
+      );
+
+      const hydrated = await this.hydrateManualRegistration({
+        contact_id: contactId,
+        membership_id: membershipId,
+        interaction_id: interactionId,
+        task_id: taskId
+      }, actor, client);
+      await this.audit(client, context, {
+        action: 'manual_registration.created',
+        entityType: 'contact',
+        entityId: contactId,
+        metadata: {
+          membershipId,
+          interactionId,
+          taskId,
+          subscriberStatus: data.contact.subscriberStatus,
+          commercialStage: data.contact.commercialStage,
+          acquisitionSource: data.contact.acquisitionSource,
+          seasonCode: data.membership?.seasonCode ?? null,
+          seatCount: data.membership?.seatCount ?? 0,
+          consentStatus: data.consent.status
+        }
+      });
+      return { ...hydrated, replayed: false };
+    });
+  }
+
   async updateContact(id, data, actor, context, expectedVersion) {
     return withTransaction(this.pool, async (client) => {
       const before = await this.getContact(id, actor, { includeDeleted: false, client });
@@ -603,7 +855,9 @@ export class PgCrmRepository {
         firstName: 'first_name', lastName: 'last_name', email: 'email', phone: 'phone',
         municipality: 'municipality', subscriberStatus: 'subscriber_status',
         commercialStage: 'commercial_stage', preferredChannel: 'preferred_channel',
-        executiveId: 'executive_id', source: 'source', consentStatus: 'consent_status',
+        executiveId: 'executive_id', source: 'source', acquisitionSource: 'acquisition_source',
+        consentStatus: 'consent_status',
+        declaredTenureSeasons: 'declared_tenure_seasons',
         consentAt: 'consent_at', privacyNoticeVersion: 'privacy_notice_version',
         summaryNotes: 'summary_notes'
       };

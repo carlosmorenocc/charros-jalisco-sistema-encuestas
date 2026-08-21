@@ -5,10 +5,12 @@ SPA privada React/Vite para seguimiento de cartera, renovaciones, prospectos, ta
 ## Funciones incluidas
 
 - Reporte Dirección con métricas filtrables y PDF ejecutivo.
-- Cartera y Prospectos con búsqueda, filtros servidor, orden, paginación, alta, edición, baja lógica y restauración según permisos.
+- Cartera y Prospectos con búsqueda, filtros servidor, orden, paginación y alta manual atómica, además de edición, baja lógica y restauración según permisos.
 - Seguimiento con tareas, bitácora, vencidos y contactos sin asignar.
 - Ventas en modo consulta.
-- Vistas preparadas —sin acciones falsas— para campañas, recompensas, importaciones y catálogos.
+- Vistas preparadas —sin acciones falsas— para campañas, recompensas y catálogos.
+
+La carga inicial del Excel histórico es una migración única administrada fuera de la SPA. Después de ese corte, las incorporaciones se realizan desde **Nuevo registro**; esta versión no ofrece importaciones recurrentes de archivos.
 
 La administración de cuentas no se expone en esta SPA. El acceso local administrativo se provisiona y opera desde los controles seguros del backend.
 

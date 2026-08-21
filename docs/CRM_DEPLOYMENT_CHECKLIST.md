@@ -17,8 +17,8 @@ Usar el Blueprint `render.yaml` de la raíz. Crea:
 - `charros-crm-api-staging`, con Root Directory `crm-api`;
 - `charros-crm-db-staging`, PostgreSQL en la misma región y sin acceso externo.
 
-El API usa la URL interna, `DATABASE_SSL=false`, migraciones en pre-deploy y
-`/ready` como health check. Los planes definidos en el Blueprint son recursos de
+El API usa la URL interna, `DATABASE_SSL=false`, migraciones idempotentes antes
+de cada arranque y `/ready` como health check. Los planes definidos en el Blueprint son recursos de
 Render y pueden generar costo; quitar Entra evita un proveedor adicional, no el
 costo de una base persistente y respaldada.
 
@@ -35,21 +35,22 @@ copian a Vercel ni se comparten por chat.
 
 ## 3. Crear la única cuenta Administrador
 
-Después de que las migraciones terminen, configurar temporalmente en Render:
+Después de que las migraciones terminen, abre el servicio
+`charros-crm-api-staging` en Render. En **Environment**, agrega temporalmente y
+en un solo guardado:
 
 - `BOOTSTRAP_ADMIN_EMAIL`: correo corporativo del Administrador;
 - `BOOTSTRAP_ADMIN_NAME`: nombre visible;
 - `BOOTSTRAP_ADMIN_PASSWORD`: contraseña única de 14–256 bytes, con mayúscula,
   minúscula, número y símbolo.
 
-Ejecutar dentro del servicio:
+Usa **Save and deploy**. El arranque crea la cuenta únicamente si la base está en
+el estado inicial seguro y después levanta el API. Confirma en Logs el mensaje
+`Startup administrator created` y que `/ready` responda; después elimina juntas
+las tres variables `BOOTSTRAP_ADMIN_*` y vuelve a guardar. El proceso elimina la
+contraseña de su propio entorno antes de iniciar el servidor y nunca la registra.
 
-```powershell
-npm run bootstrap:admin
-```
-
-Eliminar inmediatamente `BOOTSTRAP_ADMIN_PASSWORD` y las demás variables
-`BOOTSTRAP_ADMIN_*`. El comando se rechaza si ya existe una cuenta activa.
+El procedimiento exacto está en `docs/CRM_RENDER_BOOTSTRAP.md`.
 
 Para cambiar la contraseña, volver a definir temporalmente esas variables y usar:
 

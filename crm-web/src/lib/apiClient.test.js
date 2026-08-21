@@ -75,4 +75,20 @@ describe('apiClient', () => {
     expect(options.headers.get('X-CSRF-Token')).toBe('csrf')
     expect(JSON.parse(options.body)).toEqual({ filters })
   })
+
+  it('envía el alta manual atómica con idempotencia, cookie y CSRF', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(jsonResponse({ data: { contact: { id: 'contact-id' }, replayed: false } }, 201))
+    const api = createApiClient({ baseUrl: '/api/v1', getCsrfToken: () => 'csrf', fetchImpl })
+    const payload = { contact: { firstName: 'Persona', lastName: 'Sintética', email: 'persona@example.invalid' }, consent: { status: 'unknown' }, initialObservation: { notes: 'Alta de prueba.' }, membership: null }
+
+    await api.createManualRegistration(payload, 'd375c067-ad4c-4bac-8ade-418fb50a2a40')
+
+    const [url, options] = fetchImpl.mock.calls[0]
+    expect(url).toBe('/api/v1/manual-registrations')
+    expect(options.method).toBe('POST')
+    expect(options.credentials).toBe('include')
+    expect(options.headers.get('X-CSRF-Token')).toBe('csrf')
+    expect(options.headers.get('Idempotency-Key')).toBe('d375c067-ad4c-4bac-8ade-418fb50a2a40')
+    expect(JSON.parse(options.body)).toEqual(payload)
+  })
 })

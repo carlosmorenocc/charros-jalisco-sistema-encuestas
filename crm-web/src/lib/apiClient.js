@@ -118,6 +118,7 @@ export function createApiClient({
     contacts: (filters) => request(`/contacts${encodeQuery(filters)}`),
     contact: (id) => request(`/contacts/${encodeURIComponent(id)}`),
     createContact: (payload) => request('/contacts', { method: 'POST', body: payload }),
+    createManualRegistration: (payload, idempotencyKey) => request('/manual-registrations', { method: 'POST', headers: { 'Idempotency-Key': idempotencyKey }, body: payload }),
     updateContact: (id, payload, rowVersion) => request(`/contacts/${encodeURIComponent(id)}`, { method: 'PATCH', headers: rowVersion == null ? {} : { 'If-Match': String(rowVersion) }, body: payload }),
     deleteContact: (id, { reason, rowVersion } = {}) => request(`/contacts/${encodeURIComponent(id)}`, { method: 'DELETE', headers: rowVersion == null ? {} : { 'If-Match': String(rowVersion) }, body: { reason } }),
     restoreContact: (id, rowVersion) => request(`/contacts/${encodeURIComponent(id)}/restore`, { method: 'POST', headers: rowVersion == null ? {} : { 'If-Match': String(rowVersion) }, body: {} }),

@@ -24,6 +24,7 @@ const stageCodes = Object.fromEntries(Object.entries(stageLabels).map(([code, la
 const consentLabels = { yes: 'Sí', no: 'No', unknown: 'No consta' }
 const consentCodes = { Sí: 'yes', No: 'no', 'No consta': 'unknown' }
 const channelLabels = { phone: 'Llamada', whatsapp: 'WhatsApp', email: 'Correo', in_person: 'Presencial', other: 'Otro' }
+const businessSourceLabels = { season_ticket_database: 'Base de abonados', referral: 'Referido', box_office: 'Taquilla', digital: 'Registro digital', event: 'Evento o activación', outbound: 'Prospección del equipo', other: 'Otro origen' }
 
 export function subscriberStatusCode(label) {
   return subscriberCodes[label] || label || undefined
@@ -55,7 +56,8 @@ export function fromApiContact(contact) {
     type: subscriberLabels[contact.subscriberStatus] || contact.subscriberStatus || 'Prospecto',
     stage: stageLabels[contact.commercialStage] || contact.commercialStage || 'Sin asignar',
     seasons: Number(contact.seasonsCount || 0),
-    seats: Number(contact.seatCount || 0),
+    declaredSeasons: contact.declaredTenureSeasons == null ? null : Number(contact.declaredTenureSeasons),
+    seats: Number(contact.managedSeatCount ?? contact.seatCount ?? 0),
     zone: contact.zoneName || contact.municipality || 'Sin definir',
     lastContact: displayDate(contact.lastHumanContactAt, 'Sin contacto humano'),
     nextTask: displayDate(contact.nextTaskAt || contact.nextFollowUpAt, 'Sin tarea'),
@@ -63,6 +65,7 @@ export function fromApiContact(contact) {
     executive: contact.executiveName || 'Sin asignar',
     note: contact.summaryNotes || '',
     consent: consentLabels[contact.consentStatus] || 'No consta',
+    businessSourceLabel: businessSourceLabels[contact.businessSource || contact.acquisitionSource] || 'No consta',
     kind: contact.subscriberStatus === 'prospect' ? 'prospect' : 'portfolio',
   }
 }

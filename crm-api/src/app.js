@@ -27,8 +27,8 @@ export function createApp({ config, repository, authService, logger }) {
   app.use(cors({
     credentials: true,
     methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'If-Match', 'X-CSRF-Token', 'X-Request-ID'],
-    exposedHeaders: ['ETag', 'X-Request-ID'],
+    allowedHeaders: ['Content-Type', 'Idempotency-Key', 'If-Match', 'X-CSRF-Token', 'X-Request-ID'],
+    exposedHeaders: ['ETag', 'Idempotency-Replayed', 'X-Request-ID'],
     origin(origin, callback) {
       if (!origin || config.corsOrigins.includes(origin.toLowerCase())) return callback(null, true);
       return callback(new AppError(403, 'ORIGIN_NOT_ALLOWED', 'El origen del navegador no está autorizado.'));
@@ -63,7 +63,7 @@ export function createApp({ config, repository, authService, logger }) {
     authenticate({ authService, cookieName: config.sessionCookieName }),
     csrfProtection({ authService, config }),
     attachActorContext,
-    createApiRouter({ service })
+    createApiRouter({ service, config })
   );
 
   app.use(notFoundHandler);

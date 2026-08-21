@@ -225,6 +225,5 @@ export const demoCampaigns = [
 
 export const demoConfigurations = {
   rewards: [['Asistencia a 3 juegos', 'Visitas', 'Activo'], ['Primera renovación', 'Renovación', 'Activo'], ['Aniversario del abonado', 'Fecha', 'Borrador']],
-  imports: [['Fuente Encuesta Corta · demo', '1,840 filas', 'Validación pendiente'], ['Fuente Encuesta Larga · demo', '530 filas', 'Requiere corrección'], ['Cartera Abonados · demo', '224 filas', 'Lista para revisar']],
   catalogs: [['Etapas comerciales', '7 valores', 'Activo'], ['Canales de contacto', '5 valores', 'Activo'], ['Productos y zonas', '10 valores', 'Versionar precios']],
 }

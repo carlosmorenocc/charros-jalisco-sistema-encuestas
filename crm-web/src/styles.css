@@ -466,6 +466,31 @@ select:focus, input:focus, textarea:focus { outline: 0; border-color: var(--blue
 .drawer > form { display: flex; flex: 1; flex-direction: column; min-height: 0; }
 .drawer-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 20px 23px 17px; border-bottom: 1px solid var(--line); }
 .drawer-header h2 { margin: 5px 0 0; color: #1b293f; font-family: var(--display-font); font-size: 19px; }
+.drawer-header p { max-width: 520px; margin: 6px 0 0; color: #738096; font-size: 9px; line-height: 1.45; }
+.drawer--manual { width: min(720px, 100%); }
+.drawer--manual .drawer-header { padding-bottom: 14px; }
+.manual-close { flex: 0 0 auto; font-size: 23px; line-height: 1; }
+.manual-steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; padding: 12px 23px; margin: 0; background: #f8fafc; border-bottom: 1px solid var(--line); list-style: none; }
+.manual-steps li { position: relative; display: flex; align-items: center; gap: 7px; color: #8a94a3; }
+.manual-steps li:not(:last-child)::after { position: absolute; right: 9px; left: 35px; height: 1px; background: #d9e1ea; content: ''; }
+.manual-steps li > span { z-index: 1; display: grid; place-items: center; width: 25px; height: 25px; color: #6e7a8b; background: white; border: 1px solid #cfd8e3; border-radius: 50%; font-size: 9px; font-weight: 800; }
+.manual-steps li > small { z-index: 1; padding-right: 7px; background: #f8fafc; font-size: 8px; font-weight: 700; }
+.manual-steps .manual-step--active { color: var(--blue-800); }
+.manual-steps .manual-step--active > span, .manual-steps .manual-step--done > span { color: white; background: var(--blue-700); border-color: var(--blue-700); }
+.manual-body { padding-top: 17px; }
+.section-help { margin: -5px 0 13px; color: #758196; font-size: 9px; }
+.field-error { align-self: flex-start !important; color: var(--red-700) !important; font-weight: 700; }
+.field input[aria-invalid='true'], .field select[aria-invalid='true'], .field textarea[aria-invalid='true'] { border-color: var(--red-700); box-shadow: 0 0 0 2px rgba(174, 47, 58, .08); }
+.manual-submit-error { padding: 13px 14px; margin-bottom: 17px; color: #742d35; background: #fff7f7; border: 1px solid #e7c6ca; border-radius: 9px; }
+.manual-submit-error strong { font-size: 10px; }
+.manual-submit-error p { margin: 4px 0 0; font-size: 9px; line-height: 1.5; }
+.manual-submit-error .text-button { padding: 7px 0 0; color: var(--blue-700); background: transparent; border: 0; font-size: 9px; font-weight: 800; }
+.manual-inline-note { display: flex; flex-direction: column; gap: 4px; padding: 13px; color: #516178; background: var(--blue-50); border: 1px solid #d8e6f3; border-radius: 9px; font-size: 9px; }
+.manual-inline-note strong { color: #27486a; font-size: 10px; }
+.manual-membership-summary { padding: 9px 11px; margin-bottom: 13px; color: #4c5d73; background: #f7f9fb; border-left: 3px solid var(--gold-500); font-size: 9px; }
+.jersey-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; max-height: 265px; padding: 13px; margin-top: 14px; overflow-y: auto; background: #f8fafc; border: 1px solid var(--line); border-radius: 9px; }
+.manual-task-fields { margin-top: 13px; }
+.manual-footer > span { color: #778397; font-size: 9px; font-weight: 700; }
 .drawer-body { flex: 1; padding: 18px 23px 28px; overflow-y: auto; }
 .contact-summary { display: flex; align-items: center; gap: 12px; padding: 13px; margin-bottom: 19px; background: var(--blue-50); border: 1px solid #dce8f4; border-radius: 10px; }
 .large-avatar { width: 43px; height: 43px; font-size: 12px; }
@@ -611,6 +636,9 @@ select:focus, input:focus, textarea:focus { outline: 0; border-color: var(--blue
   .user-form-grid, .action-form-grid { grid-template-columns: 1fr; }
   .field--full { grid-column: auto; }
   .drawer-header, .drawer-body { padding-right: 16px; padding-left: 16px; }
+  .manual-steps { padding-right: 16px; padding-left: 16px; }
+  .manual-steps li > small { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .jersey-grid { grid-template-columns: 1fr 1fr; }
   .drawer-footer { align-items: stretch; flex-direction: column-reverse; padding: 11px 16px; }
   .drawer-footer > div { width: 100%; }
   .drawer-footer > div .button { flex: 1; }

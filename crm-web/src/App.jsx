@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import ManualContactDrawer from './ManualContactDrawer'
 import { authClient } from './auth/authClient'
 import { createApiClient, resolveApiBaseUrl } from './lib/apiClient'
 import { loadDemoModule } from './data/demoLoader'
@@ -13,6 +14,7 @@ import {
 } from './lib/permissions'
 import { commercialStageCode, fromApiContact, fromApiInteraction, fromApiSale, fromApiTask, fromApiUser, subscriberStatusCode, toApiContactPayload } from './lib/dataAdapters'
 import { downloadExecutiveDashboardPdf } from './lib/dashboardPdf'
+import { buildManualRegistrationPayload } from './lib/manualEntry'
 
 const NAV_ITEMS = [
   { id: 'dashboard', label: 'Reporte Dirección', icon: 'chart' },
@@ -25,7 +27,6 @@ const NAV_ITEMS = [
 const MORE_ITEMS = [
   { id: 'campaigns', label: 'Campañas y envíos', icon: 'send' },
   { id: 'rewards', label: 'Recompensas', icon: 'star' },
-  { id: 'imports', label: 'Importaciones', icon: 'upload' },
   { id: 'catalogs', label: 'Catálogos', icon: 'layers' },
 ]
 
@@ -171,6 +172,7 @@ function App() {
   const [user, setUser] = useState(null)
   const [contacts, setContacts] = useState([])
   const [contactRevision, setContactRevision] = useState(0)
+  const [dashboardRevision, setDashboardRevision] = useState(0)
   const [unassignedContacts, setUnassignedContacts] = useState([])
   const [unassignedTotal, setUnassignedTotal] = useState(0)
   const [tasks, setTasks] = useState([])
@@ -197,6 +199,7 @@ function App() {
     setUser(null)
     setContacts([])
     setContactRevision(0)
+    setDashboardRevision(0)
     setUnassignedContacts([])
     setUnassignedTotal(0)
     setTasks([])
@@ -444,6 +447,119 @@ function App() {
     }
   }
 
+  async function saveManualRegistration(draft, idempotencyKey) {
+    const payload = buildManualRegistrationPayload(draft, {
+      actorId: user.id,
+      mayAssignContact: hasPermission(user, PERMISSIONS.CONTACT_ASSIGN),
+      mayAssignTask: hasPermission(user, PERMISSIONS.TASK_WRITE_ALL),
+    })
+    let result
+    if (authClient.isDemo) {
+      const { nextDemoContactId, nextDemoRecordId } = await loadDemoModule()
+      const membershipSeats = payload.membership?.seatCount || 0
+      const executiveName = availableExecutives.find((item) => item.id === payload.contact.executiveId)?.displayName
+        || (payload.contact.executiveId === user.id ? user.name : 'Sin asignar')
+      const contact = {
+        ...payload.contact,
+        id: nextDemoContactId(contacts.length),
+        displayName: `${payload.contact.firstName} ${payload.contact.lastName}`,
+        summaryNotes: payload.initialObservation.notes,
+        consentStatus: payload.consent.status,
+        executiveName,
+        managedSeatCount: membershipSeats,
+        seatCount: ['current_subscriber', 'new_subscriber'].includes(payload.contact.subscriberStatus) ? membershipSeats : 0,
+        seasonsCount: payload.membership ? 1 : 0,
+        rowVersion: 1,
+      }
+      const initialInteraction = {
+        id: nextDemoRecordId('interaction', interactions.length),
+        contactId: contact.id,
+        contactName: contact.displayName,
+        actorName: user.name,
+        occurredAt: new Date().toISOString(),
+        channel: 'other',
+        outcome: 'manual_registration',
+        notes: payload.initialObservation.notes,
+        isHumanContact: false,
+      }
+      const nextTask = payload.nextTask ? {
+        ...payload.nextTask,
+        id: nextDemoRecordId('task', tasks.length),
+        contactId: contact.id,
+        contactName: contact.displayName,
+        assigneeName: availableExecutives.find((item) => item.id === payload.nextTask.assignedTo)?.displayName || user.name,
+        status: 'pending',
+        rowVersion: 1,
+      } : null
+      result = { contact, membership: payload.membership, initialInteraction, nextTask, replayed: false }
+      setContacts((current) => [fromApiContact(contact), ...current])
+      setInteractions((current) => [fromApiInteraction(initialInteraction), ...current])
+      setDashboardSummary((current) => current ? {
+        ...current,
+        totalContacts: Number(current.totalContacts || 0) + 1,
+        renewing: Number(current.renewing || 0) + (contact.subscriberStatus === 'renewing' ? 1 : 0),
+        newSubscribers: Number(current.newSubscribers || 0) + (contact.subscriberStatus === 'new_subscriber' ? 1 : 0),
+        currentSubscribers: Number(current.currentSubscribers || 0) + (contact.subscriberStatus === 'current_subscriber' ? 1 : 0),
+        activeSeats: Number(current.activeSeats || 0) + Number(contact.seatCount || 0),
+        unassigned: Number(current.unassigned || 0) + (!contact.executiveId ? 1 : 0),
+      } : current)
+    } else {
+      const response = await api.createManualRegistration(payload, idempotencyKey)
+      result = response.data
+      if (result?.initialInteraction) {
+        const normalized = fromApiInteraction({
+          ...result.initialInteraction,
+          contactName: result.initialInteraction.contactName || result.contact?.displayName || `${result.contact?.firstName || ''} ${result.contact?.lastName || ''}`.trim(),
+          actorName: result.initialInteraction.actorName || user.name,
+        })
+        setInteractions((current) => [normalized, ...current.filter((item) => item.id !== normalized.id)])
+      }
+      try {
+        const unassignedResponse = await api.contacts({ assignment: 'unassigned', page: 1, pageSize: 100 })
+        const unassignedData = Array.isArray(unassignedResponse.data) ? unassignedResponse.data : unassignedResponse.data?.items || []
+        setUnassignedContacts(unassignedData.map(fromApiContact))
+        setUnassignedTotal(Number(unassignedResponse.meta?.total || 0))
+      } catch {
+        // El alta ya fue atómica; las vistas se volverán a consultar por revisión.
+      }
+    }
+    if (result?.nextTask) {
+      const normalized = fromApiTask({
+        ...result.nextTask,
+        contactName: result.nextTask.contactName || result.contact?.displayName || `${result.contact?.firstName || ''} ${result.contact?.lastName || ''}`.trim(),
+        assigneeName: result.nextTask.assigneeName || availableExecutives.find((item) => item.id === result.nextTask.assignedTo)?.displayName || user.name,
+      })
+      const today = localDayBounds()
+      const dueTime = new Date(result.nextTask.dueAt).getTime()
+      const dueToday = dueTime >= new Date(today.from).getTime() && dueTime <= new Date(today.to).getTime()
+      const overdue = dueTime < Date.now()
+      if (dueToday || overdue) setTasks((current) => [normalized, ...current.filter((item) => item.id !== normalized.id)])
+      setFollowupCounts((current) => current ? {
+        ...current,
+        scheduled: current.scheduled + (dueToday ? 1 : 0),
+        pending: current.pending + (dueToday ? 1 : 0),
+        overdue: current.overdue + (overdue ? 1 : 0),
+      } : current)
+    }
+    setContactRevision((current) => current + 1)
+    setDashboardRevision((current) => current + 1)
+    setDrawer(null)
+    setToast(result?.replayed ? 'El alta ya se había procesado; la cartera se actualizó sin duplicar.' : 'El registro se creó correctamente y la cartera fue actualizada.')
+    return result
+  }
+
+  async function openExistingContact(id) {
+    try {
+      const contact = authClient.isDemo
+        ? contacts.find((item) => item.id === id)
+        : fromApiContact((await api.contact(id)).data)
+      if (!contact) throw new Error('No encontramos el contacto coincidente.')
+      setDrawer({ mode: 'edit', contact, kind: contact.kind })
+    } catch (error) {
+      setToast(error.message || 'No fue posible abrir el contacto existente.')
+    }
+  }
+
   async function createInteraction(contact, payload) {
     try {
       let created
@@ -605,6 +721,7 @@ function App() {
   const context = {
     contacts,
     contactRevision,
+    dashboardRevision,
     unassignedContacts,
     unassignedTotal,
     tasks,
@@ -695,9 +812,19 @@ function App() {
         {MORE_ITEMS.some((item) => item.id === activePage) && <MorePage {...context} page={activePage} />}
       </main>
 
-      {drawer && (
+      {drawer?.mode === 'create' ? (
+        <ManualContactDrawer
+          key={`new-${drawer.kind}`}
+          kind={drawer.kind}
+          user={user}
+          executiveOptions={availableExecutives}
+          onClose={() => setDrawer(null)}
+          onSave={saveManualRegistration}
+          onOpenExisting={openExistingContact}
+        />
+      ) : drawer ? (
         <ContactDrawer
-          key={drawer.contact?.id || `new-${drawer.kind}`}
+          key={drawer.contact?.id}
           drawer={drawer}
           user={user}
           onClose={() => setDrawer(null)}
@@ -708,7 +835,7 @@ function App() {
           onCreateTask={createTask}
           executiveOptions={availableExecutives}
         />
-      )}
+      ) : null}
       {toast && <div className="toast" role="status"><span><Icon name="check" size={18} /></span>{toast}</div>}
     </div>
   )
@@ -795,7 +922,7 @@ function MetricCard({ label, value, detail, trend, icon, tone = 'blue' }) {
   )
 }
 
-function DashboardPage({ contacts, tasks, followupCounts, sales, dashboardSummary, isDemo, availableExecutives, onNavigate, onNotify, onLoadDashboard, onAuthorizeDashboardPdf }) {
+function DashboardPage({ contacts, tasks, followupCounts, sales, dashboardSummary, dashboardRevision, isDemo, availableExecutives, onNavigate, onNotify, onLoadDashboard, onAuthorizeDashboardPdf }) {
   const [reportFilters, setReportFilters] = useState({ season: 'LMP-2026-27', period: 'month', executiveId: '' })
   const [loadedFilterKey, setLoadedFilterKey] = useState(isDemo ? 'LMP-2026-27|month|' : '')
   const [pdfState, setPdfState] = useState({ status: 'idle', message: '' })
@@ -831,7 +958,7 @@ function DashboardPage({ contacts, tasks, followupCounts, sales, dashboardSummar
       .then((applied) => { if (active && applied !== false) setLoadedFilterKey(filterKey) })
       .catch((error) => { if (active) onNotify(error.message || 'No fue posible actualizar el reporte.') })
     return () => { active = false }
-  }, [filterKey, isDemo, onLoadDashboard, onNotify, reportFilters.executiveId, reportFilters.period, reportFilters.season])
+  }, [dashboardRevision, filterKey, isDemo, onLoadDashboard, onNotify, reportFilters.executiveId, reportFilters.period, reportFilters.season])
 
   async function downloadDashboardPdf() {
     if (!reportIsReady || pdfState.status === 'generating') return
@@ -1080,7 +1207,7 @@ function ContactRow({ contact, isPortfolio, onEdit }) {
       <td><button className="contact-button" onClick={() => onEdit(contact)}><span className="contact-avatar">{contact.initials || initials(contact.name)}</span><span><strong>{contact.name}</strong><small>{contact.email}</small><small>{contact.phone}</small></span></button></td>
       <td><StatusPill>{contact.type}</StatusPill>{contact.seats > 1 && <small className="subvalue">{contact.seats} abonos</small>}</td>
       <td><StatusPill>{contact.stage}</StatusPill></td>
-      {isPortfolio && <td><strong>{contact.seasons || '—'}</strong>{contact.seasons > 0 && <small className="subvalue">temporadas</small>}</td>}
+      {isPortfolio && <td><strong>{contact.seasons || contact.declaredSeasons || '—'}</strong>{contact.seasons > 0 ? <small className="subvalue">verificadas</small> : contact.declaredSeasons != null ? <small className="subvalue">declaradas</small> : null}</td>}
       <td><span className={contact.lastContact?.includes('Sin ') ? 'muted danger-text' : ''}>{contact.lastContact}</span></td>
       <td>{contact.channel}</td>
       <td><span className={contact.nextTask?.includes('Vencida') ? 'danger-text' : ''}>{contact.nextTask}</span></td>
@@ -1180,26 +1307,18 @@ function SalesPage({ sales, isDemo }) {
   )
 }
 
-function MorePage({ page, user, isDemo, campaigns, configurationFixtures }) {
+function MorePage({ page, isDemo, campaigns, configurationFixtures }) {
   const config = {
     campaigns: { eyebrow: 'Comunicación responsable', title: 'Campañas y envíos', description: 'Audiencias, consentimiento y resultados separados del contacto humano.', icon: 'send' },
     rewards: { eyebrow: 'Fidelidad', title: 'Recompensas', description: 'Hitos, beneficios y canjes de abonados en una vista controlada.', icon: 'star' },
-    imports: { eyebrow: 'Fase posterior', title: 'Importaciones', description: 'Módulo preparado para una revisión manual futura; esta versión no recibe ni incorpora archivos.', icon: 'upload' },
     catalogs: { eyebrow: 'Configuración', title: 'Catálogos', description: 'Estatus, canales, zonas, productos y precios versionados por temporada.', icon: 'layers' },
   }[page]
-  const mayView = page === 'imports'
-      ? hasPermission(user, PERMISSIONS.CONTACT_WRITE_ALL)
-      : true
   return (
     <div className="page-wrap">
       <PageHeader eyebrow={config.eyebrow} title={config.title} description={config.description} />
-      {!mayView ? <AccessDeniedPanel /> : page === 'campaigns' ? <CampaignsTable campaigns={campaigns} /> : <ConfigurationPanel content={configurationFixtures[page] || []} config={config} isDemo={isDemo} />}
+      {page === 'campaigns' ? <CampaignsTable campaigns={campaigns} /> : <ConfigurationPanel content={configurationFixtures[page] || []} config={config} isDemo={isDemo} />}
     </div>
   )
-}
-
-function AccessDeniedPanel() {
-  return <section className="panel access-denied"><span className="summary-icon summary-icon--blue"><Icon name="shield"/></span><h2>Esta sección requiere permisos adicionales</h2><p>Tu sesión es válida, pero el Administrador debe habilitar esta función para tu usuario.</p></section>
 }
 
 function CampaignsTable({ campaigns }) {
@@ -1231,6 +1350,7 @@ function ContactDrawer({ drawer, user, onClose, onSave, onDelete, onRestore, onC
     type: existing.type || (drawer.kind === 'prospect' ? 'Prospecto' : 'Por renovar'),
     stage: existing.stage || 'Sin contactar',
     seasons: existing.seasons ?? 0,
+    declaredSeasons: existing.declaredSeasons,
     seats: existing.seats ?? 1,
     zone: existing.zone || 'Sin definir',
     municipality: existing.municipality || '',
@@ -1242,6 +1362,7 @@ function ContactDrawer({ drawer, user, onClose, onSave, onDelete, onRestore, onC
     nextTask: existing.nextTask || 'Sin tarea',
     channel: existing.channel || '—',
     preferredChannel: existing.preferredChannel || '',
+    businessSourceLabel: existing.businessSourceLabel || 'No consta',
   }
   const [form, setForm] = useState(initialForm)
   const editing = drawer.mode === 'edit'
@@ -1347,7 +1468,7 @@ function ContactDrawer({ drawer, user, onClose, onSave, onDelete, onRestore, onC
               <div className="form-grid">
                 <label className="field"><span>Estatus de abonado</span><select disabled={editing && !mayChangeSubscriberStatus} value={form.type} onChange={(event) => update('type', event.target.value)}><option>Prospecto</option><option>Abonado actual</option><option>Por renovar</option><option>Abonado nuevo</option><option>Exabonado</option></select>{editing && !mayChangeSubscriberStatus && <small>Se actualiza desde membresías.</small>}</label>
                 <label className="field"><span>Etapa comercial</span><select value={form.stage} onChange={(event) => update('stage', event.target.value)}><option>Sin contactar</option><option>Por contactar</option><option>Contactado</option><option>Seguimiento</option><option>Interesado</option><option>Apartado</option><option>Ganado</option><option>Perdido</option></select></label>
-                {editing && <><div className="field"><span>Temporadas</span><output className="derived-value">{form.seasons}</output><small>Calculado desde membresías.</small></div><div className="field"><span>Cantidad de abonos</span><output className="derived-value">{form.seats}</output><small>Calculado desde abonos activos.</small></div></>}
+                {editing && <><div className="field"><span>Temporadas verificadas</span><output className="derived-value">{form.seasons || 'No consta'}</output><small>Calculadas desde membresías.</small></div><div className="field"><span>Temporadas declaradas</span><output className="derived-value">{form.declaredSeasons ?? 'No consta'}</output><small>Dato informado durante el alta.</small></div><div className="field"><span>Cantidad de abonos gestionados</span><output className="derived-value">{form.seats}</output><small>Incluye abonos activos y por renovar.</small></div><div className="field"><span>Origen comercial</span><output className="derived-value">{form.businessSourceLabel}</output><small>Capturado en el alta manual.</small></div></>}
                 <label className="field"><span>Canal preferido</span><select value={form.preferredChannel} onChange={(event) => update('preferredChannel', event.target.value)}><option value="">Sin definir</option><option value="phone">Llamada</option><option value="whatsapp">WhatsApp</option><option value="email">Correo</option><option value="in_person">Presencial</option><option value="other">Otro</option></select></label>
                 <label className="field"><span>Ejecutivo</span>{mayAssign ? <select value={form.executiveId} onChange={(event) => update('executiveId', event.target.value)}><option value="">Sin asignar</option>{form.executiveId && !executiveOptions.some((item) => item.id === form.executiveId) && <option value={form.executiveId}>{form.executive}</option>}{executiveOptions.map((item) => <option key={item.id} value={item.id}>{item.displayName}</option>)}</select> : <output className="derived-value">{editing ? form.executive : user.name}</output>} {!mayAssign && <small>{editing ? 'Requiere permiso de asignación.' : 'El alta se asignará automáticamente a tu cartera.'}</small>}</label>
                 <label className="field field--full"><span>Consentimiento de contacto</span><select disabled={editing && !mayChangeConsent} value={form.consent} onChange={(event) => update('consent', event.target.value)}><option>Sí</option><option>No</option><option>No consta</option></select><small>{editing && !mayChangeConsent ? 'Solo Supervisor o Administrador puede modificar este dato.' : 'La fecha y la fuente del cambio se registran en el servidor.'}</small></label>

@@ -12,6 +12,10 @@ export const CONTACT_SEGMENTS = Object.freeze(['portfolio', 'prospect']);
 export const CONTACT_ASSIGNMENTS = Object.freeze(['assigned', 'unassigned']);
 export const CONTACT_DATE_FIELDS = Object.freeze(['updatedAt', 'lastContact', 'nextFollowUp']);
 export const SEASON_CODES = Object.freeze(['LMP-2026-27']);
+export const CRM_PRIVACY_NOTICE_VERSION = '2026-08-01';
+export const ACQUISITION_SOURCES = Object.freeze([
+  'season_ticket_database', 'referral', 'box_office', 'digital', 'event', 'outbound', 'other'
+]);
 
 export const COMMERCIAL_STAGES = Object.freeze([
   'unassigned',
@@ -113,11 +117,15 @@ function email(value, field = 'email') {
 function phone(value) {
   const cleaned = cleanString(value, { max: 30, field: 'phone' });
   if (cleaned == null) return cleaned;
-  const compact = cleaned.replace(/[\s().-]/g, '');
-  if (!/^\+?\d{8,15}$/.test(compact)) {
-    throw badRequest('phone debe contener entre 8 y 15 dígitos.');
+  // Keep the exact canonical form used by crm-import/src/normalize.js so a
+  // manual registration and the initial Excel promotion share one identity.
+  let digits = cleaned.replace(/\D+/gu, '');
+  if (digits.length === 12 && digits.startsWith('52')) digits = digits.slice(2);
+  if (digits.length === 13 && digits.startsWith('521')) digits = digits.slice(3);
+  if (digits.length !== 10) {
+    throw badRequest('phone debe contener 10 dígitos de México; se acepta el prefijo +52 o 521.');
   }
-  return compact;
+  return digits;
 }
 
 function pickDefined(record) {
@@ -141,6 +149,12 @@ export function validateContact(input, { partial = false } = {}) {
     preferredChannel: input.preferredChannel === null ? null : enumValue(input.preferredChannel, CHANNELS, 'preferredChannel'),
     executiveId: uuid(input.executiveId, 'executiveId'),
     source: cleanString(input.source, { max: 120, field: 'source' }),
+    acquisitionSource: input.acquisitionSource === null
+      ? null
+      : enumValue(input.acquisitionSource, ACQUISITION_SOURCES, 'acquisitionSource'),
+    declaredTenureSeasons: input.declaredTenureSeasons === null
+      ? null
+      : integer(input.declaredTenureSeasons, 'declaredTenureSeasons', { min: 0, max: 100 }),
     consentStatus: input.consentStatus === undefined ? undefined : enumValue(input.consentStatus, CONSENT_STATUSES, 'consentStatus'),
     consentAt: isoDate(input.consentAt, 'consentAt'),
     privacyNoticeVersion: cleanString(input.privacyNoticeVersion, { max: 80, field: 'privacyNoticeVersion' }),
@@ -214,6 +228,131 @@ export function validateMembership(input) {
     throw badRequest('startDate es obligatoria para un abono activo.');
   }
   return { ...result, units };
+}
+
+const MANUAL_MEMBERSHIP_STATUS = Object.freeze({
+  current_subscriber: 'active',
+  new_subscriber: 'active',
+  renewing: 'renewing',
+  former_subscriber: 'expired'
+});
+
+function rejectUnknownKeys(input, allowed, field) {
+  const unknown = Object.keys(input).filter((key) => !allowed.has(key));
+  if (unknown.length) throw badRequest(`${field} contiene campos no permitidos.`, { fields: unknown });
+}
+
+export function validateManualRegistration(input, { defaultAssigneeId }) {
+  if (!isObject(input)) throw badRequest('El alta manual debe ser un objeto.');
+  rejectUnknownKeys(input, new Set([
+    'contact', 'consent', 'initialObservation', 'membership', 'nextTask'
+  ]), 'altaManual');
+  if (!isObject(input.contact)) throw badRequest('contact es obligatorio.');
+  rejectUnknownKeys(input.contact, new Set([
+    'firstName', 'lastName', 'email', 'phone', 'municipality', 'subscriberStatus',
+    'commercialStage', 'preferredChannel', 'executiveId', 'declaredTenureSeasons', 'businessSource'
+  ]), 'contact');
+
+  const businessSource = enumValue(
+    input.contact.businessSource, ACQUISITION_SOURCES, 'contact.businessSource', { required: true }
+  );
+
+  const consentInput = input.consent ?? {};
+  if (!isObject(consentInput)) throw badRequest('consent debe ser un objeto.');
+  rejectUnknownKeys(consentInput, new Set(['status']), 'consent');
+  const consentStatus = enumValue(
+    consentInput.status ?? 'unknown', CONSENT_STATUSES, 'consent.status', { required: true }
+  );
+  const privacyNoticeVersion = consentStatus === 'unknown' ? null : CRM_PRIVACY_NOTICE_VERSION;
+
+  if (!isObject(input.initialObservation)) {
+    throw badRequest('initialObservation es obligatoria.');
+  }
+  rejectUnknownKeys(input.initialObservation, new Set(['notes']), 'initialObservation');
+  const observationNotes = cleanString(input.initialObservation.notes, {
+    required: true, max: 4000, field: 'initialObservation.notes'
+  });
+
+  const { businessSource: _businessSource, ...contactInput } = input.contact;
+  const contact = validateContact({
+    ...contactInput,
+    source: 'crm_manual',
+    acquisitionSource: businessSource,
+    consentStatus,
+    privacyNoticeVersion,
+    summaryNotes: observationNotes
+  });
+
+  const expectedMembershipStatus = MANUAL_MEMBERSHIP_STATUS[contact.subscriberStatus] ?? null;
+  let membership = null;
+  if (!expectedMembershipStatus) {
+    if (input.membership !== undefined && input.membership !== null) {
+      throw badRequest('Un prospecto no debe registrar abonos hasta cambiar su clasificación.');
+    }
+  } else {
+    if (!isObject(input.membership)) {
+      throw badRequest('membership es obligatorio para esta clasificación.');
+    }
+    rejectUnknownKeys(input.membership, new Set([
+      'seatCount', 'seatIdentifier', 'zone', 'product', 'startDate', 'renewalDate', 'units'
+    ]), 'membership');
+    if (!Array.isArray(input.membership.units)
+      || input.membership.units.some((unit) => !isObject(unit))) {
+      throw badRequest('membership.units debe ser un arreglo de unidades.');
+    }
+    for (const [index, unit] of input.membership.units.entries()) {
+      rejectUnknownKeys(unit, new Set([
+        'unitNumber', 'seatIdentifier', 'zone', 'product', 'jerseySize'
+      ]), `membership.units[${index}]`);
+    }
+    membership = validateMembership({
+      ...input.membership,
+      seasonCode: 'LMP-2026-27',
+      membershipStatus: expectedMembershipStatus
+    });
+    if (membership.seatCount > 20) throw badRequest('seatCount no puede exceder 20 en un alta manual.');
+    if (membership.membershipStatus === 'renewing' && !membership.renewalDate) {
+      throw badRequest('renewalDate es obligatoria para una renovación.');
+    }
+    membership.units.sort((left, right) => left.unitNumber - right.unitNumber);
+    if (membership.units.some((unit, index) => unit.unitNumber !== index + 1)) {
+      throw badRequest('unitNumber debe formar la secuencia exacta de 1 a seatCount.');
+    }
+  }
+
+  if (contact.declaredTenureSeasons !== undefined && contact.declaredTenureSeasons !== null
+    && contact.subscriberStatus !== 'prospect' && contact.declaredTenureSeasons < 1) {
+    throw badRequest('declaredTenureSeasons debe ser al menos 1 para un abonado o exabonado.');
+  }
+
+  let nextTask = null;
+  if (input.nextTask !== undefined && input.nextTask !== null) {
+    if (!isObject(input.nextTask)) throw badRequest('nextTask debe ser un objeto.');
+    rejectUnknownKeys(input.nextTask, new Set([
+      'assignedTo', 'description', 'dueAt', 'priority'
+    ]), 'nextTask');
+    nextTask = validateTask({
+      ...input.nextTask,
+      assignedTo: input.nextTask.assignedTo ?? contact.executiveId ?? defaultAssigneeId,
+      status: 'pending'
+    });
+    if (new Date(nextTask.dueAt).getTime() <= Date.now()) {
+      throw badRequest('nextTask.dueAt debe estar en el futuro.');
+    }
+  }
+
+  return {
+    contact,
+    consent: {
+      status: consentStatus,
+      privacyNoticeVersion: privacyNoticeVersion ?? null,
+      source: 'crm_manual',
+      purpose: 'marketing'
+    },
+    initialObservation: { notes: observationNotes },
+    membership,
+    nextTask
+  };
 }
 
 export function validateSale(input) {

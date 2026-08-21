@@ -23,6 +23,9 @@ export const notFound = (entity = 'Recurso') =>
 export const conflict = (message, details) =>
   new AppError(409, 'CONFLICT', message, details);
 
+export const duplicateContact = (matches) =>
+  new AppError(409, 'DUPLICATE_CONTACT', 'Ya existe un contacto con el mismo correo o teléfono.', { matches });
+
 export function assert(condition, error) {
   if (!condition) throw error;
 }

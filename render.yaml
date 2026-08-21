@@ -9,7 +9,7 @@ services:
     buildCommand: npm ci --omit=dev
     # Free no admite preDeployCommand; las migraciones son idempotentes y usan
     # advisory lock, por lo que pueden ejecutarse antes de cada arranque frío.
-    startCommand: npm run migrate && npm start
+    startCommand: npm run migrate && npm run start:render
     healthCheckPath: /ready
     autoDeployTrigger: checksPass
     envVars:

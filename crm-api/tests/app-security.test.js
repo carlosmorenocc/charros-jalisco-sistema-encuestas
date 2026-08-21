@@ -23,7 +23,7 @@ async function withServer(callback) {
     expiresAt: '2026-08-22T00:00:00.000Z',
     idleExpiresAt: '2026-08-21T17:00:00.000Z'
   };
-  const state = { loggedOut: false, pdfEvent: null };
+  const state = { loggedOut: false, pdfEvent: null, manualRegistration: null };
   const config = {
     nodeEnv: 'production',
     logLevel: 'silent',
@@ -36,12 +36,23 @@ async function withServer(callback) {
     sessionCookieName: '__Host-crm_session',
     csrfCookieName: '__Host-crm_csrf',
     sessionCookieSecure: true,
-    sessionAbsoluteTtlMs: 28_800_000
+    sessionAbsoluteTtlMs: 28_800_000,
+    sessionHashKey: 'test-session-hash-0123456789abcdef0123456789abcdef'
   };
   const repository = {
     async ready() { return true; },
     async recordDashboardPdfExport(receivedActor, event) {
       state.pdfEvent = { actor: receivedActor, event };
+    },
+    async createManualRegistration(data, receivedActor, context, idempotency) {
+      state.manualRegistration = { data, actor: receivedActor, context, idempotency };
+      return {
+        contact: { id: '00000000-0000-4000-8000-000000000020', rowVersion: 1 },
+        membership: null,
+        initialInteraction: { id: '00000000-0000-4000-8000-000000000021', isHumanContact: false },
+        nextTask: null,
+        replayed: false
+      };
     }
   };
   const authService = {
@@ -194,5 +205,40 @@ test('evento PDF acepta solo filtros minimizados y se audita antes de entregar',
       body: JSON.stringify({ filters: { executiveName: 'No debe guardarse' } })
     });
     assert.equal(pii.status, 400);
+  });
+});
+
+test('alta manual exige idempotencia y devuelve ETag hidratado', async () => {
+  await withServer(async (baseUrl, state) => {
+    const body = {
+      contact: {
+        firstName: 'Ana', lastName: 'López', email: 'ana@example.com',
+        subscriberStatus: 'prospect', commercialStage: 'to_contact',
+        businessSource: 'digital', declaredTenureSeasons: null
+      },
+      initialObservation: { notes: 'Alta desde CRM.' },
+      membership: null
+    };
+    const missing = await fetch(`${baseUrl}/api/v1/manual-registrations`, {
+      method: 'POST',
+      headers: { ...authHeaders(), 'content-type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    assert.equal(missing.status, 400);
+
+    const response = await fetch(`${baseUrl}/api/v1/manual-registrations`, {
+      method: 'POST',
+      headers: {
+        ...authHeaders(), 'content-type': 'application/json',
+        'idempotency-key': '00000000-0000-4000-8000-000000000099'
+      },
+      body: JSON.stringify(body)
+    });
+    assert.equal(response.status, 201);
+    assert.equal(response.headers.get('etag'), '"1"');
+    assert.equal(response.headers.get('idempotency-replayed'), 'false');
+    assert.equal((await response.json()).data.initialInteraction.isHumanContact, false);
+    assert.equal(state.manualRegistration.data.contact.source, 'crm_manual');
+    assert.match(state.manualRegistration.idempotency.requestHash, /^[0-9a-f]{64}$/);
   });
 });

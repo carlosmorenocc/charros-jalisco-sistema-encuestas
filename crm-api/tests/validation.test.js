@@ -5,6 +5,7 @@ import {
   validateContact,
   validateDashboardPdfEvent,
   validateInteraction,
+  validateManualRegistration,
   validateMembership,
   validatePayment,
   validateSale
@@ -22,6 +23,20 @@ test('normaliza un contacto válido y exige un medio de contacto', () => {
   assert.throws(() => validateContact({
     firstName: 'Ana', lastName: 'López', subscriberStatus: 'prospect', commercialStage: 'to_contact'
   }), /email o phone/);
+});
+
+test('canonicaliza teléfonos mexicanos igual que el importador inicial', () => {
+  for (const source of ['3312345678', '+52 33 1234 5678', '5213312345678']) {
+    const contact = validateContact({
+      firstName: 'Ana', lastName: 'López', phone: source,
+      subscriberStatus: 'prospect', commercialStage: 'to_contact'
+    });
+    assert.equal(contact.phone, '3312345678');
+  }
+  assert.throws(() => validateContact({
+    firstName: 'Ana', lastName: 'López', phone: '331234567',
+    subscriberStatus: 'prospect', commercialStage: 'to_contact'
+  }), /10 dígitos/);
 });
 
 test('no permite consentimiento nulo ni coerción de booleanos', () => {
@@ -83,4 +98,105 @@ test('evento PDF conserva solo filtros no sensibles permitidos', () => {
     () => validateDashboardPdfEvent({ generatedAt: new Date().toISOString(), filters: {} }),
     /campos no permitidos/
   );
+});
+
+const ADMIN_ID = '00000000-0000-4000-8000-000000000009';
+
+function manualContact(overrides = {}) {
+  return {
+    firstName: 'Ana', lastName: 'López', email: 'ana@example.com',
+    subscriberStatus: 'current_subscriber', commercialStage: 'contacted',
+    businessSource: 'referral', declaredTenureSeasons: 2,
+    ...overrides
+  };
+}
+
+function manualMembership(overrides = {}) {
+  return {
+    seatCount: 2,
+    startDate: '2026-08-21T00:00:00.000Z',
+    units: [
+      { unitNumber: 1, jerseySize: 'M' },
+      { unitNumber: 2, jerseySize: null }
+    ],
+    ...overrides
+  };
+}
+
+test('alta manual deriva temporada, membresía, provenance y aviso legal en servidor', () => {
+  const value = validateManualRegistration({
+    contact: manualContact(),
+    consent: { status: 'yes' },
+    initialObservation: { notes: 'Registro presencial.' },
+    membership: manualMembership()
+  }, { defaultAssigneeId: ADMIN_ID });
+  assert.equal(value.contact.source, 'crm_manual');
+  assert.equal(value.contact.acquisitionSource, 'referral');
+  assert.equal(value.consent.privacyNoticeVersion, '2026-08-01');
+  assert.equal(value.membership.seasonCode, 'LMP-2026-27');
+  assert.equal(value.membership.membershipStatus, 'active');
+  assert.equal(value.membership.units[1].jerseySize, null);
+});
+
+test('prospecto no fabrica abono ni temporadas declaradas desconocidas', () => {
+  const value = validateManualRegistration({
+    contact: manualContact({
+      subscriberStatus: 'prospect', declaredTenureSeasons: null
+    }),
+    initialObservation: { notes: 'Prospecto nuevo.' },
+    membership: null
+  }, { defaultAssigneeId: ADMIN_ID });
+  assert.equal(value.membership, null);
+  assert.equal(value.contact.declaredTenureSeasons, null);
+  assert.equal(value.consent.status, 'unknown');
+  assert.equal(value.consent.privacyNoticeVersion, null);
+  assert.throws(() => validateManualRegistration({
+    contact: manualContact({ subscriberStatus: 'prospect' }),
+    initialObservation: { notes: 'No corresponde.' },
+    membership: manualMembership()
+  }, { defaultAssigneeId: ADMIN_ID }), /prospecto no debe registrar abonos/i);
+});
+
+test('alta manual rechaza sobrecarga, secuencia incompleta, más de 20 y tarea pasada', () => {
+  const base = {
+    contact: manualContact(),
+    initialObservation: { notes: 'Observación.' }
+  };
+  assert.throws(() => validateManualRegistration({
+    ...base, contact: { ...base.contact, source: 'inyectada' }, membership: manualMembership()
+  }, { defaultAssigneeId: ADMIN_ID }), /campos no permitidos/);
+  assert.throws(() => validateManualRegistration({
+    ...base,
+    membership: manualMembership({ units: [{ unitNumber: 2 }, { unitNumber: 3 }] })
+  }, { defaultAssigneeId: ADMIN_ID }), /secuencia exacta/);
+  assert.throws(() => validateManualRegistration({
+    ...base,
+    membership: manualMembership({
+      seatCount: 21,
+      units: Array.from({ length: 21 }, (_, index) => ({ unitNumber: index + 1 }))
+    })
+  }, { defaultAssigneeId: ADMIN_ID }), /no puede exceder 20/);
+  assert.throws(() => validateManualRegistration({
+    ...base,
+    membership: manualMembership(),
+    nextTask: { description: 'Llamar', dueAt: '2020-01-01T00:00:00.000Z' }
+  }, { defaultAssigneeId: ADMIN_ID }), /debe estar en el futuro/);
+});
+
+test('renovación exige fecha y conserva sus abonos como cantidad gestionada', () => {
+  const input = {
+    contact: manualContact({ subscriberStatus: 'renewing' }),
+    initialObservation: { notes: 'Renovación pendiente.' },
+    membership: manualMembership({ startDate: undefined })
+  };
+  assert.throws(
+    () => validateManualRegistration(input, { defaultAssigneeId: ADMIN_ID }),
+    /renewalDate es obligatoria/
+  );
+  const value = validateManualRegistration({
+    ...input,
+    membership: { ...input.membership, renewalDate: '2026-08-30T00:00:00.000Z' }
+  }, { defaultAssigneeId: ADMIN_ID });
+  assert.equal(value.membership.membershipStatus, 'renewing');
+  assert.equal(value.membership.seatCount, 2);
 });

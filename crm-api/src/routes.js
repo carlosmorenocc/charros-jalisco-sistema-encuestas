@@ -5,6 +5,7 @@ import {
   validateContact,
   validateDashboardPdfEvent,
   validateInteraction,
+  validateManualRegistration,
   validateMembership,
   validateTask,
   validateUuid
@@ -12,6 +13,7 @@ import {
 import { rowsToCsv } from './lib/csv.js';
 import { badRequest } from './lib/errors.js';
 import { effectivePermissions } from './security/permissions.js';
+import { requestBodyHash } from './lib/idempotency.js';
 
 function data(res, value, status = 200, meta = undefined) {
   return res.status(status).json({ data: value, ...(meta ? { meta } : {}) });
@@ -29,7 +31,7 @@ function parseAuditQuery(query) {
   };
 }
 
-export function createApiRouter({ service }) {
+export function createApiRouter({ service, config }) {
   const router = express.Router();
 
   router.get('/me', (req, res) => data(res, {
@@ -43,6 +45,20 @@ export function createApiRouter({ service }) {
   router.get('/dashboard/summary', asyncHandler(async (req, res) => {
     const filters = parseListQuery(req.query);
     data(res, await service.dashboard(req.actor, filters));
+  }));
+
+  router.post('/manual-registrations', asyncHandler(async (req, res) => {
+    const idempotencyKey = validateUuid(req.get('idempotency-key'), 'Idempotency-Key');
+    const registration = validateManualRegistration(req.body, { defaultAssigneeId: req.actor.id });
+    const result = await service.createManualRegistration(
+      req.actor,
+      registration,
+      req.auditContext,
+      { idempotencyKey, requestHash: requestBodyHash(req.body, config.sessionHashKey) }
+    );
+    res.setHeader('etag', `"${result.contact.rowVersion}"`);
+    res.setHeader('idempotency-replayed', String(result.replayed));
+    data(res, result, result.replayed ? 200 : 201);
   }));
 
   router.get('/contacts', asyncHandler(async (req, res) => {

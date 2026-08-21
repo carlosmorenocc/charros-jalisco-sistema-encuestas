@@ -44,6 +44,15 @@ export class CrmService {
     return this.repository.createContact(data, actor, context);
   }
 
+  async createManualRegistration(actor, data, context, idempotency) {
+    if (actor.role !== 'admin') throw forbidden('Solo el Administrador puede realizar altas manuales.');
+    requirePermission(actor, PERMISSIONS.CONTACT_WRITE_ALL);
+    requirePermission(actor, PERMISSIONS.MEMBERSHIP_WRITE);
+    requirePermission(actor, PERMISSIONS.INTERACTION_WRITE);
+    if (data.nextTask) requirePermission(actor, PERMISSIONS.TASK_WRITE_ALL);
+    return this.repository.createManualRegistration(data, actor, context, idempotency);
+  }
+
   async updateContact(actor, id, data, context, expectedVersion) {
     const contact = await this.getContact(actor, id);
     if (!mayWriteContact(actor, contact)) throw forbidden('Solo puedes editar contactos de tu cartera.');

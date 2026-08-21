@@ -54,7 +54,9 @@ staging y demostración interna, pero no sustituye MFA.
 ## Reglas operativas
 
 - Una persona puede tener varios abonos y varias temporadas.
-- El número de temporadas se deriva del historial; no se captura como texto libre.
+- Las temporadas verificadas se derivan del historial. En el alta manual puede
+  capturarse, de forma opcional, el total declarado por la persona; ese dato se
+  conserva separado y nunca fabrica membresías históricas.
 - Un envío masivo no cuenta como interacción humana ni cambia por sí solo el
   estado a `Contactado`.
 - Una renovación exige temporada, fecha y cantidad de abonos.
@@ -69,7 +71,9 @@ staging y demostración interna, pero no sustituye MFA.
 - `crm-web/`: SPA React/Vite en un proyecto independiente de Vercel.
 - `crm-api/`: API Node/Express en Render.
 - PostgreSQL administrado en Render como fuente de verdad.
-- `crm-import/`: importador con staging, cuarentena, simulación y conciliación.
+- `crm-import/`: herramienta controlada para la carga inicial única, con staging,
+  cuarentena, simulación y conciliación. La operación cotidiana no admite
+  importaciones recurrentes; los nuevos registros se capturan manualmente.
 - Rama: `feat/crm-abonados-lmp-26-27`.
 
 El Excel original, reportes con datos personales, exportaciones y secretos nunca

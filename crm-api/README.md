@@ -120,6 +120,7 @@ X-CSRF-Token: <csrfToken>
 | POST, GET, POST | `/api/v1/auth/login`, `/session`, `/logout` | Sesión local |
 | GET | `/api/v1/me` | Admin y permisos efectivos |
 | GET | `/api/v1/dashboard/summary` | KPIs ejecutivos |
+| POST | `/api/v1/manual-registrations` | Alta manual atómica e idempotente, solo Admin |
 | GET, POST | `/api/v1/contacts` | Listar/crear contactos |
 | GET, PATCH, DELETE | `/api/v1/contacts/:id` | Detalle, edición y soft delete |
 | POST | `/api/v1/contacts/:id/restore` | Restaurar |
@@ -134,6 +135,102 @@ X-CSRF-Token: <csrfToken>
 | GET | `/api/v1/audit` | Auditoría minimizada |
 
 No existen rutas `/api/v1/users` ni mutaciones de usuarios/permisos.
+
+### Alta manual
+
+`POST /api/v1/manual-registrations` exige la sesión Admin, protección CSRF y un
+`Idempotency-Key` UUID nuevo. Crea en una sola transacción el contacto, su
+consentimiento, asignación, abono/unidades cuando corresponde, observación inicial y
+la siguiente tarea opcional. La observación se conserva como actividad no humana y
+no modifica la fecha de último contacto humano.
+
+```http
+POST /api/v1/manual-registrations
+Origin: https://<host-vercel-exacto>
+X-CSRF-Token: <csrfToken>
+Idempotency-Key: <crypto.randomUUID()>
+Content-Type: application/json
+```
+
+```json
+{
+  "contact": {
+    "firstName": "Ana",
+    "lastName": "López",
+    "email": "ana@example.com",
+    "phone": "+523312345678",
+    "municipality": "Guadalajara",
+    "subscriberStatus": "renewing",
+    "commercialStage": "follow_up",
+    "preferredChannel": "whatsapp",
+    "executiveId": null,
+    "businessSource": "season_ticket_database",
+    "declaredTenureSeasons": 3
+  },
+  "consent": { "status": "yes" },
+  "initialObservation": { "notes": "Alta capturada por Administración." },
+  "membership": {
+    "seatCount": 2,
+    "renewalDate": "2026-08-21T18:00:00.000Z",
+    "units": [
+      { "unitNumber": 1, "jerseySize": "M" },
+      { "unitNumber": 2, "jerseySize": null }
+    ]
+  },
+  "nextTask": {
+    "assignedTo": "uuid-opcional",
+    "description": "Confirmar datos",
+    "dueAt": "2026-08-22T18:00:00.000Z",
+    "priority": "normal"
+  }
+}
+```
+
+Reglas del comando:
+
+- `businessSource` es obligatorio y admite `season_ticket_database`, `referral`,
+  `box_office`, `digital`, `event`, `outbound` u `other`; `source=crm_manual` se
+  deriva aparte en el servidor como procedencia técnica.
+- `phone` se guarda en la misma forma canónica de 10 dígitos que usa el importador;
+  las variantes nacionales, `+52` y el prefijo histórico `521` se consideran la
+  misma identidad para el bloqueo concurrente y el dedupe de contactos/aliases.
+- `declaredTenureSeasons` es opcional (`null` significa que no consta) y no crea
+  historial ficticio. `seasonsCount` continúa siendo el conteo de membresías
+  realmente registradas.
+- `prospect` no lleva `membership`. Los demás estados crean la temporada fija
+  `LMP-2026-27`: `current_subscriber` y `new_subscriber` como `active`, `renewing`
+  como `renewing`, y `former_subscriber` como `expired`.
+- Un abono `active` exige `startDate`; uno `renewing` exige `renewalDate`.
+- `seatCount` admite 1–20 y `units` debe contener exactamente la secuencia
+  `1..seatCount`. `jerseySize` es opcional (`null`) o `S`, `M`, `L`, `XL`, `2XL`.
+- El cliente solo envía `consent.status`: `yes`, `no` o `unknown`. Para `yes/no`,
+  el servidor fija la versión real del aviso `2026-08-01`; para `unknown` la deja
+  en `null`. El cliente no puede declarar una versión legal.
+- `nextTask` es opcional, su fecha debe ser futura y el responsable debe estar
+  activo y ser coherente con la cartera asignada.
+
+Una creación responde `201`; el replay de la misma llave y cuerpo responde `200`
+sin repetir escrituras ni auditoría. Ambas respuestas exponen `ETag`,
+`Idempotency-Replayed` y:
+
+```json
+{
+  "data": {
+    "contact": {},
+    "membership": {},
+    "initialInteraction": {},
+    "nextTask": {},
+    "replayed": false
+  }
+}
+```
+
+El mismo `Idempotency-Key` con otro cuerpo devuelve `409 CONFLICT`. Un correo o
+teléfono ya presente en el contacto principal o sus aliases devuelve
+`409 DUPLICATE_CONTACT` y `error.details.matches` con elementos
+`{"id":"uuid","deleted":false}`; nunca fusiona automáticamente. En la vista de
+contactos, `seatCount` conserva el KPI de abonos activos y `managedSeatCount`
+incluye activos más renovaciones en seguimiento.
 
 El evento de PDF acepta exclusivamente:
 
