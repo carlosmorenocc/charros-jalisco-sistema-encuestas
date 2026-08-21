@@ -1,0 +1,278 @@
+{
+  "sheets": [
+    {
+      "name": "CRM Prospectos",
+      "present": true,
+      "headerRowNumber": 1,
+      "rows": [
+        {
+          "rowNumber": 2,
+          "formulaFields": [],
+          "values": {
+            "source_id": "CRM-001",
+            "name": "Ana Prueba",
+            "email": "ANA@EXAMPLE.TEST ",
+            "phone": "+52 33 1234 5678",
+            "municipality": "Guadalajara",
+            "subscriber_status": "Prospecto",
+            "commercial_stage": "Contactado",
+            "consent": "Sí",
+            "consent_at": "2026-08-20",
+            "origin": "Fixture sintético"
+          },
+          "raw": {
+            "ID": "CRM-001",
+            "Nombre": "Ana Prueba",
+            "Correo": "ANA@EXAMPLE.TEST ",
+            "Teléfono": "+52 33 1234 5678"
+          }
+        },
+        {
+          "rowNumber": 3,
+          "formulaFields": ["source_id"],
+          "values": {
+            "source_id": "CRM-002",
+            "name": null,
+            "email": null,
+            "phone": null
+          },
+          "raw": { "ID": "CRM-002" }
+        },
+        {
+          "rowNumber": 4,
+          "formulaFields": [],
+          "values": {
+            "source_id": "CRM-003",
+            "name": "Registro Inválido",
+            "email": "sin-arroba",
+            "phone": null
+          },
+          "raw": {
+            "ID": "CRM-003",
+            "Nombre": "Registro Inválido",
+            "Correo": "sin-arroba"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Cartera Abonados",
+      "present": true,
+      "headerRowNumber": 1,
+      "rows": [
+        {
+          "rowNumber": 2,
+          "formulaFields": [],
+          "values": {
+            "source_id": "REN-001",
+            "name": "Ana Prueba",
+            "email": "ana@example.test",
+            "phone": "3312345678",
+            "subscriber_status": "Abonado actual",
+            "season_origin": "LMP 2026-2027",
+            "subscription_count": 2,
+            "zone": "Central"
+          },
+          "raw": {
+            "ID": "REN-001",
+            "Nombre": "Ana Prueba",
+            "Correo": "ana@example.test",
+            "Teléfono": "3312345678",
+            "Abonos": 2
+          }
+        }
+      ]
+    },
+    {
+      "name": "Bitácora Contactos",
+      "present": true,
+      "headerRowNumber": 1,
+      "rows": [
+        {
+          "rowNumber": 2,
+          "formulaFields": [],
+          "values": {
+            "source_id": "INT-001",
+            "contact_ref": "CRM-001",
+            "occurred_at": "20/08/2026 10:30",
+            "channel": "Llamada",
+            "result": "Respondió",
+            "notes": "Texto sintético"
+          },
+          "raw": { "ID": "INT-001", "Contacto": "CRM-001" }
+        }
+      ]
+    },
+    {
+      "name": "Ventas Consolidadas",
+      "present": true,
+      "headerRowNumber": 1,
+      "rows": [
+        {
+          "rowNumber": 2,
+          "formulaFields": [],
+          "values": {
+            "source_id": "VTA-001",
+            "contact_ref": "CRM-001",
+            "sold_at": "2026-08-20",
+            "season": "LMP 2026-2027",
+            "product": "Abono",
+            "zone": "Central",
+            "units": 2,
+            "amount": 0
+          },
+          "raw": { "ID": "VTA-001", "Unidades": 2, "Monto": 0 }
+        }
+      ]
+    },
+    {
+      "name": "Catálogos",
+      "present": true,
+      "headerRowNumber": 1,
+      "rows": [
+        {
+          "rowNumber": 2,
+          "formulaFields": [],
+          "values": {
+            "executive": "Ejecutivo Sintético",
+            "commercial_status": "Contactado",
+            "sale_period": "Preventa",
+            "product": "Abono",
+            "zone": "Central",
+            "price": 1000
+          },
+          "raw": { "Ejecutivo": "Ejecutivo Sintético", "Producto": "Abono" }
+        }
+      ]
+    },
+    {
+      "name": "Historial Envíos",
+      "present": true,
+      "headerRowNumber": 1,
+      "rows": [
+        {
+          "rowNumber": 2,
+          "formulaFields": [],
+          "values": {
+            "source_id": "MSG-001",
+            "recipient": "ana@example.test",
+            "campaign": "Campaña sintética",
+            "sent_at": "2026-08-19T16:00:00Z"
+          },
+          "raw": { "ID": "MSG-001", "Correo": "ana@example.test" }
+        }
+      ]
+    },
+    {
+      "name": "Programa Recompensas",
+      "present": true,
+      "headerRowNumber": 5,
+      "rows": [
+        {
+          "rowNumber": 6,
+          "formulaFields": [],
+          "values": {
+            "visit": 1,
+            "reward": "Beneficio sintético",
+            "type": "Digital",
+            "condition": "Condición sintética"
+          },
+          "raw": { "Visita": 1, "Recompensa": "Beneficio sintético" }
+        },
+        {
+          "rowNumber": 7,
+          "formulaFields": [],
+          "values": {
+            "visit": 2,
+            "reward": "Beneficio pendiente",
+            "type": "Físico",
+            "condition": null
+          },
+          "raw": { "Visita": 2, "Recompensa": "Beneficio pendiente" }
+        }
+      ]
+    },
+    {
+      "name": "Fuente Corte Ventas",
+      "present": true,
+      "headerRowNumber": 8,
+      "rows": [
+        {
+          "rowNumber": 9,
+          "formulaFields": [],
+          "values": {
+            "zone": "Central",
+            "type": "Abono sintético",
+            "seats": 2,
+            "price": 100,
+            "cash": 200,
+            "card": 0,
+            "other": 0,
+            "credit": 0,
+            "commission": 0,
+            "total": 200
+          },
+          "raw": { "Zona": "Central", "Tipo": "Abono sintético", "Gran Total": 200 }
+        },
+        {
+          "rowNumber": 10,
+          "formulaFields": [],
+          "values": {
+            "zone": "Central",
+            "type": "Abono sintético",
+            "seats": 2,
+            "price": 100,
+            "cash": 200,
+            "card": 0,
+            "other": 0,
+            "credit": 0,
+            "commission": 0,
+            "total": 200
+          },
+          "raw": { "Zona": "Central", "Tipo": "Abono sintético", "Gran Total": 200 }
+        }
+      ]
+    },
+    {
+      "name": "Fuente Encuesta Corta",
+      "present": true,
+      "headerRowNumber": 1,
+      "rows": []
+    },
+    {
+      "name": "Fuente Encuesta Larga",
+      "present": true,
+      "headerRowNumber": 1,
+      "rows": [
+        {
+          "rowNumber": 2,
+          "formulaFields": [],
+          "values": {
+            "submission_id": "SUB-001",
+            "name": "Ana Prueba",
+            "email": "ana@example.test",
+            "phone": "3312345678",
+            "consent": "No",
+            "submitted_at": "2026-07-01",
+            "antiquity": "01-mar"
+          },
+          "raw": { "submissionId": "SUB-001", "Antigüedad": "01-mar" }
+        },
+        {
+          "rowNumber": 3,
+          "formulaFields": [],
+          "values": {
+            "submission_id": "SUB-002",
+            "name": "Beto Sintético",
+            "email": "beto@example.test",
+            "phone": "3398765432",
+            "consent": "Sí",
+            "submitted_at": "2026-07-02",
+            "antiquity": "04-jul"
+          },
+          "raw": { "submissionId": "SUB-002", "Antigüedad": "04-jul" }
+        }
+      ]
+    }
+  ]
+}

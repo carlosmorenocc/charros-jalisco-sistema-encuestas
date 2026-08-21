@@ -4,6 +4,23 @@ Landing page oficial para capturar opiniones y datos de aficionados de Charros d
 
 **Slogan:** "Únete al Club más Charro"
 
+## CRM privado de abonados
+
+La rama `feat/crm-abonados-lmp-26-27` incorpora un CRM separado de las encuestas
+públicas:
+
+- [`crm-web/`](crm-web/) — interfaz React/Vite para un proyecto independiente en Vercel.
+- [`crm-api/`](crm-api/) — API autenticada y PostgreSQL para Render.
+- [`crm-import/`](crm-import/) — auditor e importador controlado del Excel histórico.
+- [`docs/CRM_APPROVED_SCOPE.md`](docs/CRM_APPROVED_SCOPE.md) — alcance funcional y acceso aprobado.
+- [`docs/CRM_DATA_AUDIT_2026-08-21.md`](docs/CRM_DATA_AUDIT_2026-08-21.md) — auditoría agregada del Excel, sin PII.
+- [`docs/CRM_DEPLOYMENT_CHECKLIST.md`](docs/CRM_DEPLOYMENT_CHECKLIST.md) — configuración privada de Vercel, Render y acceso local.
+
+El CRM no comparte autenticación ni almacenamiento CSV con los formularios. Esta
+primera entrega utiliza una sola cuenta local de Administrador, sesiones seguras
+y una base PostgreSQL de staging. No requiere Microsoft Entra ni debe desplegarse
+en modo demostración.
+
 ## 🎯 Características principales
 
 - ✓ Multi-step form (6 pasos + privacy)
