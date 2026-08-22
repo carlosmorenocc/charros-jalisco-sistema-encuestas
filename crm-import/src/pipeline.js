@@ -175,7 +175,9 @@ function transformMembership(context) {
     id: membershipId,
     sourceRecordId: sourceRow.id,
     stagedContactId: contact.id,
-    membershipStatus: normalizeMembershipStatus(row.values.subscriber_status),
+    membershipStatus: normalizeMembershipStatus(
+      row.values.portfolio_segment ?? row.values.subscriber_status
+    ),
     seasonCode: season.code,
     sourceSeasonCode: season.sourceValue,
     seasonResolution: season.resolution,
@@ -257,7 +259,9 @@ function buildContact({ result, sourceRow, row, sheetName, spec }) {
       profile: cleanText(row.values.profile),
       origin: cleanText(row.values.origin),
       subscriberStatus: normalizeSubscriberStatus(
-        row.values.subscriber_status ?? row.values.commercial_stage,
+        spec.recordType === 'portfolio' && isMeaningful(row.values.portfolio_segment)
+          ? row.values.portfolio_segment
+          : [row.values.profile, row.values.subscriber_status, row.values.commercial_stage],
         spec.recordType
       ),
       commercialStage: normalizeCommercialStage(row.values.commercial_stage),
@@ -706,14 +710,18 @@ function increment(target, key, amount = 1) {
 }
 
 function normalizeSubscriberStatus(value, recordType) {
-  const key = normalizeKey(value);
-  if (!key) return recordType === 'portfolio' ? 'renewing' : 'prospect';
-  if (key.includes('abonado actual') || ['actual', 'renovado'].includes(key)) {
+  const keys = (Array.isArray(value) ? value : [value]).map(normalizeKey).filter(Boolean);
+  if (keys.length === 0) return recordType === 'portfolio' ? 'renewing' : 'prospect';
+  if (keys.some((key) => key.includes('abonado actual') || key.includes('abonados actuales')
+    || ['abonado', 'actual', 'renovado'].includes(key))) {
     return 'current_subscriber';
   }
-  if (key.includes('por renovar') || key.includes('renovacion')) return 'renewing';
-  if (key.includes('abonado nuevo') || key === 'nuevo') return 'new_subscriber';
-  if (key.includes('exabonado') || key.includes('ex abonado')) return 'former_subscriber';
+  if (keys.some((key) => key.includes('exabonado') || key.includes('ex abonado')
+    || (recordType === 'portfolio' && key.includes('sin contactar')))) {
+    return 'former_subscriber';
+  }
+  if (keys.some((key) => key.includes('por renovar') || key.includes('renovacion'))) return 'renewing';
+  if (keys.some((key) => key.includes('abonado nuevo') || key === 'nuevo')) return 'new_subscriber';
   return 'prospect';
 }
 
@@ -723,6 +731,8 @@ function normalizeCommercialStage(value) {
   if (key.includes('abonado actual identificado')) return 'contacted';
   if (key.includes('sin asignar')) return 'unassigned';
   if (key.includes('sin contactar') || key.includes('por contactar')) return 'to_contact';
+  if (key.includes('correo enviado')) return 'contacted';
+  if (key.includes('contacto en proceso')) return 'follow_up';
   if (key === 'contactado' || key.includes('contactado')) return 'contacted';
   if (key.includes('seguimiento')) return 'follow_up';
   if (key.includes('interesado')) return key.includes('no interesado') ? 'lost' : 'interested';
@@ -736,7 +746,7 @@ function normalizeMembershipStatus(value) {
   const key = normalizeKey(value);
   if (!key) return 'renewing';
   if (key.includes('cancel')) return 'cancelled';
-  if (key.includes('exabonado') || key.includes('vencido')) return 'expired';
+  if (key.includes('exabonado') || key.includes('ex abonado') || key.includes('vencido')) return 'expired';
   if (key.includes('por renovar') || key.includes('renovacion')) return 'renewing';
   if (key.includes('actual') || key.includes('renovado') || key.includes('activo')) return 'active';
   return 'renewing';

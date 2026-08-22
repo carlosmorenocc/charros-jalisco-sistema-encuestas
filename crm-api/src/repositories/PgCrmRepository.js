@@ -173,6 +173,14 @@ function auditProjection(entity) {
   ].filter((key) => entity[key] !== undefined).map((key) => [key, entity[key]]));
 }
 
+function canonicalIdentityPhone(value) {
+  if (value == null) return null;
+  let digits = String(value).replace(/\D+/gu, '');
+  if (digits.length === 12 && digits.startsWith('52')) digits = digits.slice(2);
+  if (digits.length === 13 && digits.startsWith('521')) digits = digits.slice(3);
+  return digits.length === 10 ? digits : null;
+}
+
 export class PgCrmRepository {
   constructor(pool, { exportRowLimit = 50_000 } = {}) {
     this.pool = pool;
@@ -615,9 +623,71 @@ export class PgCrmRepository {
     };
   }
 
+  async lockContactIdentities(client, { email, phone }) {
+    const normalizedEmail = typeof email === 'string' && email.trim()
+      ? email.trim().toLowerCase()
+      : null;
+    const normalizedPhone = canonicalIdentityPhone(phone);
+    const identityKeys = [
+      normalizedEmail ? `email:${normalizedEmail}` : null,
+      normalizedPhone ? `phone:${normalizedPhone}` : null
+    ].filter(Boolean).sort();
+    for (const identityKey of identityKeys) {
+      await client.query(
+        'SELECT pg_advisory_xact_lock(hashtextextended($1,0))',
+        [`manual-registration-identity:${identityKey}`]
+      );
+    }
+    return { email: normalizedEmail, phone: normalizedPhone };
+  }
+
+  async assertContactIdentityAvailable(client, identity, { excludeContactId = null } = {}) {
+    if (!identity.email && !identity.phone) return;
+    const duplicates = await client.query(
+      `SELECT c.id,c.deleted_at FROM contacts c
+       CROSS JOIN LATERAL (
+         SELECT regexp_replace(COALESCE(c.phone,''),'[^0-9]','','g') AS digits
+       ) contact_phone
+       WHERE (
+         ($1::text IS NOT NULL AND lower(trim(c.email))=lower(trim($1)))
+          OR ($2::text IS NOT NULL
+            AND CASE
+              WHEN contact_phone.digits ~ '^(52|521)[0-9]{10}$'
+                THEN right(contact_phone.digits,10)
+              ELSE contact_phone.digits
+            END=$2)
+          OR EXISTS (
+            SELECT 1 FROM contact_aliases a
+            CROSS JOIN LATERAL (
+              SELECT regexp_replace(a.alias_value,'[^0-9]','','g') AS digits
+            ) alias_phone
+            WHERE a.contact_id=c.id AND (
+              ($1::text IS NOT NULL AND a.alias_type='email'
+                AND lower(trim(a.alias_value))=lower(trim($1)))
+              OR ($2::text IS NOT NULL AND a.alias_type='phone'
+                AND CASE
+                  WHEN alias_phone.digits ~ '^(52|521)[0-9]{10}$'
+                    THEN right(alias_phone.digits,10)
+                  ELSE alias_phone.digits
+                END=$2)
+            )
+          )
+       ) AND ($3::uuid IS NULL OR c.id<>$3)
+       ORDER BY c.id FOR UPDATE OF c`,
+      [identity.email, identity.phone, excludeContactId]
+    );
+    if (duplicates.rowCount > 0) {
+      throw duplicateContact(
+        duplicates.rows.map((row) => ({ id: row.id, deleted: Boolean(row.deleted_at) }))
+      );
+    }
+  }
+
   async createContact(data, actor, context) {
     return withTransaction(this.pool, async (client) => {
       if (data.executiveId) await this.assertActiveUser(client, data.executiveId, ['executive']);
+      const identity = await this.lockContactIdentities(client, data);
+      await this.assertContactIdentityAvailable(client, identity);
       const result = await client.query(
         `INSERT INTO contacts
           (first_name,last_name,email,phone,municipality,subscriber_status,commercial_stage,
@@ -682,52 +752,8 @@ export class PgCrmRepository {
         await this.assertActiveUser(client, data.contact.executiveId, ['executive']);
       }
 
-      const identityKeys = [
-        data.contact.email ? `email:${data.contact.email.toLowerCase()}` : null,
-        data.contact.phone ? `phone:${data.contact.phone}` : null
-      ].filter(Boolean).sort();
-      for (const identityKey of identityKeys) {
-        await client.query(
-          'SELECT pg_advisory_xact_lock(hashtextextended($1,0))',
-          [`manual-registration-identity:${identityKey}`]
-        );
-      }
-      const duplicates = await client.query(
-        `SELECT c.id,c.deleted_at FROM contacts c
-         CROSS JOIN LATERAL (
-           SELECT regexp_replace(COALESCE(c.phone,''),'[^0-9]','','g') AS digits
-         ) contact_phone
-         WHERE ($1::text IS NOT NULL AND lower(trim(c.email))=lower(trim($1)))
-            OR ($2::text IS NOT NULL
-              AND CASE
-                WHEN contact_phone.digits ~ '^(52|521)[0-9]{10}$'
-                  THEN right(contact_phone.digits,10)
-                ELSE contact_phone.digits
-              END=$2)
-            OR EXISTS (
-              SELECT 1 FROM contact_aliases a
-              CROSS JOIN LATERAL (
-                SELECT regexp_replace(a.alias_value,'[^0-9]','','g') AS digits
-              ) alias_phone
-              WHERE a.contact_id=c.id AND (
-                ($1::text IS NOT NULL AND a.alias_type='email'
-                  AND lower(trim(a.alias_value))=lower(trim($1)))
-                OR ($2::text IS NOT NULL AND a.alias_type='phone'
-                  AND CASE
-                    WHEN alias_phone.digits ~ '^(52|521)[0-9]{10}$'
-                      THEN right(alias_phone.digits,10)
-                    ELSE alias_phone.digits
-                  END=$2)
-              )
-            )
-         ORDER BY c.id FOR UPDATE OF c`,
-        [data.contact.email ?? null, data.contact.phone ?? null]
-      );
-      if (duplicates.rowCount > 0) {
-        throw duplicateContact(
-          duplicates.rows.map((row) => ({ id: row.id, deleted: Boolean(row.deleted_at) }))
-        );
-      }
+      const identity = await this.lockContactIdentities(client, data.contact);
+      await this.assertContactIdentityAvailable(client, identity);
 
       const contactResult = await client.query(
         `INSERT INTO contacts
@@ -864,6 +890,13 @@ export class PgCrmRepository {
       const entries = Object.entries(data).filter(([key]) => columns[key]);
       if (!entries.length) throw conflict('No hay campos editables para actualizar.');
       if (data.executiveId) await this.assertActiveUser(client, data.executiveId, ['executive']);
+      if (data.email !== undefined || data.phone !== undefined) {
+        const identity = await this.lockContactIdentities(client, {
+          email: data.email === undefined ? before.email : data.email,
+          phone: data.phone === undefined ? before.phone : data.phone
+        });
+        await this.assertContactIdentityAvailable(client, identity, { excludeContactId: id });
+      }
       const values = entries.map(([, value]) => value);
       const sets = entries.map(([key], index) => `${columns[key]} = $${index + 1}`);
       values.push(actor.id, id, expectedVersion);

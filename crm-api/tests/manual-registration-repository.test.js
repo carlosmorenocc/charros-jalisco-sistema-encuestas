@@ -229,3 +229,19 @@ test('falla del último subregistro provoca ROLLBACK y no escribe auditoría', a
   assert.equal(pool.state.commands.includes('COMMIT'), false);
   assert.equal(pool.state.auditsInserted, 0);
 });
+
+test('POST de contacto toma los mismos locks y revalida duplicados antes del INSERT', async () => {
+  const pool = new FakePool({
+    duplicates: [{ id: '00000000-0000-4000-8000-000000000032', deleted_at: null }]
+  });
+  const repository = new PgCrmRepository(pool);
+  await assert.rejects(
+    repository.createContact(registration.contact, actor, context),
+    (error) => error.status === 409 && error.code === 'DUPLICATE_CONTACT'
+  );
+  assert.equal(pool.state.contactsInserted, 0);
+  assert.ok(pool.state.commands.some((sql) => sql.includes('pg_advisory_xact_lock')));
+  assert.ok(pool.state.commands.some((sql) =>
+    sql.startsWith('SELECT c.id,c.deleted_at FROM contacts c')));
+  assert.equal(pool.state.commands.at(-1), 'ROLLBACK');
+});

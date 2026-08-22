@@ -1,6 +1,6 @@
 {
   "name": "@charros/crm-staging-import",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "Auditor e importador seguro del CRM de abonados hacia PostgreSQL staging.",
   "type": "module",
@@ -12,7 +12,8 @@
   },
   "scripts": {
     "audit": "node ./src/cli.js",
-    "test": "node ./tests/pipeline.test.js"
+    "promote": "node ./src/promotion-cli.js",
+    "test": "node --test --test-isolation=none ./tests/*.test.js"
   },
   "dependencies": {
     "exceljs": "4.4.0",

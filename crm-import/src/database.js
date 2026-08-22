@@ -1,10 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import { buildStagingRecords } from './staging-records.js';
+import { IMPORTER_NAME, IMPORTER_VERSION } from './constants.js';
 
 const REQUIRED_DATABASE_CONTRACT = Object.freeze({
   import_batches: [
     'id', 'source_name', 'source_sha256', 'status', 'total_rows', 'accepted_rows',
-    'quarantined_rows', 'uploaded_by', 'completed_at'
+    'quarantined_rows', 'uploaded_by', 'completed_at', 'config_version',
+    'config_sha256', 'importer_release'
   ],
   source_records: [
     'id', 'import_batch_id', 'source_sheet', 'source_row_number', 'source_record_id',
@@ -17,24 +19,32 @@ const REQUIRED_DATABASE_CONTRACT = Object.freeze({
   ]
 });
 
-export async function commitStagingImport(result, { databaseUrl, uploadedBy }) {
+export async function commitStagingImport(result, {
+  databaseUrl,
+  uploadedBy,
+  client: suppliedClient,
+  connectionConfig
+}) {
   const pgModule = await import('pg');
   const Client = pgModule.Client ?? pgModule.default?.Client;
   if (!Client) throw importError('POSTGRES_DRIVER_NOT_AVAILABLE');
 
-  const client = new Client({
-    connectionString: databaseUrl,
+  const client = suppliedClient ?? new Client({
+    ...(connectionConfig ?? { connectionString: databaseUrl, ssl: { rejectUnauthorized: true } }),
     application_name: 'charros-crm-staging-import',
-    statement_timeout: 60_000,
-    query_timeout: 60_000,
-    connectionTimeoutMillis: 10_000
+    statement_timeout: 600_000,
+    query_timeout: 600_000,
+    connectionTimeoutMillis: 15_000
   });
+  if (connectionConfig && connectionConfig.ssl?.rejectUnauthorized !== true) {
+    throw importError('STRICT_TLS_REQUIRED');
+  }
   const batchId = randomUUID();
   const stagingRecords = buildStagingRecords(result);
   const quarantinedRows = stagingRecords.filter((record) => record.resolution === 'quarantined').length;
   const acceptedRows = stagingRecords.length - quarantinedRows;
 
-  await client.connect();
+  if (!suppliedClient) await client.connect();
   try {
     await client.query('BEGIN');
     await client.query("SET LOCAL lock_timeout = '5s'");
@@ -47,8 +57,8 @@ export async function commitStagingImport(result, { databaseUrl, uploadedBy }) {
     await client.query(
       `INSERT INTO import_batches (
         id, source_name, source_sha256, status, total_rows, accepted_rows,
-        quarantined_rows, uploaded_by
-      ) VALUES ($1, $2, $3, 'pending', $4, $5, $6, $7)`,
+        quarantined_rows, uploaded_by, config_version, config_sha256, importer_release
+      ) VALUES ($1, $2, $3, 'pending', $4, $5, $6, $7, $8, $9, $10)`,
       [
         batchId,
         `crm-workbook-${result.source.sha256.slice(0, 12)}.xlsx`,
@@ -56,48 +66,50 @@ export async function commitStagingImport(result, { databaseUrl, uploadedBy }) {
         stagingRecords.length,
         acceptedRows,
         quarantinedRows,
-        uploadedBy
+        uploadedBy,
+        result.configVersion,
+        result.configSha256,
+        `${IMPORTER_NAME}@${IMPORTER_VERSION}`
       ]
     );
 
-    for (const record of stagingRecords) {
-      await client.query(
+    for (const records of chunks(stagingRecords, 500)) {
+      const inserted = await client.query(
         `INSERT INTO source_records (
-          id, import_batch_id, source_sheet, source_row_number, source_record_id,
-          resolution, resolution_reason, normalized_fingerprint, raw_payload,
-          normalized_payload, validation_errors
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10::jsonb, $11::jsonb)`,
-        [
-          record.id,
-          batchId,
-          record.sourceSheet,
-          record.sourceRowNumber,
-          record.sourceRecordId,
-          record.resolution,
-          record.resolutionReason,
-          record.normalizedFingerprint,
-          JSON.stringify(record.rawPayload),
-          record.normalizedPayload ? JSON.stringify(record.normalizedPayload) : null,
-          JSON.stringify(record.validationErrors)
-        ]
+          id,import_batch_id,source_sheet,source_row_number,source_record_id,
+          resolution,resolution_reason,normalized_fingerprint,raw_payload,
+          normalized_payload,validation_errors)
+         SELECT x.id,$1,x.source_sheet,x.source_row_number,x.source_record_id,
+           x.resolution,x.resolution_reason,x.normalized_fingerprint,x.raw_payload,
+           x.normalized_payload,x.validation_errors
+         FROM jsonb_to_recordset($2::jsonb) AS x(
+           id uuid,source_sheet text,source_row_number integer,source_record_id text,
+           resolution text,resolution_reason text,normalized_fingerprint text,
+           raw_payload jsonb,normalized_payload jsonb,validation_errors jsonb)`,
+        [batchId, JSON.stringify(records.map(stagingRecordForDatabase))]
       );
+      if (inserted.rowCount !== records.length) throw importError('STAGING_SOURCE_COUNT_MISMATCH');
     }
 
-    for (const candidate of result.mergeCandidates) {
-      await client.query(
+    for (const candidates of chunks(result.mergeCandidates, 500)) {
+      const inserted = await client.query(
         `INSERT INTO import_match_candidates (
-          id, import_batch_id, left_source_record_id, right_source_record_id,
-          confidence, rule_codes, review_status
-        ) VALUES ($1, $2, $3, $4, $5, $6::jsonb, 'pending_review')`,
-        [
-          candidate.id,
-          batchId,
-          candidate.leftSourceRecordId,
-          candidate.rightSourceRecordId,
-          candidate.confidence,
-          JSON.stringify(candidate.ruleCodes)
-        ]
+          id,import_batch_id,left_source_record_id,right_source_record_id,
+          confidence,rule_codes,review_status)
+         SELECT x.id,$1,x.left_source_record_id,x.right_source_record_id,
+           x.confidence,x.rule_codes,'pending_review'
+         FROM jsonb_to_recordset($2::jsonb) AS x(
+           id uuid,left_source_record_id uuid,right_source_record_id uuid,
+           confidence text,rule_codes jsonb)`,
+        [batchId, JSON.stringify(candidates.map((candidate) => ({
+          id: candidate.id,
+          left_source_record_id: candidate.leftSourceRecordId,
+          right_source_record_id: candidate.rightSourceRecordId,
+          confidence: candidate.confidence,
+          rule_codes: candidate.ruleCodes
+        })))]
       );
+      if (inserted.rowCount !== candidates.length) throw importError('STAGING_CANDIDATE_COUNT_MISMATCH');
     }
 
     await client.query(
@@ -117,8 +129,29 @@ export async function commitStagingImport(result, { databaseUrl, uploadedBy }) {
     if (KNOWN_SAFE_ERROR_CODES.has(error?.code)) throw error;
     throw importError('STAGING_TRANSACTION_FAILED');
   } finally {
-    await client.end().catch(() => {});
+    if (!suppliedClient) await client.end().catch(() => {});
   }
+}
+
+function stagingRecordForDatabase(record) {
+  return {
+    id: record.id,
+    source_sheet: record.sourceSheet,
+    source_row_number: record.sourceRowNumber,
+    source_record_id: record.sourceRecordId,
+    resolution: record.resolution,
+    resolution_reason: record.resolutionReason,
+    normalized_fingerprint: record.normalizedFingerprint,
+    raw_payload: record.rawPayload,
+    normalized_payload: record.normalizedPayload,
+    validation_errors: record.validationErrors
+  };
+}
+
+function chunks(items, size) {
+  const result = [];
+  for (let index = 0; index < items.length; index += size) result.push(items.slice(index, index + size));
+  return result;
 }
 
 const KNOWN_SAFE_ERROR_CODES = new Set([

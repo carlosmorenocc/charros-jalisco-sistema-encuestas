@@ -1,6 +1,6 @@
 # Importador seguro del CRM de abonados
 
-Herramienta aislada para auditar un libro XLSX y dejar sus filas en el área de **staging** de PostgreSQL. No promueve contactos, no fusiona identidades y no modifica tablas canónicas. El modo predeterminado es `dry-run`.
+Herramienta aislada para auditar un libro XLSX y dejar sus filas en el área de **staging** de PostgreSQL. El modo predeterminado es `dry-run`. Incluye además un promotor histórico separado y explícito para el corte inicial aprobado; nunca fusiona identidades ni convierte candidatos pendientes en contactos canónicos.
 
 ## Principios de seguridad
 
@@ -127,7 +127,21 @@ La escritura se rechaza si:
 - falta una hoja configurada o no puede detectarse su encabezado;
 - el mismo SHA-256 ya fue cargado.
 
-Un commit correcto termina el lote en `validated`, no en `imported`. La promoción a tablas canónicas requiere un flujo separado que revise la cuarentena y acepte o rechace cada coincidencia.
+Un commit correcto termina el lote en `validated`, no en `imported`. La promoción canónica es un segundo comando, transaccional e idempotente. Requiere la migración `005_initial_import_promotion.sql`, modo mantenimiento, un respaldo o punto de recuperación verificado, el SHA exacto del plan y el conjunto completo de métricas mostrado por el dry-run:
+
+```powershell
+$env:CRM_PROMOTION_ENVIRONMENT = "staging"
+$env:CRM_PROMOTION_ALLOW_WRITE = "true"
+$env:CRM_PROMOTION_ADMIN_ID = "UUID-DE-UN-ADMIN-ACTIVO"
+
+# Revisión sin escritura
+npm run promote -- --batch "UUID-DEL-LOTE"
+
+# Commit abreviado: repetir cada entrada de requiredCommitExpectations como --expect nombre=valor
+npm run promote -- --batch "UUID-DEL-LOTE" --commit --confirm-plan "SHA256-DEL-PLAN" --expect contactsCreated=2727
+```
+
+El ejemplo abreviado de commit no es suficiente por sí solo: el guard exige **todas** las entradas de `requiredCommitExpectations`. El promotor inicial sólo crea los contactos inequívocos, membresías vigentes verificadas, consentimientos históricos y campañas aprobadas. Las filas bloqueadas, diferidas o en cuarentena permanecen en staging y se registran en el ledger; no se autofusionan.
 
 ## Clasificación de posibles coincidencias
 
@@ -166,12 +180,14 @@ Cubren:
 7. Revisar `source_records` e `import_match_candidates` mediante un procedimiento
    administrativo controlado en staging. La primera entrega aún no publica una
    pantalla de conciliación en el CRM.
-8. Promover datos con el flujo administrativo, nunca mediante cambios manuales en SQL.
+8. Activar mantenimiento y drenar solicitudes antes de cualquier promoción.
+9. Ejecutar el dry-run del lote, confirmar SHA y todas las métricas y promover con el CLI; nunca mediante cambios manuales en SQL.
+10. Validar conteos y fechas históricas antes de retirar mantenimiento.
 
 ## Límites deliberados
 
 - El CLI no crea tablas ni aplica migraciones.
-- No escribe directamente en `contacts`, `memberships`, `interactions`, `sales` ni campañas canónicas.
+- El comando `audit` sólo escribe staging. El comando separado `promote` escribe el subconjunto canónico aprobado; nunca crea interacciones, tareas o ventas a partir de este corte.
 - No decide qué consentimiento es vigente; conserva todos los eventos y su procedencia.
 - No considera un correo masivo como interacción humana.
 - No elimina duplicados ni repara correos/teléfonos por aproximación.

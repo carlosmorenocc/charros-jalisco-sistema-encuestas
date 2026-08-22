@@ -68,6 +68,7 @@
             "name": "Ana Prueba",
             "email": "ana@example.test",
             "phone": "3312345678",
+            "portfolio_segment": "Abonados actuales",
             "subscriber_status": "Abonado actual",
             "season_origin": "LMP 2026-2027",
             "subscription_count": 2,
