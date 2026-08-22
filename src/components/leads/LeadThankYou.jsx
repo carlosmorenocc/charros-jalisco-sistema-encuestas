@@ -3,7 +3,7 @@ import React from 'react'
 export default function LeadThankYou() {
   return (
     <section className="thank-you">
-      <h2>¡Lead registrado con éxito!</h2>
+      <h2>¡Correo registrado con éxito!</h2>
       <p>
         Gracias por registrarte en el estadio. Ya quedaste inscrito para futuras dinámicas e incentivos
         de Charros de Jalisco.
