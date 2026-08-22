@@ -42,8 +42,8 @@ try {
       await client.query(
         `INSERT INTO audit_events
            (actor_id,action,entity_type,entity_id,request_id,metadata)
-         VALUES ($1,'auth.admin_bootstrapped','auth',$1,$2,'{"source":"cli"}'::jsonb)`,
-        [created.rows[0].id, crypto.randomUUID()]
+         VALUES ($1,'auth.admin_bootstrapped','auth',$2,$3,'{"source":"cli"}'::jsonb)`,
+        [created.rows[0].id, String(created.rows[0].id), crypto.randomUUID()]
       );
       return { id: created.rows[0].id, action: 'created' };
     }
@@ -68,8 +68,8 @@ try {
     await client.query(
       `INSERT INTO audit_events
          (actor_id,action,entity_type,entity_id,request_id,metadata)
-       VALUES ($1,'auth.password_reset','auth',$1,$2,'{"source":"cli"}'::jsonb)`,
-      [userId, crypto.randomUUID()]
+       VALUES ($1,'auth.password_reset','auth',$2,$3,'{"source":"cli"}'::jsonb)`,
+      [userId, String(userId), crypto.randomUUID()]
     );
     return { id: userId, action: 'reset' };
   });

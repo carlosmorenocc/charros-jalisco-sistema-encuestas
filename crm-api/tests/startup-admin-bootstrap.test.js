@@ -83,6 +83,12 @@ test('creates an Admin only from the zero-user and zero-credential state', async
   assert.ok(queries.some(({ sql }) => /INSERT INTO app_users/.test(sql)));
   assert.ok(queries.some(({ sql }) => /INSERT INTO local_credentials/.test(sql)));
   assert.ok(queries.some(({ sql }) => /auth\.admin_bootstrapped/.test(sql)));
+  const auditInsert = queries.find(({ sql }) => /auth\.admin_bootstrapped/.test(sql));
+  assert.deepEqual(auditInsert.values, [
+    'admin-id',
+    'admin-id',
+    '00000000-0000-4000-8000-000000000001'
+  ]);
   assert.equal(
     queries.some(({ values }) => values.includes(ENV.BOOTSTRAP_ADMIN_PASSWORD)),
     false,

@@ -110,8 +110,8 @@ export async function ensureStartupAdmin({
     await client.query(
       `INSERT INTO audit_events
          (actor_id,action,entity_type,entity_id,request_id,metadata)
-       VALUES ($1,'auth.admin_bootstrapped','auth',$1,$2,'{"source":"startup_env"}'::jsonb)`,
-      [created.rows[0].id, randomUUID()]
+       VALUES ($1,'auth.admin_bootstrapped','auth',$2,$3,'{"source":"startup_env"}'::jsonb)`,
+      [created.rows[0].id, String(created.rows[0].id), randomUUID()]
     );
     return { status: 'created' };
   });
