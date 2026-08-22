@@ -120,21 +120,52 @@ test('a cold restart leaves the matching Admin and password unchanged', async ()
   assert.equal(queries.some(({ sql }) => /INSERT INTO/.test(sql)), false);
 });
 
-test('refuses a different, disabled, incomplete, or multiple-user state', async () => {
+test('allows assignment-only profiles while preserving a single Admin credential', async () => {
+  const { pool, queries } = fakePool({
+    users: [
+      {
+        id: 'admin-id', email: ENV.BOOTSTRAP_ADMIN_EMAIL, role: 'admin',
+        active: true, has_credentials: true
+      },
+      {
+        id: 'executive-id', email: 'crm.assignment.esmeralda@charrosjalisco.com',
+        role: 'executive', active: true, has_credentials: false
+      }
+    ]
+  });
+  let hashCalls = 0;
+  const result = await ensureStartupAdmin({
+    pool,
+    config: CONFIG,
+    env: ENV,
+    hashPasswordFn: async () => { hashCalls += 1; throw new Error('must not hash'); }
+  });
+
+  assert.deepEqual(result, { status: 'already_exists' });
+  assert.equal(hashCalls, 0);
+  assert.equal(queries.some(({ sql }) => /UPDATE local_credentials/.test(sql)), false);
+  assert.equal(queries.some(({ sql }) => /INSERT INTO/.test(sql)), false);
+});
+
+test('refuses a different, disabled, incomplete, or multiple-credential state', async () => {
   const unsafeStates = [
-    [{ email: 'other@charrosjalisco.com', role: 'admin', active: true, has_credentials: true }],
-    [{ email: ENV.BOOTSTRAP_ADMIN_EMAIL, role: 'admin', active: false, has_credentials: true }],
-    [{ email: ENV.BOOTSTRAP_ADMIN_EMAIL, role: 'admin', active: true, has_credentials: false }],
+    [{ id: 'admin-id', email: 'other@charrosjalisco.com', role: 'admin', active: true, has_credentials: true }],
+    [{ id: 'admin-id', email: ENV.BOOTSTRAP_ADMIN_EMAIL, role: 'admin', active: false, has_credentials: true }],
+    [{ id: 'admin-id', email: ENV.BOOTSTRAP_ADMIN_EMAIL, role: 'admin', active: true, has_credentials: false }],
     [
-      { email: ENV.BOOTSTRAP_ADMIN_EMAIL, role: 'admin', active: true, has_credentials: true },
-      { email: 'other@charrosjalisco.com', role: 'executive', active: true, has_credentials: false }
+      { id: 'admin-id', email: ENV.BOOTSTRAP_ADMIN_EMAIL, role: 'admin', active: true, has_credentials: true },
+      { id: 'second-admin', email: 'other@charrosjalisco.com', role: 'admin', active: true, has_credentials: false }
+    ],
+    [
+      { id: 'admin-id', email: ENV.BOOTSTRAP_ADMIN_EMAIL, role: 'admin', active: true, has_credentials: true },
+      { id: 'executive-id', email: 'crm.assignment.esmeralda@charrosjalisco.com', role: 'executive', active: true, has_credentials: true }
     ]
   ];
   for (const users of unsafeStates) {
     const { pool } = fakePool({ users });
     await assert.rejects(
       ensureStartupAdmin({ pool, config: CONFIG, env: ENV }),
-      /not the expected single-Admin state/
+      /not the expected single-Admin authentication state/
     );
   }
 });

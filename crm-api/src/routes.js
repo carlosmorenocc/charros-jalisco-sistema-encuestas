@@ -6,7 +6,9 @@ import {
   validateDashboardPdfEvent,
   validateInteraction,
   validateManualRegistration,
-  validateMembership,
+  validateMembershipCreation,
+  validateMembershipSeatAssignment,
+  validateSubscriptionQuote,
   validateTask,
   validateUuid
 } from './lib/validation.js';
@@ -45,6 +47,14 @@ export function createApiRouter({ service, config }) {
   router.get('/dashboard/summary', asyncHandler(async (req, res) => {
     const filters = parseListQuery(req.query);
     data(res, await service.dashboard(req.actor, filters));
+  }));
+
+  router.get('/pricing/subscriptions/catalog', asyncHandler(async (req, res) => {
+    data(res, await service.getSubscriptionPricingCatalog(req.actor));
+  }));
+
+  router.get('/pricing/subscriptions/quote', asyncHandler(async (req, res) => {
+    data(res, await service.quoteSubscription(req.actor, validateSubscriptionQuote(req.query)));
   }));
 
   router.post('/manual-registrations', asyncHandler(async (req, res) => {
@@ -138,12 +148,26 @@ export function createApiRouter({ service, config }) {
   }));
 
   router.post('/contacts/:id/memberships', asyncHandler(async (req, res) => {
-    data(res, await service.createMembership(
+    const created = await service.createMembership(
       req.actor,
       validateUuid(req.params.id),
-      validateMembership(req.body),
+      validateMembershipCreation(req.body),
       req.auditContext
-    ), 201);
+    );
+    res.setHeader('etag', `"${created.rowVersion}"`);
+    data(res, created, 201);
+  }));
+
+  router.patch('/memberships/:id', asyncHandler(async (req, res) => {
+    const updated = await service.updateMembership(
+      req.actor,
+      validateUuid(req.params.id),
+      validateMembershipSeatAssignment(req.body),
+      req.auditContext,
+      requireRowVersion(req)
+    );
+    res.setHeader('etag', `"${updated.rowVersion}"`);
+    data(res, updated);
   }));
 
   router.get('/tasks', asyncHandler(async (req, res) => {
@@ -214,7 +238,21 @@ export function createApiRouter({ service, config }) {
       { key: 'last_human_contact_at', label: 'Último contacto humano' },
       { key: 'last_human_contact_channel', label: 'Canal del último contacto' },
       { key: 'next_follow_up_at', label: 'Próximo seguimiento' },
-      { key: 'consent_status', label: 'Consentimiento' }
+      { key: 'consent_status', label: 'Consentimiento' },
+      { key: 'membership_section', label: 'Sección' },
+      { key: 'membership_seat_count', label: 'Cantidad de abonos' },
+      { key: 'membership_seats', label: 'Butacas' },
+      { key: 'membership_locality_name', label: 'Localidad' },
+      { key: 'membership_discount_name', label: 'Descuento' },
+      { key: 'membership_list_unit_price', label: 'Precio de lista unitario (MXN)' },
+      { key: 'membership_commercial_value', label: 'Valor comercial (MXN)' },
+      { key: 'membership_net_amount', label: 'Importe neto (MXN)' },
+      { key: 'membership_discount_amount', label: 'Descuento aplicado (MXN)' },
+      { key: 'membership_effective_unit_price', label: 'Precio unitario efectivo (MXN)' },
+      { key: 'membership_charged_units', label: 'Unidades con cargo' },
+      { key: 'membership_bonus_units', label: 'Unidades bonificadas' },
+      { key: 'membership_price_book_version', label: 'Version de precios' },
+      { key: 'membership_currency', label: 'Moneda' }
     ]);
     res.type('text/csv; charset=utf-8');
     res.setHeader('content-disposition', 'attachment; filename="contactos-crm.csv"');

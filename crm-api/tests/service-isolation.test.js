@@ -5,6 +5,8 @@ import { CrmService } from '../src/services/CrmService.js';
 const EXECUTIVE_A = { id: 'executive-a', role: 'executive', permissionGrants: [] };
 const EXECUTIVE_B = { id: 'executive-b', role: 'executive', permissionGrants: [] };
 const ADMIN = { id: 'admin', role: 'admin', permissionGrants: [] };
+const SUPERVISOR = { id: 'supervisor', role: 'supervisor', permissionGrants: [] };
+const DIRECTION = { id: 'direction', role: 'direction', permissionGrants: [] };
 
 test('Ejecutivo no edita contacto de otro ejecutivo aunque el repositorio lo devuelva', async () => {
   const repository = {
@@ -62,4 +64,47 @@ test('alta manual es exclusivamente Admin y conserva un solo comando de reposito
   );
   assert.equal(result.actor, ADMIN);
   assert.equal(calls, 1);
+});
+
+test('edición de abonos conserva MEMBERSHIP_WRITE para Supervisor y Admin', async () => {
+  const calls = [];
+  const repository = {
+    async updateMembership(id, data, actor, context, expectedVersion) {
+      calls.push({ id, data, actor, context, expectedVersion });
+      return { id, ...data, rowVersion: expectedVersion + 1 };
+    }
+  };
+  const service = new CrmService(repository);
+  const data = {
+    section: 'VIP', seatCount: 1,
+    units: [{ unitNumber: 1, seatIdentifier: 'A-1' }]
+  };
+
+  for (const actor of [DIRECTION, EXECUTIVE_A]) {
+    await assert.rejects(
+      service.updateMembership(actor, 'membership', data, {}, 1),
+      /membership\.write/
+    );
+  }
+  await service.updateMembership(SUPERVISOR, 'membership', data, {}, 1);
+  await service.updateMembership(ADMIN, 'membership', data, {}, 2);
+  assert.deepEqual(calls.map((call) => call.actor.role), ['supervisor', 'admin']);
+});
+
+test('catálogo y cotización requieren lectura autenticada, no permiso de escritura', async () => {
+  const calls = [];
+  const repository = {
+    async getSubscriptionPricingCatalog() { calls.push('catalog'); return { localities: [] }; },
+    async quoteSubscription(input) { calls.push(input); return input; }
+  };
+  const service = new CrmService(repository);
+  await service.getSubscriptionPricingCatalog(DIRECTION);
+  await service.quoteSubscription(EXECUTIVE_A, {
+    localityCode: 'vip', discountCode: 'regular', seatCount: 1
+  });
+  await assert.rejects(
+    service.getSubscriptionPricingCatalog({ id: 'unknown', role: 'unknown', permissionGrants: [] }),
+    /contact\.read/
+  );
+  assert.equal(calls.length, 2);
 });

@@ -7,6 +7,7 @@ Esta entrega tiene **una sola cuenta autenticable**, con rol `admin`. No requier
 ## Modelo y alcance
 
 - Una persona es un `contact`; sus temporadas están en `memberships` y cada asiento/abono en `membership_units`.
+- `memberships.section` clasifica comercialmente como `VIP`, `Preferente` o `General`; `zone` conserva sin cambios la zona histórica detallada.
 - Solo `interactions.is_human_contact=true` actualiza el último contacto humano.
 - Los envíos masivos nunca cuentan como contacto humano.
 - Contactos, tareas, abonos y ventas usan soft delete cuando aplica.
@@ -128,6 +129,9 @@ X-CSRF-Token: <csrfToken>
 | GET, POST | `/api/v1/contacts/:id/tasks` | Tareas del contacto |
 | GET, PATCH | `/api/v1/tasks`, `/api/v1/tasks/:id` | Operación diaria |
 | GET, POST | `/api/v1/contacts/:id/memberships` | Abonos y unidades |
+| PATCH | `/api/v1/memberships/:id` | Sección, cantidad y butacas con `If-Match` |
+| GET | `/api/v1/pricing/subscriptions/catalog` | Localidades y promociones vigentes |
+| GET | `/api/v1/pricing/subscriptions/quote` | Cotización autoritativa por localidad, promoción y cantidad |
 | GET | `/api/v1/sales`, `/api/v1/sales/:id` | Ventas de solo lectura |
 | GET | `/api/v1/executives?active=true` | Selector mínimo |
 | GET | `/api/v1/exports/contacts.csv` | Exportación auditada |
@@ -135,6 +139,19 @@ X-CSRF-Token: <csrfToken>
 | GET | `/api/v1/audit` | Auditoría minimizada |
 
 No existen rutas `/api/v1/users` ni mutaciones de usuarios/permisos.
+
+Los perfiles Esmeralda, Jesús, Rosana, Carlos, Pascual y Cesar existen únicamente
+para asignación de cartera. No tienen credencial local y no pueden iniciar sesión.
+
+La edición de butacas exige una unidad secuencial por cada abono, identificadores
+únicos y `If-Match` con la versión de la membresía. El servidor conserva los IDs de
+las unidades importadas, evita asignar la misma butaca activa/por renovar dentro de
+la misma temporada y sección, y devuelve un nuevo `ETag` después de guardar.
+
+Los importes se calculan en el servidor y la membresía conserva una fotografía del
+catálogo aplicado. `commercialValue` es el valor comercial antes de promoción;
+`netAmount` es el importe neto después del descuento. Ninguno equivale a cobrado
+ni a utilidad; los cobros sólo provienen de `payments`.
 
 ### Alta manual
 

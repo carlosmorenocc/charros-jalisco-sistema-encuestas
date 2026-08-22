@@ -12,6 +12,7 @@ export const CONTACT_SEGMENTS = Object.freeze(['portfolio', 'prospect']);
 export const CONTACT_ASSIGNMENTS = Object.freeze(['assigned', 'unassigned']);
 export const CONTACT_DATE_FIELDS = Object.freeze(['updatedAt', 'lastContact', 'nextFollowUp']);
 export const SEASON_CODES = Object.freeze(['LMP-2026-27']);
+export const MEMBERSHIP_SECTIONS = Object.freeze(['VIP', 'Preferente', 'General']);
 export const CRM_PRIVACY_NOTICE_VERSION = '2026-08-01';
 export const ACQUISITION_SOURCES = Object.freeze([
   'season_ticket_database', 'referral', 'box_office', 'digital', 'event', 'outbound', 'other'
@@ -53,6 +54,16 @@ function cleanString(value, { required = false, max = 500, field = 'valor' } = {
   if (required && !cleaned) throw badRequest(`${field} es obligatorio.`);
   if (cleaned.length > max) throw badRequest(`${field} excede ${max} caracteres.`);
   return cleaned || null;
+}
+
+function catalogCode(value, field, { required = false } = {}) {
+  const code = cleanString(value, { required, max: 80, field });
+  if (code === undefined || code === null) {
+    if (required) throw badRequest(`${field} es obligatorio.`);
+    return code;
+  }
+  if (!/^[a-z0-9_]+$/.test(code)) throw badRequest(`${field} no es valido.`);
+  return code;
 }
 
 function enumValue(value, values, field, { required = false } = {}) {
@@ -207,10 +218,18 @@ export function validateMembership(input) {
     seatCount: integer(input.seatCount ?? 1, 'seatCount', { min: 1, max: 100, required: true }),
     seatIdentifier: cleanString(input.seatIdentifier, { max: 100, field: 'seatIdentifier' }),
     zone: cleanString(input.zone, { max: 120, field: 'zone' }),
+    section: input.section === null
+      ? null
+      : enumValue(input.section, MEMBERSHIP_SECTIONS, 'section'),
+    localityCode: catalogCode(input.localityCode, 'localityCode'),
+    discountCode: catalogCode(input.discountCode, 'discountCode'),
     product: cleanString(input.product, { max: 160, field: 'product' }),
     startDate: input.startDate == null ? input.startDate : isoDate(input.startDate, 'startDate'),
     renewalDate: input.renewalDate == null ? input.renewalDate : isoDate(input.renewalDate, 'renewalDate')
   });
+  if (Array.isArray(input.units) && input.units.some((unit) => !isObject(unit))) {
+    throw badRequest('units debe contener únicamente objetos.');
+  }
   const units = Array.isArray(input.units) ? input.units.map((unit, index) => ({
     unitNumber: integer(unit.unitNumber ?? index + 1, `units[${index}].unitNumber`, { min: 1, max: 100, required: true }),
     seatIdentifier: cleanString(unit.seatIdentifier, { max: 100, field: `units[${index}].seatIdentifier` }),
@@ -228,6 +247,73 @@ export function validateMembership(input) {
     throw badRequest('startDate es obligatoria para un abono activo.');
   }
   return { ...result, units };
+}
+
+export function validateMembershipSeatAssignment(input) {
+  if (!isObject(input)) throw badRequest('La asignación de abonos debe ser un objeto.');
+  rejectUnknownKeys(input, new Set([
+    'section', 'localityCode', 'discountCode', 'seatCount', 'units'
+  ]), 'asignaciónAbonos');
+  if (!Array.isArray(input.units) || input.units.some((unit) => !isObject(unit))) {
+    throw badRequest('units debe ser un arreglo de unidades.');
+  }
+
+  const result = {
+    section: enumValue(input.section, MEMBERSHIP_SECTIONS, 'section', { required: true }),
+    localityCode: catalogCode(input.localityCode, 'localityCode', { required: true }),
+    discountCode: catalogCode(input.discountCode, 'discountCode', { required: true }),
+    seatCount: integer(input.seatCount, 'seatCount', { min: 1, max: 20, required: true }),
+    units: input.units.map((unit, index) => {
+      rejectUnknownKeys(unit, new Set(['unitNumber', 'seatIdentifier']), `units[${index}]`);
+      const seatIdentifier = cleanString(unit.seatIdentifier, {
+        required: true, max: 100, field: `units[${index}].seatIdentifier`
+      });
+      if (!seatIdentifier) throw badRequest(`units[${index}].seatIdentifier es obligatorio.`);
+      return {
+        unitNumber: integer(unit.unitNumber, `units[${index}].unitNumber`, {
+          min: 1, max: 20, required: true
+        }),
+        seatIdentifier
+      };
+    })
+  };
+
+  if (result.units.length !== result.seatCount) {
+    throw badRequest('La cantidad de units debe coincidir con seatCount.');
+  }
+  if (result.units.some((unit, index) => unit.unitNumber !== index + 1)) {
+    throw badRequest('unitNumber debe formar la secuencia exacta de 1 a seatCount.');
+  }
+  const canonicalSeats = result.units.map((unit) => unit.seatIdentifier.toLocaleUpperCase('es-MX'));
+  if (new Set(canonicalSeats).size !== canonicalSeats.length) {
+    throw badRequest('Cada butaca debe ser única dentro del abono.');
+  }
+  return result;
+}
+
+export function validateMembershipCreation(input) {
+  if (!isObject(input)) throw badRequest('El cuerpo del abono debe ser un objeto.');
+  rejectUnknownKeys(input, new Set([
+    'seasonCode', 'membershipStatus', 'seatCount', 'seatIdentifier', 'zone', 'section',
+    'localityCode', 'discountCode', 'product', 'startDate', 'renewalDate', 'units'
+  ]), 'membership');
+  if (!Array.isArray(input.units) || input.units.some((unit) => !isObject(unit))) {
+    throw badRequest('membership.units debe ser un arreglo de unidades.');
+  }
+  for (const [index, unit] of input.units.entries()) {
+    rejectUnknownKeys(unit, new Set([
+      'unitNumber', 'seatIdentifier', 'zone', 'product', 'jerseySize'
+    ]), `membership.units[${index}]`);
+  }
+  const membership = validateMembership(input);
+  validateMembershipSeatAssignment({
+    section: membership.section,
+    localityCode: membership.localityCode,
+    discountCode: membership.discountCode,
+    seatCount: membership.seatCount,
+    units: membership.units.map(({ unitNumber, seatIdentifier }) => ({ unitNumber, seatIdentifier }))
+  });
+  return membership;
 }
 
 const MANUAL_MEMBERSHIP_STATUS = Object.freeze({
@@ -294,7 +380,8 @@ export function validateManualRegistration(input, { defaultAssigneeId }) {
       throw badRequest('membership es obligatorio para esta clasificación.');
     }
     rejectUnknownKeys(input.membership, new Set([
-      'seatCount', 'seatIdentifier', 'zone', 'product', 'startDate', 'renewalDate', 'units'
+      'seatCount', 'seatIdentifier', 'zone', 'section', 'localityCode', 'discountCode',
+      'product', 'startDate', 'renewalDate', 'units'
     ]), 'membership');
     if (!Array.isArray(input.membership.units)
       || input.membership.units.some((unit) => !isObject(unit))) {
@@ -310,6 +397,17 @@ export function validateManualRegistration(input, { defaultAssigneeId }) {
       seasonCode: 'LMP-2026-27',
       membershipStatus: expectedMembershipStatus
     });
+    if (membership.section) {
+      validateMembershipSeatAssignment({
+        section: membership.section,
+        localityCode: membership.localityCode,
+        discountCode: membership.discountCode,
+        seatCount: membership.seatCount,
+        units: membership.units.map(({ unitNumber, seatIdentifier }) => ({
+          unitNumber, seatIdentifier
+        }))
+      });
+    }
     if (membership.seatCount > 20) throw badRequest('seatCount no puede exceder 20 en un alta manual.');
     if (membership.membershipStatus === 'renewing' && !membership.renewalDate) {
       throw badRequest('renewalDate es obligatoria para una renovación.');
@@ -413,6 +511,16 @@ export function validateDashboardPdfEvent(input) {
       from: input.filters.from ? isoDate(input.filters.from, 'from') : undefined,
       to: input.filters.to ? isoDate(input.filters.to, 'to') : undefined
     })
+  };
+}
+
+export function validateSubscriptionQuote(input) {
+  if (!isObject(input)) throw badRequest('La cotizacion debe ser un objeto.');
+  rejectUnknownKeys(input, new Set(['localityCode', 'discountCode', 'seatCount']), 'cotizacion');
+  return {
+    localityCode: catalogCode(input.localityCode, 'localityCode', { required: true }),
+    discountCode: catalogCode(input.discountCode, 'discountCode', { required: true }),
+    seatCount: integer(input.seatCount, 'seatCount', { min: 1, max: 20, required: true })
   };
 }
 

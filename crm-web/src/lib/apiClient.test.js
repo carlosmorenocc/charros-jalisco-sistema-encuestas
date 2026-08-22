@@ -91,4 +91,35 @@ describe('apiClient', () => {
     expect(options.headers.get('Idempotency-Key')).toBe('d375c067-ad4c-4bac-8ade-418fb50a2a40')
     expect(JSON.parse(options.body)).toEqual(payload)
   })
+
+  it('crea y actualiza membresías con CSRF y control de versión', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(jsonResponse({ data: { id: 'membership-1', rowVersion: 8 } }, 200))
+    const api = createApiClient({ baseUrl: '/api/v1', getCsrfToken: () => 'csrf', fetchImpl })
+    const createPayload = { seasonCode: 'LMP-2026-27', membershipStatus: 'active', section: 'VIP', seatCount: 1, startDate: '2026-08-22T18:00:00.000Z', units: [{ unitNumber: 1, seatIdentifier: 'V-01' }] }
+    const updatePayload = { section: 'Preferente', seatCount: 1, units: [{ unitNumber: 1, seatIdentifier: 'P-09' }] }
+
+    await api.createMembership('contact/1', createPayload)
+    await api.updateMembership('membership/1', updatePayload, 7)
+
+    expect(fetchImpl.mock.calls[0][0]).toBe('/api/v1/contacts/contact%2F1/memberships')
+    expect(fetchImpl.mock.calls[0][1].method).toBe('POST')
+    expect(fetchImpl.mock.calls[0][1].headers.get('X-CSRF-Token')).toBe('csrf')
+    expect(JSON.parse(fetchImpl.mock.calls[0][1].body)).toEqual(createPayload)
+    expect(fetchImpl.mock.calls[1][0]).toBe('/api/v1/memberships/membership%2F1')
+    expect(fetchImpl.mock.calls[1][1].method).toBe('PATCH')
+    expect(fetchImpl.mock.calls[1][1].headers.get('If-Match')).toBe('7')
+    expect(JSON.parse(fetchImpl.mock.calls[1][1].body)).toEqual(updatePayload)
+  })
+
+  it('consulta el catálogo y una cotización autoritativa con query codificado', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(jsonResponse({ data: {} }))
+    const api = createApiClient({ baseUrl: '/api/v1', getCsrfToken: () => 'csrf', fetchImpl })
+
+    await api.membershipPricingCatalog()
+    await api.membershipPricingQuote({ localityCode: 'lateral 1ra', discountCode: 'july25', seatCount: 3 })
+
+    expect(fetchImpl.mock.calls[0][0]).toBe('/api/v1/pricing/subscriptions/catalog')
+    expect(fetchImpl.mock.calls[1][0]).toBe('/api/v1/pricing/subscriptions/quote?localityCode=lateral+1ra&discountCode=july25&seatCount=3')
+    expect(fetchImpl.mock.calls[1][1].method).toBeUndefined()
+  })
 })

@@ -7,6 +7,9 @@ import {
   validateInteraction,
   validateManualRegistration,
   validateMembership,
+  validateMembershipCreation,
+  validateMembershipSeatAssignment,
+  validateSubscriptionQuote,
   validatePayment,
   validateSale
 } from '../src/lib/validation.js';
@@ -56,6 +59,118 @@ test('un abono operativo requiere una unidad por cada asiento', () => {
     units: [{ jerseySize: 'M' }, { jerseySize: 'XL' }]
   });
   assert.deepEqual(membership.units.map((unit) => unit.unitNumber), [1, 2]);
+});
+
+test('asignación manual de butacas exige sección, secuencia y lugares únicos', () => {
+  const value = validateMembershipSeatAssignment({
+    section: 'Preferente',
+    localityCode: 'planta_baja_central', discountCode: 'regular',
+    seatCount: 2,
+    units: [
+      { unitNumber: 1, seatIdentifier: ' Fila A  10 ' },
+      { unitNumber: 2, seatIdentifier: 'Fila A 11' }
+    ]
+  });
+  assert.equal(value.section, 'Preferente');
+  assert.deepEqual(value.units, [
+    { unitNumber: 1, seatIdentifier: 'Fila A 10' },
+    { unitNumber: 2, seatIdentifier: 'Fila A 11' }
+  ]);
+
+  for (const invalid of ['vip', 'Premier', '', null]) {
+    assert.throws(() => validateMembershipSeatAssignment({
+      section: invalid, seatCount: 1,
+      units: [{ unitNumber: 1, seatIdentifier: 'A-1' }]
+    }), /section/);
+  }
+  assert.throws(() => validateMembershipSeatAssignment({
+    section: 'VIP', localityCode: 'vip', discountCode: 'regular', seatCount: 21,
+    units: Array.from({ length: 21 }, (_, index) => ({
+      unitNumber: index + 1, seatIdentifier: `A-${index + 1}`
+    }))
+  }), /entre 1 y 20/);
+  assert.throws(() => validateMembershipSeatAssignment({
+    section: 'VIP', localityCode: 'vip', discountCode: 'regular', seatCount: 2,
+    units: [{ unitNumber: 1, seatIdentifier: 'A-1' }]
+  }), /coincidir/);
+  assert.throws(() => validateMembershipSeatAssignment({
+    section: 'VIP', localityCode: 'vip', discountCode: 'regular', seatCount: 2,
+    units: [
+      { unitNumber: 2, seatIdentifier: 'A-1' },
+      { unitNumber: 1, seatIdentifier: 'A-2' }
+    ]
+  }), /secuencia exacta/);
+  assert.throws(() => validateMembershipSeatAssignment({
+    section: 'VIP', localityCode: 'vip', discountCode: 'regular', seatCount: 2,
+    units: [
+      { unitNumber: 1, seatIdentifier: 'A-1' },
+      { unitNumber: 2, seatIdentifier: ' a-1 ' }
+    ]
+  }), /butaca debe ser única/);
+});
+
+test('asignación manual rechaza butacas vacías, unidades inválidas y sobrecarga', () => {
+  const base = {
+    section: 'General', localityCode: 'lateral_1_3', discountCode: 'regular', seatCount: 1,
+    units: [{ unitNumber: 1, seatIdentifier: 'G-1' }]
+  };
+  assert.throws(() => validateMembershipSeatAssignment({
+    ...base, units: [{ unitNumber: 1, seatIdentifier: '   ' }]
+  }), /obligatorio/);
+  assert.throws(() => validateMembershipSeatAssignment({ ...base, units: [null] }), /arreglo/);
+  assert.throws(() => validateMembershipSeatAssignment({ ...base, injected: true }), /campos no permitidos/);
+  assert.throws(() => validateMembershipSeatAssignment({
+    ...base, units: [{ ...base.units[0], zone: 'VIP24' }]
+  }), /campos no permitidos/);
+});
+
+test('POST independiente exige sección y butacas sin endurecer altas manuales heredadas', () => {
+  const input = {
+    seasonCode: 'LMP-2026-27', membershipStatus: 'active', section: 'VIP',
+    localityCode: 'vip', discountCode: 'regular',
+    seatCount: 1, startDate: '2026-08-22',
+    units: [{ unitNumber: 1, seatIdentifier: 'A-1', zone: 'VIP24', jerseySize: 'M' }]
+  };
+  assert.equal(validateMembershipCreation(input).section, 'VIP');
+  assert.throws(
+    () => validateMembershipCreation({
+      ...input, section: undefined,
+      units: [{ unitNumber: 1, seatIdentifier: 'A-1' }]
+    }),
+    /section/
+  );
+  assert.throws(
+    () => validateMembershipCreation({ ...input, injected: true }),
+    /campos no permitidos/
+  );
+
+  const legacy = validateMembership({
+    seasonCode: 'LMP-2026-27', membershipStatus: 'active', seatCount: 1,
+    startDate: '2026-08-22', zone: 'PLANTA BAJA CENTRAL',
+    units: [{ unitNumber: 1, zone: 'PLANTA BAJA CENTRAL', jerseySize: 'M' }]
+  });
+  assert.equal(legacy.section, undefined);
+  assert.equal(legacy.zone, 'PLANTA BAJA CENTRAL');
+
+  assert.throws(() => validateManualRegistration({
+    contact: manualContact(),
+    initialObservation: { notes: 'Alta con sección incompleta.' },
+    membership: manualMembership({
+      section: 'VIP', localityCode: 'vip', discountCode: 'regular'
+    })
+  }, { defaultAssigneeId: ADMIN_ID }), /seatIdentifier es obligatorio/);
+});
+
+test('cotizacion exige localidad, descuento y cantidad explicitos', () => {
+  assert.deepEqual(validateSubscriptionQuote({
+    localityCode: 'vip_lateral', discountCode: 'july25', seatCount: '3'
+  }), { localityCode: 'vip_lateral', discountCode: 'july25', seatCount: 3 });
+  assert.throws(() => validateSubscriptionQuote({
+    localityCode: 'vip', seatCount: 1
+  }), /discountCode/);
+  assert.throws(() => validateSubscriptionQuote({
+    localityCode: 'VIP', discountCode: 'regular', seatCount: 1
+  }), /localityCode/);
 });
 
 test('venta confirmada exige fecha y los pagos deben ser positivos', () => {

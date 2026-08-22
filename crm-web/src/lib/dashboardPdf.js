@@ -253,7 +253,7 @@ function createContentStream(report, logoDimensions) {
   const { summary = {}, operation = {}, filters = {}, generatedAt, isDemo = false } = report
   const totalContacts = Math.max(1, asNumber(summary.totalContacts))
   const currentSubscribers = asNumber(summary.currentSubscribers)
-  const salesAmount = asNumber(summary.salesAmount)
+  const membershipNetAmount = asNumber(summary.membershipNetAmount)
   const commands = [rect(0, 0, PAGE_WIDTH, PAGE_HEIGHT, COLORS.surface)]
 
   commands.push(rect(0, 575, PAGE_WIDTH, 20, COLORS.navy))
@@ -289,7 +289,7 @@ function createContentStream(report, logoDimensions) {
     ['Por renovar', formatInteger(summary.renewing), COLORS.gold],
     ['Abonados nuevos', formatInteger(summary.newSubscribers), COLORS.green],
     ['Seguimientos vencidos', formatInteger(summary.overdueFollowUps), COLORS.red],
-    ['Venta documentada', formatCurrency(salesAmount), COLORS.navy],
+    ['Importe neto abonos', formatCurrency(membershipNetAmount), COLORS.navy],
   ]
   metrics.forEach(([label, value, accent], index) => drawMetric(commands, {
     x: 36 + index * (metricWidth + metricGap),
@@ -360,7 +360,7 @@ function createContentStream(report, logoDimensions) {
   commands.push(rect(36, 69, 770, 29, COLORS.lightBlue))
   commands.push(text(isDemo ? 'DATOS SINTÉTICOS · NO USAR PARA DECISIONES' : 'CONFIDENCIAL · USO INTERNO', 49, 86, { font: 'F2', size: 7, fill: isDemo ? COLORS.red : COLORS.navy }))
   commands.push(text(isDemo ? 'Documento de prueba sin datos reales; no representa resultados operativos.' : 'Este documento resume información operativa. No debe compartirse fuera de Club Charros de Jalisco.', 49, 75, { size: 7, fill: COLORS.muted }))
-  commands.push(text(isDemo ? 'Fuente: escenario sintético local · Sin datos reales.' : 'Fuente: CRM Abonados · Los indicadores reflejan el periodo y filtros seleccionados al momento de la descarga.', 36, 47, { size: 6.8, fill: COLORS.muted }))
+  commands.push(text(isDemo ? 'Fuente: escenario sintético local · Sin datos reales.' : 'Fuente: CRM Abonados · Importe neto capturado; no equivale a cobrado ni utilidad.', 36, 47, { size: 6.8, fill: COLORS.muted }))
   commands.push(text('Página 1 de 1', 747, 47, { font: 'F2', size: 6.8, fill: COLORS.muted }))
   return commands.join('\n')
 }

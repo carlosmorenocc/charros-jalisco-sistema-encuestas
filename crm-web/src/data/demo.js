@@ -24,6 +24,60 @@ export function nextDemoRecordId(kind, count) { return `${kind}-${String(count +
 export const executives = ['Ana Torres', 'Diego Ramírez', 'Mariana Vega', 'Luis Mendoza']
 export const demoExecutiveOptions = executives.map((displayName, index) => ({ id: `demo-executive-${index + 1}`, displayName }))
 
+export const demoMembershipPricingCatalog = {
+  priceBookVersion: 'LMP-2026-27-demo-v1',
+  seasonCode: 'LMP-2026-27',
+  currency: 'MXN',
+  localities: [
+    { code: 'vip_demo', displayName: 'Palcos VIP', section: 'VIP', listUnitPrice: 29920, july25UnitPrice: 22440, july25Mode: 'official_unit', sortOrder: 1 },
+    { code: 'preferente_demo', displayName: 'Central Preferente', section: 'Preferente', listUnitPrice: 18900, july25UnitPrice: 14175, july25Mode: 'official_unit', sortOrder: 2 },
+    { code: 'lateral_1_3', displayName: 'Lateral 1RA', section: 'General', listUnitPrice: 7480, july25UnitPrice: 7480, july25Mode: 'two_for_one', sortOrder: 3 },
+  ],
+  discounts: [
+    { code: 'regular', displayName: 'Sin descuento', mode: 'regular', rateBasisPoints: 0, sortOrder: 1 },
+    { code: 'discount30', displayName: '30% histórico', mode: 'percentage', rateBasisPoints: 3000, sortOrder: 2 },
+    { code: 'july25', displayName: '25% julio 2026', mode: 'catalog_official', rateBasisPoints: null, sortOrder: 3 },
+    { code: 'discount20', displayName: '20% próximo', mode: 'percentage', rateBasisPoints: 2000, sortOrder: 4 },
+  ],
+}
+
+export function quoteDemoMembershipPricing({ localityCode, discountCode, seatCount }) {
+  const locality = demoMembershipPricingCatalog.localities.find((item) => item.code === localityCode)
+  const discount = demoMembershipPricingCatalog.discounts.find((item) => item.code === discountCode)
+  if (!locality || !discount) throw new Error('Selecciona una localidad y un descuento válidos.')
+  const count = Number(seatCount)
+  const commercialValue = locality.listUnitPrice * count
+  let netAmount = commercialValue
+  let chargedUnits = count
+  if (discount.mode === 'percentage') netAmount = Math.round(commercialValue * (10000 - discount.rateBasisPoints)) / 10000
+  if (discount.code === 'july25') {
+    chargedUnits = locality.july25Mode === 'two_for_one' ? Math.ceil(count / 2) : count
+    netAmount = locality.july25UnitPrice * chargedUnits
+  }
+  return {
+    priceBookVersion: demoMembershipPricingCatalog.priceBookVersion, currency: 'MXN', localityCode, localityName: locality.displayName,
+    section: locality.section, discountCode, discountName: discount.displayName, pricingMode: discount.code === 'july25' ? locality.july25Mode : discount.mode,
+    listUnitPrice: locality.listUnitPrice, commercialValue, netAmount, discountAmount: commercialValue - netAmount,
+    effectiveUnitPrice: netAmount / count, chargedUnits, bonusUnits: count - chargedUnits,
+  }
+}
+
+function demoMembership(contactId, membershipStatus, membershipSection, seatIdentifiers) {
+  const locality = demoMembershipPricingCatalog.localities.find((item) => item.section === membershipSection)
+  const pricing = quoteDemoMembershipPricing({ localityCode: locality.code, discountCode: 'regular', seatCount: seatIdentifiers.length })
+  return {
+    id: `demo-membership-${contactId}`,
+    contactId,
+    seasonCode: 'LMP-2026-27',
+    membershipStatus,
+    membershipSection,
+    ...pricing,
+    seatCount: seatIdentifiers.length,
+    units: seatIdentifiers.map((seatIdentifier, index) => ({ id: `demo-unit-${contactId}-${index + 1}`, unitNumber: index + 1, seatIdentifier })),
+    rowVersion: 1,
+  }
+}
+
 export const demoDashboard = {
   totalContacts: 2508,
   currentSubscribers: 128,
@@ -39,6 +93,11 @@ export const demoDashboard = {
   salesAmount: 133900,
   collectedAmount: 98800,
   balanceAmount: 35100,
+  pricedMemberships: 5,
+  pricedSeats: 12,
+  membershipCommercialValue: 187480,
+  membershipNetAmount: 168732,
+  membershipDiscountAmount: 18748,
 }
 
 export const demoContacts = [
@@ -53,6 +112,7 @@ export const demoContacts = [
     seasons: 4,
     seats: 2,
     zone: 'Central preferente',
+    currentMembership: demoMembership('DEMO-001', 'active', 'Preferente', ['P-A-12', 'P-A-13']),
     lastContact: '21 ago 2026 · 09:40',
     nextTask: 'Hoy · 13:00',
     channel: 'WhatsApp',
@@ -72,6 +132,7 @@ export const demoContacts = [
     seasons: 7,
     seats: 4,
     zone: 'Lateral primera',
+    currentMembership: demoMembership('DEMO-002', 'renewing', 'VIP', ['V-B-01', 'V-B-02', 'V-B-03', 'V-B-04']),
     lastContact: '20 ago 2026 · 17:15',
     nextTask: 'Hoy · 16:30',
     channel: 'Llamada',
@@ -91,6 +152,7 @@ export const demoContacts = [
     seasons: 0,
     seats: 2,
     zone: 'Central baja',
+    currentMembership: demoMembership('DEMO-003', 'active', 'General', ['G-C-21', 'G-C-22']),
     lastContact: '21 ago 2026 · 11:20',
     nextTask: '22 ago · 10:00',
     channel: 'Correo',
@@ -110,6 +172,7 @@ export const demoContacts = [
     seasons: 2,
     seats: 1,
     zone: 'Jardín derecho',
+    currentMembership: demoMembership('DEMO-004', 'expired', 'General', ['G-D-08']),
     lastContact: 'Sin contacto humano',
     nextTask: 'Vencida · 19 ago',
     channel: '—',
@@ -129,6 +192,7 @@ export const demoContacts = [
     seasons: 5,
     seats: 3,
     zone: 'Central preferente',
+    currentMembership: demoMembership('DEMO-005', 'renewing', 'Preferente', ['P-E-14', 'P-E-15', 'P-E-16']),
     lastContact: '18 ago 2026 · 12:05',
     nextTask: 'Vencida · 20 ago',
     channel: 'Llamada',

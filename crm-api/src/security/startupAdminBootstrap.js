@@ -73,14 +73,20 @@ export async function ensureStartupAdmin({
     );
 
     if (existing.rowCount > 0) {
-      const user = existing.rows[0];
-      const isExpectedSingleton = existing.rowCount === 1
+      const administrators = existing.rows.filter((user) => user.role === 'admin');
+      const credentialUsers = existing.rows.filter((user) => user.has_credentials === true);
+      const user = administrators[0];
+      const hasExpectedAdmin = administrators.length === 1
         && user.active === true
-        && user.role === 'admin'
         && user.has_credentials === true
         && String(user.email).toLowerCase() === intent.email;
-      if (!isExpectedSingleton) {
-        throw new Error('Startup Admin bootstrap refused: the database is not the expected single-Admin state.');
+      const hasSingleAdminCredential = credentialUsers.length === 1
+        && credentialUsers[0].id === user?.id;
+      const hasOnlyNonLoginProfiles = existing.rows
+        .filter((candidate) => candidate.id !== user?.id)
+        .every((candidate) => candidate.role !== 'admin' && candidate.has_credentials === false);
+      if (!hasExpectedAdmin || !hasSingleAdminCredential || !hasOnlyNonLoginProfiles) {
+        throw new Error('Startup Admin bootstrap refused: the database is not the expected single-Admin authentication state.');
       }
       return { status: 'already_exists' };
     }

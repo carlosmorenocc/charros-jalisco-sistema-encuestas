@@ -16,6 +16,16 @@ export class CrmService {
     return this.repository.dashboardSummary({ actor, filters });
   }
 
+  async getSubscriptionPricingCatalog(actor) {
+    requirePermission(actor, PERMISSIONS.CONTACT_READ);
+    return this.repository.getSubscriptionPricingCatalog();
+  }
+
+  async quoteSubscription(actor, input) {
+    requirePermission(actor, PERMISSIONS.CONTACT_READ);
+    return this.repository.quoteSubscription(input);
+  }
+
   async listContacts(actor, filters) {
     requirePermission(actor, PERMISSIONS.CONTACT_READ);
     if ((filters.includeDeleted || filters.deletedOnly)
@@ -113,6 +123,11 @@ export class CrmService {
   async createMembership(actor, contactId, data, context) {
     requirePermission(actor, PERMISSIONS.MEMBERSHIP_WRITE);
     return this.repository.createMembership(contactId, data, actor, context);
+  }
+
+  async updateMembership(actor, id, data, context, expectedVersion) {
+    requirePermission(actor, PERMISSIONS.MEMBERSHIP_WRITE);
+    return this.repository.updateMembership(id, data, actor, context, expectedVersion);
   }
 
   async listTasks(actor, filters) {

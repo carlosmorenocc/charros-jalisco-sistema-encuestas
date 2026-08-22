@@ -1,7 +1,7 @@
 import React from 'react'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
-import App, { LoginScreen, revokeSessionSafely } from './App'
+import App, { contactMatchesPatch, LoginScreen, revokeSessionSafely, updateContactWithVerification, verifyPersistedContactPatch } from './App'
 
 describe('CRM web en modo demostración', () => {
   it('muestra el reporte y deja claro que los datos son sintéticos', async () => {
@@ -36,6 +36,33 @@ describe('CRM web en modo demostración', () => {
     expect(await screen.findByText(/La interacción se registró correctamente/i)).toBeInTheDocument()
   })
 
+  it('agrega la columna de abonos y edita sección y butacas desde la ficha', async () => {
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: /Cartera y Renovaciones/i }))
+
+    expect(await screen.findByRole('columnheader', { name: 'Abonos' })).toBeInTheDocument()
+    expect(await screen.findByText('Preferente · 2 abonos')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Editar abonos de Mariana López' }))
+    expect(await screen.findByRole('dialog')).toBeInTheDocument()
+    expect(screen.getByLabelText(/Sección/)).toHaveValue('Preferente')
+    fireEvent.change(screen.getByLabelText(/Butaca 1/), { target: { value: 'P-A-99' } })
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Guardar abonos' })).toBeEnabled())
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar abonos' }))
+
+    expect(await screen.findByText('Los abonos y butacas se actualizaron correctamente.')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('P-A-99')).toBeInTheDocument()
+  })
+
+  it('confirma una edición normal de contacto con el mensaje acordado', async () => {
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: /Cartera y Renovaciones/i }))
+    fireEvent.click((await screen.findByText('Mariana López')).closest('button'))
+    fireEvent.change(await screen.findByLabelText(/Observación resumida/), { target: { value: 'Cambio sintético confirmado.' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }))
+
+    expect(await screen.findByText('Se guardó satisfactoriamente.')).toBeInTheDocument()
+  })
+
   it('retira la administración de usuarios del menú local', async () => {
     render(<App />)
     fireEvent.click(await screen.findByRole('button', { name: /^Más/i }))
@@ -64,5 +91,29 @@ describe('CRM web en modo demostración', () => {
     const unauthorized = Object.assign(new Error('expirada'), { status: 401 })
     await expect(revokeSessionSafely({ logout: vi.fn().mockRejectedValue(unauthorized) }, clearSession)).resolves.toBe(true)
     expect(clearSession).toHaveBeenLastCalledWith('unauthorized')
+  })
+
+  it('solo recupera un PATCH fallido cuando el GET confirma todos los campos enviados', async () => {
+    const patch = { email: ' PERSONA@EXAMPLE.INVALID ', phone: '+52 33 1234 5678', summaryNotes: null }
+    const persisted = { id: 'contact-1', email: 'persona@example.invalid', phone: '3312345678', summaryNotes: null }
+    expect(contactMatchesPatch(persisted, patch)).toBe(true)
+    expect(contactMatchesPatch({ ...persisted, phone: '3399999999' }, patch)).toBe(false)
+    expect(contactMatchesPatch({ email: persisted.email, phone: persisted.phone }, patch)).toBe(false)
+
+    await expect(verifyPersistedContactPatch({ contact: vi.fn().mockResolvedValue({ data: persisted }) }, 'contact-1', patch)).resolves.toEqual(persisted)
+    await expect(verifyPersistedContactPatch({ contact: vi.fn().mockResolvedValue({ data: { ...persisted, email: 'otra@example.invalid' } }) }, 'contact-1', patch)).resolves.toBeNull()
+    await expect(verifyPersistedContactPatch({ contact: vi.fn().mockRejectedValue(new Error('sin red')) }, 'contact-1', patch)).resolves.toBeNull()
+  })
+
+  it('hidrata por GET un PATCH 2xx con data null sin lanzar dentro del updater', async () => {
+    const patch = { email: 'persona@example.invalid', summaryNotes: 'Confirmado' }
+    const persisted = { id: 'contact-1', firstName: 'Persona', lastName: 'Ejemplo', subscriberStatus: 'renewing', commercialStage: 'follow_up', email: patch.email, summaryNotes: patch.summaryNotes }
+    const api = { updateContact: vi.fn().mockResolvedValue({ data: null }), contact: vi.fn().mockResolvedValue({ data: persisted }) }
+
+    await expect(updateContactWithVerification(api, 'contact-1', patch, 4)).resolves.toMatchObject({ id: 'contact-1', name: 'Persona Ejemplo', note: 'Confirmado' })
+    expect(api.contact).toHaveBeenCalledWith('contact-1')
+
+    const mismatchApi = { updateContact: vi.fn().mockResolvedValue({ data: null }), contact: vi.fn().mockResolvedValue({ data: { ...persisted, summaryNotes: 'Otro' } }) }
+    await expect(updateContactWithVerification(mismatchApi, 'contact-1', patch, 4)).rejects.toThrow(/no devolvió el contacto actualizado/i)
   })
 })

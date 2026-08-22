@@ -23,7 +23,10 @@ async function withServer(callback) {
     expiresAt: '2026-08-22T00:00:00.000Z',
     idleExpiresAt: '2026-08-21T17:00:00.000Z'
   };
-  const state = { loggedOut: false, pdfEvent: null, manualRegistration: null };
+  const state = {
+    loggedOut: false, pdfEvent: null, manualRegistration: null,
+    membershipUpdate: null, membershipCreate: null
+  };
   const config = {
     nodeEnv: 'production',
     logLevel: 'silent',
@@ -53,6 +56,27 @@ async function withServer(callback) {
         nextTask: null,
         replayed: false
       };
+    },
+    async updateMembership(id, data, receivedActor, context, expectedVersion) {
+      state.membershipUpdate = { id, data, actor: receivedActor, context, expectedVersion };
+      return {
+        id, contactId: '00000000-0000-4000-8000-000000000020',
+        seasonCode: 'LMP-2026-27', membershipStatus: 'active',
+        ...data, rowVersion: expectedVersion + 1
+      };
+    },
+    async createMembership(contactId, data, receivedActor, context) {
+      state.membershipCreate = { contactId, data, actor: receivedActor, context };
+      return {
+        id: '00000000-0000-4000-8000-000000000030', contactId,
+        ...data, rowVersion: 1
+      };
+    },
+    async exportContacts() {
+      return [{
+        id: 'contact-1', name: 'Persona', membership_section: 'VIP',
+        membership_seat_count: 2, membership_seats: 'A-1 | A-2'
+      }];
     }
   };
   const authService = {
@@ -240,5 +264,74 @@ test('alta manual exige idempotencia y devuelve ETag hidratado', async () => {
     assert.equal((await response.json()).data.initialInteraction.isHumanContact, false);
     assert.equal(state.manualRegistration.data.contact.source, 'crm_manual');
     assert.match(state.manualRegistration.idempotency.requestHash, /^[0-9a-f]{64}$/);
+  });
+});
+
+test('PATCH de abono exige CSRF, versión y devuelve ETag actualizado', async () => {
+  await withServer(async (baseUrl, state) => {
+    const id = '00000000-0000-4000-8000-000000000030';
+    const body = {
+      section: 'VIP', localityCode: 'vip', discountCode: 'regular', seatCount: 2,
+      units: [
+        { unitNumber: 1, seatIdentifier: 'A-1' },
+        { unitNumber: 2, seatIdentifier: 'A-2' }
+      ]
+    };
+    const missingCsrf = await fetch(`${baseUrl}/api/v1/memberships/${id}`, {
+      method: 'PATCH',
+      headers: { ...authHeaders({ csrf: false }), 'content-type': 'application/json', 'if-match': '1' },
+      body: JSON.stringify(body)
+    });
+    assert.equal(missingCsrf.status, 403);
+
+    const missingVersion = await fetch(`${baseUrl}/api/v1/memberships/${id}`, {
+      method: 'PATCH', headers: { ...authHeaders(), 'content-type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    assert.equal(missingVersion.status, 428);
+
+    const invalid = await fetch(`${baseUrl}/api/v1/memberships/${id}`, {
+      method: 'PATCH',
+      headers: { ...authHeaders(), 'content-type': 'application/json', 'if-match': '1' },
+      body: JSON.stringify({ ...body, section: 'Premier' })
+    });
+    assert.equal(invalid.status, 400);
+
+    const response = await fetch(`${baseUrl}/api/v1/memberships/${id}`, {
+      method: 'PATCH',
+      headers: { ...authHeaders(), 'content-type': 'application/json', 'if-match': '1' },
+      body: JSON.stringify(body)
+    });
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get('etag'), '"2"');
+    assert.equal(state.membershipUpdate.expectedVersion, 1);
+    assert.deepEqual(state.membershipUpdate.data, body);
+  });
+});
+
+test('POST de abono devuelve ETag y exportación incluye sección, cantidad y butacas', async () => {
+  await withServer(async (baseUrl, state) => {
+    const contactId = '00000000-0000-4000-8000-000000000020';
+    const membership = {
+      seasonCode: 'LMP-2026-27', membershipStatus: 'active', section: 'General',
+      localityCode: 'lateral_1_3', discountCode: 'regular',
+      seatCount: 1, startDate: '2026-08-22',
+      units: [{ unitNumber: 1, seatIdentifier: 'G-20' }]
+    };
+    const created = await fetch(`${baseUrl}/api/v1/contacts/${contactId}/memberships`, {
+      method: 'POST', headers: { ...authHeaders(), 'content-type': 'application/json' },
+      body: JSON.stringify(membership)
+    });
+    assert.equal(created.status, 201);
+    assert.equal(created.headers.get('etag'), '"1"');
+    assert.equal(state.membershipCreate.data.section, 'General');
+
+    const exported = await fetch(`${baseUrl}/api/v1/exports/contacts.csv`, {
+      headers: authHeaders({ csrf: false, origin: null })
+    });
+    assert.equal(exported.status, 200);
+    const csv = await exported.text();
+    assert.match(csv, /Sección,Cantidad de abonos,Butacas/);
+    assert.match(csv, /VIP,2,A-1 \| A-2/);
   });
 });

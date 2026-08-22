@@ -1,5 +1,44 @@
 import { withTransaction } from '../db/pool.js';
-import { conflict, duplicateContact, notFound } from '../lib/errors.js';
+import { badRequest, conflict, duplicateContact, notFound } from '../lib/errors.js';
+import {
+  calculateMembershipPrice,
+  MEMBERSHIP_PRICING_SEASON
+} from '../lib/membershipPricing.js';
+
+function moneyFromCents(value) {
+  return value == null ? null : Number(value) / 100;
+}
+
+function membershipPricingFields(row, prefix = '') {
+  const field = (name) => row[`${prefix}${name}`];
+  return {
+    priceBookVersion: field('price_book_version') ?? null,
+    currency: field('currency') ?? null,
+    localityCode: field('locality_code') ?? null,
+    localityName: field('locality_name') ?? null,
+    discountCode: field('discount_code') ?? null,
+    discountName: field('discount_name') ?? null,
+    pricingMode: field('pricing_mode') ?? null,
+    listUnitPrice: moneyFromCents(field('list_unit_price')),
+    commercialValue: moneyFromCents(field('commercial_value')),
+    netAmount: moneyFromCents(field('net_amount')),
+    discountAmount: moneyFromCents(field('discount_amount')),
+    effectiveUnitPrice: moneyFromCents(field('effective_unit_price')),
+    chargedUnits: field('charged_units') == null ? null : Number(field('charged_units')),
+    bonusUnits: field('bonus_units') == null ? null : Number(field('bonus_units'))
+  };
+}
+
+function publicPricing(snapshot) {
+  return {
+    ...snapshot,
+    listUnitPrice: moneyFromCents(snapshot.listUnitPrice),
+    commercialValue: moneyFromCents(snapshot.commercialValue),
+    netAmount: moneyFromCents(snapshot.netAmount),
+    discountAmount: moneyFromCents(snapshot.discountAmount),
+    effectiveUnitPrice: moneyFromCents(snapshot.effectiveUnitPrice)
+  };
+}
 
 function contactRow(row) {
   if (!row) return null;
@@ -34,6 +73,34 @@ function contactRow(row) {
       : Number(row.declared_tenure_seasons),
     nextTaskAt: row.next_task_at,
     overdueTasks: Number(row.overdue_tasks ?? 0),
+    membershipId: row.membership_id ?? null,
+    membershipStatus: row.membership_status ?? null,
+    membershipSection: row.membership_section ?? null,
+    membershipSeatCount: row.membership_seat_count == null
+      ? null
+      : Number(row.membership_seat_count),
+    membershipSeats: Array.isArray(row.membership_seats)
+      ? row.membership_seats.filter((seat) => typeof seat === 'string')
+      : [],
+    membershipRowVersion: row.membership_row_version == null
+      ? null
+      : Number(row.membership_row_version),
+    membershipPriceBookVersion: row.membership_price_book_version ?? null,
+    membershipCurrency: row.membership_currency ?? null,
+    membershipLocalityCode: row.membership_locality_code ?? null,
+    membershipLocalityName: row.membership_locality_name ?? null,
+    membershipDiscountCode: row.membership_discount_code ?? null,
+    membershipDiscountName: row.membership_discount_name ?? null,
+    membershipPricingMode: row.membership_pricing_mode ?? null,
+    membershipListUnitPrice: moneyFromCents(row.membership_list_unit_price),
+    membershipCommercialValue: moneyFromCents(row.membership_commercial_value),
+    membershipNetAmount: moneyFromCents(row.membership_net_amount),
+    membershipDiscountAmount: moneyFromCents(row.membership_discount_amount),
+    membershipEffectiveUnitPrice: moneyFromCents(row.membership_effective_unit_price),
+    membershipChargedUnits: row.membership_charged_units == null
+      ? null : Number(row.membership_charged_units),
+    membershipBonusUnits: row.membership_bonus_units == null
+      ? null : Number(row.membership_bonus_units),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     deletedAt: row.deleted_at,
@@ -101,11 +168,24 @@ function membershipRow(row) {
     seatCount: Number(row.seat_count),
     seatIdentifier: row.seat_identifier,
     zone: row.zone,
+    section: row.section,
     product: row.product,
     startDate: row.start_date,
     renewalDate: row.renewal_date,
+    ...membershipPricingFields(row),
     units: row.units ?? [],
     rowVersion: Number(row.row_version)
+  };
+}
+
+function membershipUnitRow(row) {
+  return {
+    id: row.id,
+    unitNumber: Number(row.unit_number),
+    seatIdentifier: row.seat_identifier,
+    zone: row.zone,
+    product: row.product,
+    jerseySize: row.jersey_size
   };
 }
 
@@ -164,13 +244,77 @@ const TASK_SORT = Object.freeze({
   priority: 't.priority'
 });
 
+const SELECTED_MEMBERSHIP_COLUMNS = `
+  sm.membership_id,sm.membership_status,sm.membership_section,
+  sm.membership_seat_count,sm.membership_seats,sm.membership_row_version,
+  sm.membership_price_book_version,sm.membership_currency,
+  sm.membership_locality_code,sm.membership_locality_name,
+  sm.membership_discount_code,sm.membership_discount_name,sm.membership_pricing_mode,
+  sm.membership_list_unit_price,sm.membership_commercial_value,sm.membership_net_amount,
+  sm.membership_discount_amount,sm.membership_effective_unit_price,
+  sm.membership_charged_units,sm.membership_bonus_units`;
+
+const SELECTED_MEMBERSHIP_JOIN = `
+  LEFT JOIN LATERAL (
+    SELECT
+      m.id AS membership_id,
+      m.membership_status,
+      m.section AS membership_section,
+      m.seat_count AS membership_seat_count,
+      COALESCE(
+        jsonb_agg(u.seat_identifier ORDER BY u.unit_number)
+          FILTER (WHERE u.id IS NOT NULL AND NULLIF(btrim(u.seat_identifier),'') IS NOT NULL),
+        '[]'::jsonb
+      ) AS membership_seats,
+      m.row_version AS membership_row_version
+      ,m.price_book_version AS membership_price_book_version
+      ,m.currency AS membership_currency
+      ,m.locality_code AS membership_locality_code
+      ,m.locality_name AS membership_locality_name
+      ,m.discount_code AS membership_discount_code
+      ,m.discount_name AS membership_discount_name
+      ,m.pricing_mode AS membership_pricing_mode
+      ,m.list_unit_price AS membership_list_unit_price
+      ,m.commercial_value AS membership_commercial_value
+      ,m.net_amount AS membership_net_amount
+      ,m.discount_amount AS membership_discount_amount
+      ,m.effective_unit_price AS membership_effective_unit_price
+      ,m.charged_units AS membership_charged_units
+      ,m.bonus_units AS membership_bonus_units
+    FROM memberships m
+    LEFT JOIN membership_units u
+      ON u.membership_id=m.id AND u.deleted_at IS NULL
+    WHERE m.contact_id=c.id
+      AND m.season_code='LMP-2026-27'
+      AND m.deleted_at IS NULL
+    GROUP BY m.id
+    ORDER BY CASE m.membership_status
+      WHEN 'active' THEN 1 WHEN 'renewing' THEN 2
+      WHEN 'expired' THEN 3 ELSE 4 END,
+      m.created_at DESC,m.id
+    LIMIT 1
+  ) sm ON true`;
+
+const AUDIT_PRICING_FIELDS = new Set([
+  'localityCode', 'discountCode', 'priceBookVersion', 'commercialValue', 'netAmount',
+  'discountAmount', 'chargedUnits', 'bonusUnits'
+]);
+
 function auditProjection(entity) {
   if (!entity) return null;
   return Object.fromEntries([
     'id', 'subscriberStatus', 'commercialStage', 'executiveId', 'consentStatus',
-    'status', 'assignedTo', 'dueAt', 'rowVersion', 'seasonCode', 'totalAmount',
+    'status', 'assignedTo', 'dueAt', 'rowVersion', 'seasonCode', 'membershipStatus',
+    'section', 'seatCount', 'localityCode', 'discountCode', 'priceBookVersion',
+    'commercialValue', 'netAmount', 'discountAmount', 'chargedUnits', 'bonusUnits', 'totalAmount',
     'paidAmount', 'role', 'active'
-  ].filter((key) => entity[key] !== undefined).map((key) => [key, entity[key]]));
+  ].filter((key) => entity[key] !== undefined
+    && (!AUDIT_PRICING_FIELDS.has(key) || entity[key] !== null))
+    .map((key) => [key, entity[key]]));
+}
+
+function canonicalSeatIdentifier(value) {
+  return String(value ?? '').trim().replace(/\s+/gu, ' ').toLocaleLowerCase('es-MX');
 }
 
 function canonicalIdentityPhone(value) {
@@ -185,6 +329,102 @@ export class PgCrmRepository {
   constructor(pool, { exportRowLimit = 50_000 } = {}) {
     this.pool = pool;
     this.exportRowLimit = exportRowLimit;
+  }
+
+  async getSubscriptionPricingCatalog({ client = this.pool } = {}) {
+    const priceBookResult = await client.query(
+      `SELECT version,season_code,display_name,currency
+       FROM membership_price_books
+       WHERE season_code=$1 AND active=true`,
+      [MEMBERSHIP_PRICING_SEASON]
+    );
+    const priceBook = priceBookResult.rows[0];
+    if (!priceBook) throw notFound('Catalogo de precios');
+    const [localitiesResult, discountsResult] = await Promise.all([
+      client.query(
+        `SELECT code,display_name,section,list_unit_price,july25_unit_price,
+                july25_mode,promotion_label,sort_order
+         FROM membership_locality_prices WHERE price_book_version=$1 ORDER BY sort_order`,
+        [priceBook.version]
+      ),
+      client.query(
+        `SELECT code,display_name,mode,rate_basis_points,sort_order
+         FROM membership_discount_campaigns
+         WHERE price_book_version=$1 AND selectable=true ORDER BY sort_order`,
+        [priceBook.version]
+      )
+    ]);
+    return {
+      priceBookVersion: priceBook.version,
+      seasonCode: priceBook.season_code,
+      displayName: priceBook.display_name,
+      currency: priceBook.currency,
+      localities: localitiesResult.rows.map((row) => ({
+        code: row.code,
+        displayName: row.display_name,
+        section: row.section,
+        listUnitPrice: moneyFromCents(row.list_unit_price),
+        july25UnitPrice: moneyFromCents(row.july25_unit_price),
+        july25Mode: row.july25_mode,
+        promotionLabel: row.promotion_label ?? null,
+        sortOrder: Number(row.sort_order)
+      })),
+      discounts: discountsResult.rows.map((row) => ({
+        code: row.code,
+        displayName: row.display_name,
+        mode: row.mode,
+        rateBasisPoints: row.rate_basis_points == null ? null : Number(row.rate_basis_points),
+        sortOrder: Number(row.sort_order)
+      }))
+    };
+  }
+
+  async resolveSubscriptionPricing(client, {
+    seasonCode = MEMBERSHIP_PRICING_SEASON,
+    section,
+    localityCode,
+    discountCode,
+    seatCount
+  }) {
+    const result = await client.query(
+      `SELECT pb.version,pb.currency,
+              lp.code AS locality_code,lp.display_name AS locality_name,lp.section,
+              lp.list_unit_price,lp.july25_unit_price,lp.july25_mode,
+              dc.code AS discount_code,dc.display_name AS discount_name,
+              dc.mode AS discount_mode,dc.rate_basis_points
+       FROM membership_price_books pb
+       JOIN membership_locality_prices lp ON lp.price_book_version=pb.version AND lp.code=$2
+       JOIN membership_discount_campaigns dc ON dc.price_book_version=pb.version AND dc.code=$3
+       WHERE pb.season_code=$1 AND pb.active=true AND dc.selectable=true`,
+      [seasonCode, localityCode, discountCode]
+    );
+    const row = result.rows[0];
+    if (!row) throw badRequest('La localidad o el descuento seleccionado no existe en el catalogo.');
+    if (section !== undefined && section !== row.section) {
+      throw badRequest('La localidad seleccionada no pertenece a la seccion indicada.');
+    }
+    return calculateMembershipPrice({
+      priceBook: { version: row.version, currency: row.currency },
+      locality: {
+        code: row.locality_code,
+        displayName: row.locality_name,
+        section: row.section,
+        listUnitPrice: Number(row.list_unit_price),
+        july25UnitPrice: Number(row.july25_unit_price),
+        july25Mode: row.july25_mode
+      },
+      discount: {
+        code: row.discount_code,
+        displayName: row.discount_name,
+        mode: row.discount_mode,
+        rateBasisPoints: row.rate_basis_points == null ? null : Number(row.rate_basis_points)
+      },
+      seatCount
+    });
+  }
+
+  async quoteSubscription(input) {
+    return publicPricing(await this.resolveSubscriptionPricing(this.pool, input));
   }
 
   async findLocalAdminForLogin(email) {
@@ -434,9 +674,35 @@ export class PgCrmRepository {
            count(*) FILTER (WHERE next_follow_up_at < now())::integer AS overdue_follow_ups
          FROM scoped_contacts
        ), membership_metrics AS (
-         SELECT COALESCE(sum(m.seat_count), 0)::integer AS active_seats
+         SELECT
+           COALESCE(sum(m.seat_count) FILTER (WHERE m.membership_status='active'),0)::integer AS active_seats,
+           count(*) FILTER (
+             WHERE m.membership_status IN ('active','renewing')
+               AND m.price_book_version IS NOT NULL
+               AND m.season_code=COALESCE($${seasonParameter}::text,'LMP-2026-27')
+           )::integer AS priced_memberships,
+           COALESCE(sum(m.seat_count) FILTER (
+             WHERE m.membership_status IN ('active','renewing')
+               AND m.price_book_version IS NOT NULL
+               AND m.season_code=COALESCE($${seasonParameter}::text,'LMP-2026-27')
+           ),0)::integer AS priced_seats,
+           COALESCE(sum(m.commercial_value) FILTER (
+             WHERE m.membership_status IN ('active','renewing')
+               AND m.price_book_version IS NOT NULL
+               AND m.season_code=COALESCE($${seasonParameter}::text,'LMP-2026-27')
+           ),0)::bigint AS membership_commercial_value,
+           COALESCE(sum(m.net_amount) FILTER (
+             WHERE m.membership_status IN ('active','renewing')
+               AND m.price_book_version IS NOT NULL
+               AND m.season_code=COALESCE($${seasonParameter}::text,'LMP-2026-27')
+           ),0)::bigint AS membership_net_amount,
+           COALESCE(sum(m.discount_amount) FILTER (
+             WHERE m.membership_status IN ('active','renewing')
+               AND m.price_book_version IS NOT NULL
+               AND m.season_code=COALESCE($${seasonParameter}::text,'LMP-2026-27')
+           ),0)::bigint AS membership_discount_amount
          FROM memberships m JOIN scoped_contacts c ON c.id = m.contact_id
-         WHERE m.deleted_at IS NULL AND m.membership_status = 'active'
+         WHERE m.deleted_at IS NULL
            AND ($${seasonParameter}::text IS NULL OR m.season_code = $${seasonParameter})
        ), interaction_metrics AS (
          SELECT count(*)::integer AS human_interactions
@@ -472,6 +738,11 @@ export class PgCrmRepository {
       totalContacts: Number(row.total_contacts),
       currentSubscribers: Number(row.current_subscribers),
       activeSeats: Number(row.active_seats),
+      pricedMemberships: Number(row.priced_memberships ?? 0),
+      pricedSeats: Number(row.priced_seats ?? 0),
+      membershipCommercialValue: moneyFromCents(row.membership_commercial_value ?? 0),
+      membershipNetAmount: moneyFromCents(row.membership_net_amount ?? 0),
+      membershipDiscountAmount: moneyFromCents(row.membership_discount_amount ?? 0),
       renewing: Number(row.renewing),
       newSubscribers: Number(row.new_subscribers),
       notContacted: Number(row.not_contacted),
@@ -548,11 +819,13 @@ export class PgCrmRepository {
     const order = filters.order === 'asc' ? 'ASC' : 'DESC';
     const result = await this.pool.query(
       `SELECT c.*, u.display_name AS executive_name, s.seat_count, s.managed_seat_count, s.seasons_count,
-              s.next_task_at, s.overdue_tasks, s.last_human_contact_channel,
-              count(*) OVER()::integer AS total_count
+               s.next_task_at, s.overdue_tasks, s.last_human_contact_channel,
+               ${SELECTED_MEMBERSHIP_COLUMNS},
+               count(*) OVER()::integer AS total_count
        FROM contacts c
        LEFT JOIN app_users u ON u.id = c.executive_id
        LEFT JOIN contact_operational_summary s ON s.id = c.id
+       ${SELECTED_MEMBERSHIP_JOIN}
        WHERE ${where}
        ORDER BY ${sort} ${order} NULLS LAST, c.id
        LIMIT $${params.length - 1} OFFSET $${params.length}`,
@@ -574,10 +847,12 @@ export class PgCrmRepository {
     }
     const result = await client.query(
       `SELECT c.*, u.display_name AS executive_name, s.seat_count, s.managed_seat_count, s.seasons_count,
-              s.next_task_at, s.overdue_tasks, s.last_human_contact_channel
+               s.next_task_at, s.overdue_tasks, s.last_human_contact_channel,
+               ${SELECTED_MEMBERSHIP_COLUMNS}
        FROM contacts c
        LEFT JOIN app_users u ON u.id = c.executive_id
        LEFT JOIN contact_operational_summary s ON s.id = c.id
+       ${SELECTED_MEMBERSHIP_JOIN}
        WHERE ${where.join(' AND ')}`,
       params
     );
@@ -639,6 +914,51 @@ export class PgCrmRepository {
       );
     }
     return { email: normalizedEmail, phone: normalizedPhone };
+  }
+
+  async lockMembershipSeason(client, contactId, seasonCode) {
+    await client.query(
+      'SELECT pg_advisory_xact_lock(hashtextextended($1,0))',
+      [`membership-season:${contactId}:${seasonCode}`]
+    );
+  }
+
+  async lockMembershipSeats(client, seasonCode, section, units) {
+    if (!section) return;
+    const lockKeys = [...new Set(units.map((unit) => canonicalSeatIdentifier(unit.seatIdentifier)))]
+      .filter(Boolean)
+      .sort()
+      .map((seat) => `membership-seat:${seasonCode}:${section}:${seat}`);
+    for (const lockKey of lockKeys) {
+      await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))', [lockKey]);
+    }
+  }
+
+  async assertMembershipSeatsAvailable(client, {
+    seasonCode, section, units, excludeMembershipId = null
+  }) {
+    if (!section) return;
+    const requested = units.map((unit) => ({
+      value: unit.seatIdentifier,
+      canonical: canonicalSeatIdentifier(unit.seatIdentifier)
+    })).filter((seat) => seat.canonical);
+    if (!requested.length) return;
+    const result = await client.query(
+      `SELECT DISTINCT lower(regexp_replace(btrim(u.seat_identifier),'[[:space:]]+',' ','g')) AS seat
+       FROM membership_units u
+       JOIN memberships m ON m.id=u.membership_id
+       WHERE m.season_code=$1 AND m.section=$2
+         AND m.membership_status IN ('active','renewing')
+         AND m.deleted_at IS NULL AND u.deleted_at IS NULL
+         AND lower(regexp_replace(btrim(u.seat_identifier),'[[:space:]]+',' ','g')) = ANY($3::text[])
+         AND ($4::uuid IS NULL OR m.id<>$4)`,
+      [seasonCode, section, requested.map((seat) => seat.canonical), excludeMembershipId]
+    );
+    if (!result.rows.length) return;
+    const conflicts = new Set(result.rows.map((row) => row.seat));
+    throw conflict('Una o más butacas ya están asignadas en esta temporada y sección.', {
+      seats: requested.filter((seat) => conflicts.has(seat.canonical)).map((seat) => seat.value)
+    });
   }
 
   async assertContactIdentityAvailable(client, identity, { excludeContactId = null } = {}) {
@@ -754,6 +1074,18 @@ export class PgCrmRepository {
 
       const identity = await this.lockContactIdentities(client, data.contact);
       await this.assertContactIdentityAvailable(client, identity);
+      let manualPricing = null;
+      if (data.membership?.section) {
+        await this.lockMembershipSeats(
+          client, data.membership.seasonCode, data.membership.section, data.membership.units
+        );
+        await this.assertMembershipSeatsAvailable(client, {
+          seasonCode: data.membership.seasonCode,
+          section: data.membership.section,
+          units: data.membership.units
+        });
+        manualPricing = await this.resolveSubscriptionPricing(client, data.membership);
+      }
 
       const contactResult = await client.query(
         `INSERT INTO contacts
@@ -793,13 +1125,25 @@ export class PgCrmRepository {
       if (data.membership) {
         const membershipResult = await client.query(
           `INSERT INTO memberships
-            (contact_id,season_code,membership_status,seat_count,seat_identifier,zone,product,
-             start_date,renewal_date,created_by,updated_by)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$10) RETURNING *`,
+            (contact_id,season_code,membership_status,seat_count,seat_identifier,zone,section,product,
+             start_date,renewal_date,created_by,updated_by,
+             price_book_version,currency,locality_code,locality_name,discount_code,discount_name,
+             pricing_mode,list_unit_price,commercial_value,net_amount,discount_amount,
+             effective_unit_price,charged_units,bonus_units)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$11,
+                   $12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25) RETURNING *`,
           [contactId, data.membership.seasonCode, data.membership.membershipStatus,
             data.membership.seatCount, data.membership.seatIdentifier ?? null,
-            data.membership.zone ?? null, data.membership.product ?? null,
-            data.membership.startDate ?? null, data.membership.renewalDate ?? null, actor.id]
+            data.membership.zone ?? null, data.membership.section ?? null,
+            data.membership.product ?? null, data.membership.startDate ?? null,
+            data.membership.renewalDate ?? null, actor.id,
+            manualPricing?.priceBookVersion ?? null, manualPricing?.currency ?? null,
+            manualPricing?.localityCode ?? null, manualPricing?.localityName ?? null,
+            manualPricing?.discountCode ?? null, manualPricing?.discountName ?? null,
+            manualPricing?.pricingMode ?? null, manualPricing?.listUnitPrice ?? null,
+            manualPricing?.commercialValue ?? null, manualPricing?.netAmount ?? null,
+            manualPricing?.discountAmount ?? null, manualPricing?.effectiveUnitPrice ?? null,
+            manualPricing?.chargedUnits ?? null, manualPricing?.bonusUnits ?? null]
         );
         membershipId = membershipResult.rows[0].id;
         for (const unit of data.membership.units) {
@@ -865,7 +1209,9 @@ export class PgCrmRepository {
           commercialStage: data.contact.commercialStage,
           acquisitionSource: data.contact.acquisitionSource,
           seasonCode: data.membership?.seasonCode ?? null,
+          section: data.membership?.section ?? null,
           seatCount: data.membership?.seatCount ?? 0,
+          ...(manualPricing ? publicPricing(manualPricing) : {}),
           consentStatus: data.consent.status
         }
       });
@@ -1067,27 +1413,46 @@ export class PgCrmRepository {
        WHERE m.contact_id = $1 AND m.deleted_at IS NULL GROUP BY m.id
        ORDER BY m.season_code DESC, m.created_at DESC`, [contactId]
     );
-    return result.rows.map((row) => ({
-      id: row.id, contactId: row.contact_id, seasonCode: row.season_code,
-      membershipStatus: row.membership_status, seatCount: row.seat_count,
-      seatIdentifier: row.seat_identifier, zone: row.zone, product: row.product,
-      startDate: row.start_date, renewalDate: row.renewal_date,
-      units: row.units, rowVersion: Number(row.row_version)
-    }));
+    return result.rows.map(membershipRow);
   }
 
   async createMembership(contactId, data, actor, context) {
     return withTransaction(this.pool, async (client) => {
+      await this.lockMembershipSeason(client, contactId, data.seasonCode);
+      await this.lockMembershipSeats(client, data.seasonCode, data.section, data.units);
       const contact = await this.getContact(contactId, actor, { client });
       if (!contact) throw notFound('Contacto');
+      const duplicate = await client.query(
+        `SELECT id FROM memberships
+         WHERE contact_id=$1 AND season_code=$2 AND deleted_at IS NULL
+         ORDER BY created_at DESC,id LIMIT 1`,
+        [contactId, data.seasonCode]
+      );
+      if (duplicate.rows[0]) {
+        throw conflict('El contacto ya tiene un abono registrado para esta temporada.');
+      }
+      await this.assertMembershipSeatsAvailable(client, {
+        seasonCode: data.seasonCode,
+        section: data.section,
+        units: data.units
+      });
+      const pricing = await this.resolveSubscriptionPricing(client, data);
       const result = await client.query(
         `INSERT INTO memberships
-          (contact_id,season_code,membership_status,seat_count,seat_identifier,zone,product,
-           start_date,renewal_date,created_by,updated_by)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$10) RETURNING *`,
+          (contact_id,season_code,membership_status,seat_count,seat_identifier,zone,section,product,
+           start_date,renewal_date,created_by,updated_by,
+           price_book_version,currency,locality_code,locality_name,discount_code,discount_name,
+           pricing_mode,list_unit_price,commercial_value,net_amount,discount_amount,
+           effective_unit_price,charged_units,bonus_units)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$11,
+                 $12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25) RETURNING *`,
         [contactId, data.seasonCode, data.membershipStatus, data.seatCount,
-          data.seatIdentifier ?? null, data.zone ?? null, data.product ?? null,
-          data.startDate ?? null, data.renewalDate ?? null, actor.id]
+          data.seatIdentifier ?? null, data.zone ?? null, data.section ?? null,
+          data.product ?? null, data.startDate ?? null, data.renewalDate ?? null, actor.id,
+          pricing.priceBookVersion, pricing.currency, pricing.localityCode, pricing.localityName,
+          pricing.discountCode, pricing.discountName, pricing.pricingMode, pricing.listUnitPrice,
+          pricing.commercialValue, pricing.netAmount, pricing.discountAmount,
+          pricing.effectiveUnitPrice, pricing.chargedUnits, pricing.bonusUnits]
       );
       const membership = result.rows[0];
       for (const unit of data.units) {
@@ -1101,9 +1466,128 @@ export class PgCrmRepository {
       }
       await this.audit(client, context, {
         action: 'membership.created', entityType: 'membership', entityId: membership.id,
-        metadata: { contactId, seasonCode: data.seasonCode, seatCount: data.seatCount }
+        metadata: {
+          contactId, seasonCode: data.seasonCode,
+          section: data.section ?? null, seatCount: data.seatCount,
+          ...publicPricing(pricing)
+        }
       });
-      return { id: membership.id, contactId, ...data, rowVersion: Number(membership.row_version) };
+      return membershipRow({ ...membership, units: data.units });
+    });
+  }
+
+  async updateMembership(id, data, actor, context, expectedVersion) {
+    return withTransaction(this.pool, async (client) => {
+      const visible = await client.query(
+        `SELECT m.* FROM memberships m
+         JOIN contacts c ON c.id=m.contact_id AND c.deleted_at IS NULL
+         WHERE m.id=$1 AND m.deleted_at IS NULL
+           AND ($2::boolean=false OR c.executive_id=$3)`,
+        [id, actor.role === 'executive', actor.id]
+      );
+      if (!visible.rows[0]) throw notFound('Abono');
+
+      const seasonCode = visible.rows[0].season_code;
+      await this.lockMembershipSeats(client, seasonCode, data.section, data.units);
+      const locked = await client.query(
+        `SELECT m.* FROM memberships m
+         JOIN contacts c ON c.id=m.contact_id AND c.deleted_at IS NULL
+         WHERE m.id=$1 AND m.deleted_at IS NULL
+           AND ($2::boolean=false OR c.executive_id=$3)
+         FOR UPDATE OF m`,
+        [id, actor.role === 'executive', actor.id]
+      );
+      const membership = locked.rows[0];
+      if (!membership) throw notFound('Abono');
+      if (Number(membership.row_version) !== expectedVersion) {
+        throw conflict('El abono cambió desde que lo abriste. Actualiza la vista e inténtalo de nuevo.');
+      }
+
+      const unitResult = await client.query(
+        `SELECT * FROM membership_units WHERE membership_id=$1 ORDER BY unit_number FOR UPDATE`,
+        [id]
+      );
+      const before = membershipRow({
+        ...membership,
+        units: unitResult.rows.filter((unit) => !unit.deleted_at).map(membershipUnitRow)
+      });
+      await this.assertMembershipSeatsAvailable(client, {
+        seasonCode,
+        section: data.section,
+        units: data.units,
+        excludeMembershipId: id
+      });
+      const pricing = await this.resolveSubscriptionPricing(client, {
+        ...data,
+        seasonCode
+      });
+
+      const updated = await client.query(
+        `UPDATE memberships
+         SET section=$1,seat_count=$2,updated_by=$3,
+             price_book_version=$4,currency=$5,locality_code=$6,locality_name=$7,
+             discount_code=$8,discount_name=$9,pricing_mode=$10,list_unit_price=$11,
+             commercial_value=$12,net_amount=$13,discount_amount=$14,
+             effective_unit_price=$15,charged_units=$16,bonus_units=$17
+         WHERE id=$18 AND row_version=$19 AND deleted_at IS NULL
+         RETURNING *`,
+        [data.section, data.seatCount, actor.id,
+          pricing.priceBookVersion, pricing.currency, pricing.localityCode, pricing.localityName,
+          pricing.discountCode, pricing.discountName, pricing.pricingMode, pricing.listUnitPrice,
+          pricing.commercialValue, pricing.netAmount, pricing.discountAmount,
+          pricing.effectiveUnitPrice, pricing.chargedUnits, pricing.bonusUnits,
+          id, expectedVersion]
+      );
+      if (!updated.rows[0]) {
+        throw conflict('El abono cambió desde que lo abriste. Actualiza la vista e inténtalo de nuevo.');
+      }
+
+      for (const unit of data.units) {
+        await client.query(
+          `INSERT INTO membership_units
+            (membership_id,unit_number,seat_identifier,zone,product,jersey_size,created_by,updated_by)
+           VALUES ($1,$2,$3,$4,$5,NULL,$6,$6)
+           ON CONFLICT (membership_id,unit_number) DO UPDATE SET
+             seat_identifier=excluded.seat_identifier,
+             updated_by=excluded.updated_by,
+             deleted_at=NULL,
+             deleted_by=NULL`,
+          [id, unit.unitNumber, unit.seatIdentifier, membership.zone,
+            membership.product, actor.id]
+        );
+      }
+      await client.query(
+        `UPDATE membership_units
+         SET deleted_at=now(),deleted_by=$2,updated_by=$2
+         WHERE membership_id=$1 AND unit_number>$3 AND deleted_at IS NULL`,
+        [id, actor.id, data.seatCount]
+      );
+
+      const after = await this.getMembership(id, { client });
+      const beforeSeats = before.units.map((unit) => canonicalSeatIdentifier(unit.seatIdentifier));
+      const afterSeats = data.units.map((unit) => canonicalSeatIdentifier(unit.seatIdentifier));
+      const changedFields = [];
+      if (before.section !== after.section) changedFields.push('section');
+      if (before.seatCount !== after.seatCount) changedFields.push('seatCount');
+      if (before.localityCode !== after.localityCode) changedFields.push('localityCode');
+      if (before.discountCode !== after.discountCode) changedFields.push('discountCode');
+      if (JSON.stringify(beforeSeats) !== JSON.stringify(afterSeats)) changedFields.push('seatIdentifiers');
+      await this.audit(client, context, {
+        action: 'membership.updated', entityType: 'membership', entityId: id,
+        before, after,
+        metadata: {
+          contactId: membership.contact_id,
+          priceBookVersion: after.priceBookVersion,
+          commercialValue: after.commercialValue,
+          netAmount: after.netAmount,
+          discountAmount: after.discountAmount,
+          chargedUnits: after.chargedUnits,
+          bonusUnits: after.bonusUnits,
+          changedFields,
+          seatIdentifiersChanged: changedFields.includes('seatIdentifiers')
+        }
+      });
+      return after;
     });
   }
 
@@ -1447,15 +1931,34 @@ export class PgCrmRepository {
         `SELECT c.id,concat(c.first_name,' ',c.last_name) AS name,c.email,c.phone,c.municipality,
                 c.subscriber_status,c.commercial_stage,u.display_name AS executive_name,
                 c.last_human_contact_at,s.last_human_contact_channel,
-                c.next_follow_up_at,c.consent_status
+                c.next_follow_up_at,c.consent_status,
+                sm.membership_section,sm.membership_seat_count,sm.membership_seats,
+                sm.membership_locality_code,sm.membership_locality_name,
+                sm.membership_discount_code,sm.membership_discount_name,
+                sm.membership_price_book_version,sm.membership_currency,
+                sm.membership_list_unit_price,sm.membership_commercial_value,
+                sm.membership_net_amount,sm.membership_discount_amount,
+                sm.membership_effective_unit_price,sm.membership_charged_units,
+                sm.membership_bonus_units
          FROM contacts c LEFT JOIN app_users u ON u.id=c.executive_id
          LEFT JOIN contact_operational_summary s ON s.id=c.id
+         ${SELECTED_MEMBERSHIP_JOIN}
          WHERE ${where} ORDER BY c.updated_at DESC LIMIT $${params.length}`, params
       );
       await this.audit(client, context, {
         action: 'data.exported', entityType: 'contact', metadata: { rowCount: rows.rowCount }
       });
-      return rows.rows;
+      return rows.rows.map((row) => ({
+        ...row,
+        membership_seats: Array.isArray(row.membership_seats)
+          ? row.membership_seats.filter(Boolean).join(' | ')
+          : '',
+        membership_list_unit_price: moneyFromCents(row.membership_list_unit_price),
+        membership_commercial_value: moneyFromCents(row.membership_commercial_value),
+        membership_net_amount: moneyFromCents(row.membership_net_amount),
+        membership_discount_amount: moneyFromCents(row.membership_discount_amount),
+        membership_effective_unit_price: moneyFromCents(row.membership_effective_unit_price)
+      }));
     });
     return result;
   }

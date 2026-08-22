@@ -24,6 +24,7 @@ const report = {
     notContacted: 320,
     overdueFollowUps: 42,
     salesAmount: 1280000,
+    membershipNetAmount: 168732,
     humanInteractions: 510,
     campaignMessages: 820,
     unassigned: 19,

@@ -25,6 +25,21 @@ const consentLabels = { yes: 'Sí', no: 'No', unknown: 'No consta' }
 const consentCodes = { Sí: 'yes', No: 'no', 'No consta': 'unknown' }
 const channelLabels = { phone: 'Llamada', whatsapp: 'WhatsApp', email: 'Correo', in_person: 'Presencial', other: 'Otro' }
 const businessSourceLabels = { season_ticket_database: 'Base de abonados', referral: 'Referido', box_office: 'Taquilla', digital: 'Registro digital', event: 'Evento o activación', outbound: 'Prospección del equipo', other: 'Otro origen' }
+export const ACTIVE_SEASON = 'LMP-2026-27'
+export const MEMBERSHIP_SECTIONS = Object.freeze(['VIP', 'Preferente', 'General'])
+
+function nullableNumber(value) {
+  if (value === null || value === undefined || value === '') return null
+  const number = Number(value)
+  return Number.isFinite(number) ? number : null
+}
+
+function membershipMoney(record, field) {
+  const direct = nullableNumber(record?.[field])
+  if (direct != null) return direct
+  const cents = nullableNumber(record?.[`${field}Cents`])
+  return cents == null ? null : cents / 100
+}
 
 export function subscriberStatusCode(label) {
   return subscriberCodes[label] || label || undefined
@@ -49,6 +64,30 @@ function initials(name = '') {
 export function fromApiContact(contact) {
   if (contact.name && contact.type && !contact.firstName && !contact.subscriberStatus) return contact
   const name = contact.displayName || `${contact.firstName || ''} ${contact.lastName || ''}`.trim()
+  const hasMembershipSummary = Object.prototype.hasOwnProperty.call(contact, 'membershipId')
+  const currentMembership = contact.membershipId ? fromApiMembership({
+    id: contact.membershipId,
+    seasonCode: ACTIVE_SEASON,
+    membershipStatus: contact.membershipStatus,
+    membershipSection: contact.membershipSection,
+    seatCount: contact.membershipSeatCount,
+    units: contact.membershipSeats || [],
+    rowVersion: contact.membershipRowVersion,
+    localityCode: contact.membershipLocalityCode,
+    localityName: contact.membershipLocalityName,
+    discountCode: contact.membershipDiscountCode,
+    discountName: contact.membershipDiscountName,
+    priceBookVersion: contact.membershipPriceBookVersion,
+    currency: contact.membershipCurrency,
+    pricingMode: contact.membershipPricingMode,
+    listUnitPrice: contact.membershipListUnitPrice,
+    commercialValue: contact.membershipCommercialValue,
+    netAmount: contact.membershipNetAmount,
+    discountAmount: contact.membershipDiscountAmount,
+    effectiveUnitPrice: contact.membershipEffectiveUnitPrice,
+    chargedUnits: contact.membershipChargedUnits,
+    bonusUnits: contact.membershipBonusUnits,
+  }) : null
   return {
     ...contact,
     name,
@@ -58,7 +97,7 @@ export function fromApiContact(contact) {
     seasons: Number(contact.seasonsCount || 0),
     declaredSeasons: contact.declaredTenureSeasons == null ? null : Number(contact.declaredTenureSeasons),
     seats: Number(contact.managedSeatCount ?? contact.seatCount ?? 0),
-    zone: contact.zoneName || contact.municipality || 'Sin definir',
+    zone: contact.zoneName || 'Sin definir',
     lastContact: displayDate(contact.lastHumanContactAt, 'Sin contacto humano'),
     nextTask: displayDate(contact.nextTaskAt || contact.nextFollowUpAt, 'Sin tarea'),
     channel: channelLabels[contact.lastHumanContactChannel] || '—',
@@ -67,7 +106,74 @@ export function fromApiContact(contact) {
     consent: consentLabels[contact.consentStatus] || 'No consta',
     businessSourceLabel: businessSourceLabels[contact.businessSource || contact.acquisitionSource] || 'No consta',
     kind: contact.subscriberStatus === 'prospect' ? 'prospect' : 'portfolio',
+    ...(hasMembershipSummary ? { currentMembership } : {}),
   }
+}
+
+export function membershipStatusForContact(contact = {}) {
+  const status = contact.subscriberStatus || contact.type
+  if (['current_subscriber', 'new_subscriber', 'Abonado actual', 'Abonado nuevo'].includes(status)) return 'active'
+  if (['renewing', 'Por renovar'].includes(status)) return 'renewing'
+  if (['former_subscriber', 'Exabonado'].includes(status)) return 'expired'
+  return null
+}
+
+export function fromApiMembership(membership) {
+  if (!membership) return null
+  const units = (Array.isArray(membership.units) ? membership.units : [])
+    .map((unit, index) => typeof unit === 'string' || unit == null
+      ? { unitNumber: index + 1, seatIdentifier: unit || '' }
+      : { ...unit, unitNumber: Number(unit.unitNumber ?? index + 1), seatIdentifier: unit.seatIdentifier || '' })
+    .sort((left, right) => left.unitNumber - right.unitNumber)
+  return {
+    ...membership,
+    membershipSection: membership.membershipSection ?? membership.section ?? null,
+    seatCount: Number(membership.seatCount ?? units.length ?? 0),
+    units,
+    rowVersion: membership.rowVersion == null ? null : Number(membership.rowVersion),
+    priceBookVersion: membership.priceBookVersion || membership.pricingCode || null,
+    currency: membership.currency || membership.pricingCurrency || 'MXN',
+    listUnitPrice: membershipMoney(membership, 'listUnitPrice'),
+    commercialValue: membershipMoney(membership, 'commercialValue'),
+    netAmount: membershipMoney(membership, 'netAmount'),
+    discountAmount: membershipMoney(membership, 'discountAmount'),
+    effectiveUnitPrice: membershipMoney(membership, 'effectiveUnitPrice'),
+    chargedUnits: nullableNumber(membership.chargedUnits),
+    bonusUnits: nullableNumber(membership.bonusUnits),
+  }
+}
+
+export function currentSeasonMembership(memberships = [], seasonCode = ACTIVE_SEASON) {
+  return memberships.map(fromApiMembership).find((membership) => membership?.seasonCode === seasonCode) || null
+}
+
+export function resizeMembershipUnits(current = [], count = 1) {
+  const safeCount = Math.min(20, Math.max(1, Number(count) || 1))
+  return Array.from({ length: safeCount }, (_, index) => ({
+    ...(current[index] || {}),
+    unitNumber: index + 1,
+    seatIdentifier: current[index]?.seatIdentifier || '',
+  }))
+}
+
+export function toApiMembershipPayload(draft, { contact, membership, today = new Date() } = {}) {
+  const membershipStatus = membership?.membershipStatus || membershipStatusForContact(contact)
+  const units = resizeMembershipUnits(draft.units, draft.seatCount).map((unit, index) => ({
+    unitNumber: index + 1,
+    seatIdentifier: String(unit.seatIdentifier || '').trim(),
+  }))
+  const payload = {
+    section: draft.membershipSection,
+    ...(draft.localityCode ? { localityCode: draft.localityCode } : {}),
+    ...(draft.discountCode ? { discountCode: draft.discountCode } : {}),
+    seatCount: units.length,
+    units,
+  }
+  if (membership) return payload
+  payload.seasonCode = ACTIVE_SEASON
+  payload.membershipStatus = membershipStatus
+  if (membershipStatus === 'active') payload.startDate = today.toISOString()
+  return payload
 }
 
 export function toApiContactPayload(form) {

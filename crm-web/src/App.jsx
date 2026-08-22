@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import ManualContactDrawer from './ManualContactDrawer'
+import MembershipEditor from './MembershipEditor'
 import { authClient } from './auth/authClient'
 import { createApiClient, resolveApiBaseUrl } from './lib/apiClient'
 import { loadDemoModule } from './data/demoLoader'
@@ -12,9 +13,10 @@ import {
   hasPermission,
   PERMISSIONS,
 } from './lib/permissions'
-import { commercialStageCode, fromApiContact, fromApiInteraction, fromApiSale, fromApiTask, fromApiUser, subscriberStatusCode, toApiContactPayload } from './lib/dataAdapters'
+import { commercialStageCode, currentSeasonMembership, fromApiContact, fromApiInteraction, fromApiMembership, fromApiSale, fromApiTask, fromApiUser, membershipStatusForContact, subscriberStatusCode, toApiContactPayload, toApiMembershipPayload } from './lib/dataAdapters'
 import { downloadExecutiveDashboardPdf } from './lib/dashboardPdf'
 import { buildManualRegistrationPayload } from './lib/manualEntry'
+import { normalizeMembershipPricingCatalog, normalizeMembershipPricingQuote } from './lib/membershipPricing'
 
 const NAV_ITEMS = [
   { id: 'dashboard', label: 'Reporte Dirección', icon: 'chart' },
@@ -164,6 +166,53 @@ export async function revokeSessionSafely(api, clearSession) {
   }
 }
 
+function normalizeContactPatchValue(field, value) {
+  if (value === undefined || value === null) return value ?? null
+  const normalized = String(value).trim()
+  if (!normalized) return null
+  if (field === 'email') return normalized.toLocaleLowerCase('es-MX')
+  if (field === 'phone') {
+    let digits = normalized.replace(/\D+/g, '')
+    if (digits.length === 12 && digits.startsWith('52')) digits = digits.slice(2)
+    if (digits.length === 13 && digits.startsWith('521')) digits = digits.slice(3)
+    return digits
+  }
+  return normalized
+}
+
+export function contactMatchesPatch(contact, patch) {
+  const entries = Object.entries(patch || {})
+  return Boolean(contact) && entries.length > 0 && entries.every(([field, expected]) => (
+    Object.prototype.hasOwnProperty.call(contact, field)
+      && normalizeContactPatchValue(field, contact[field]) === normalizeContactPatchValue(field, expected)
+  ))
+}
+
+export async function verifyPersistedContactPatch(api, id, patch) {
+  try {
+    const response = await api.contact(id)
+    return contactMatchesPatch(response.data, patch) ? response.data : null
+  } catch {
+    return null
+  }
+}
+
+export async function updateContactWithVerification(api, id, patch, rowVersion) {
+  let originalError
+  try {
+    const response = await api.updateContact(id, patch, rowVersion)
+    if (!response?.data || typeof response.data !== 'object') throw new Error('El servidor no devolvió el contacto actualizado.')
+    return fromApiContact(response.data)
+  } catch (error) {
+    originalError = error
+  }
+  const verified = await verifyPersistedContactPatch(api, id, patch)
+  if (verified) {
+    try { return fromApiContact(verified) } catch { /* La confirmación también debe ser hidratable. */ }
+  }
+  throw originalError
+}
+
 function App() {
   const [activePage, setActivePage] = useState(() => window.location.hash.replace('#/', '') || 'dashboard')
   const [mobileOpen, setMobileOpen] = useState(false)
@@ -183,6 +232,7 @@ function App() {
   const [dashboardSummary, setDashboardSummary] = useState(null)
   const [availableExecutives, setAvailableExecutives] = useState([])
   const [configurationFixtures, setConfigurationFixtures] = useState({})
+  const [membershipPricingCatalog, setMembershipPricingCatalog] = useState(null)
   const [bootState, setBootState] = useState(startupConfigurationError ? 'error' : 'loading')
   const [bootError, setBootError] = useState(startupConfigurationError)
   const [loginNotice, setLoginNotice] = useState('')
@@ -192,10 +242,12 @@ function App() {
   const [toast, setToast] = useState('')
   const latestContactRequest = useRef(0)
   const latestDashboardRequest = useRef(0)
+  const latestDrawerRequest = useRef(0)
 
   const clearPrivateState = useCallback((reason = 'signed-out') => {
     latestContactRequest.current += 1
     latestDashboardRequest.current += 1
+    latestDrawerRequest.current += 1
     setUser(null)
     setContacts([])
     setContactRevision(0)
@@ -210,6 +262,7 @@ function App() {
     setDashboardSummary(null)
     setAvailableExecutives([])
     setConfigurationFixtures({})
+    setMembershipPricingCatalog(null)
     setDrawer(null)
     setToast('')
     setUserOpen(false)
@@ -267,6 +320,7 @@ function App() {
         setSales(fixtures.demoSales)
         setCampaigns(fixtures.demoCampaigns)
         setConfigurationFixtures(fixtures.demoConfigurations)
+        setMembershipPricingCatalog(normalizeMembershipPricingCatalog(fixtures.demoMembershipPricingCatalog))
         setDashboardSummary(fixtures.demoDashboard)
         setAvailableExecutives(fixtures.demoExecutiveOptions)
         setBootState('ready')
@@ -296,7 +350,7 @@ function App() {
           : Promise.resolve({ data: [] })
         const today = localDayBounds()
         const now = new Date().toISOString()
-        const [summaryResponse, todayOpenResponse, todayCompletedResponse, overdueResponse, salesResponse, executiveResponse, unassignedResponse, interactionResponse] = await Promise.all([
+        const [summaryResponse, todayOpenResponse, todayCompletedResponse, overdueResponse, salesResponse, executiveResponse, unassignedResponse, interactionResponse, pricingCatalogResponse] = await Promise.all([
           api.dashboard({ season: 'LMP-2026-27', ...periodBounds('month') }),
           api.tasks({ ...today, taskState: 'open', page: 1, pageSize: 100 }),
           api.tasks({ ...today, taskState: 'completed', page: 1, pageSize: 100 }),
@@ -305,6 +359,7 @@ function App() {
           executiveRequest,
           api.contacts({ assignment: 'unassigned', page: 1, pageSize: 100 }),
           api.allInteractions({ page: 1, pageSize: 50 }),
+          api.membershipPricingCatalog().catch(() => ({ data: null })),
         ])
         if (!active) return
         const { data: summaryData } = summaryResponse
@@ -315,6 +370,7 @@ function App() {
         const executiveData = executiveResponse.data
         setUser(currentUser)
         setDashboardSummary(summaryData)
+        setMembershipPricingCatalog(normalizeMembershipPricingCatalog(pricingCatalogResponse))
         const combinedTasks = [...todayOpenData, ...todayCompletedData, ...overdueTaskData]
         setTasks([...new Map(combinedTasks.map((item) => [item.id, item])).values()].map(fromApiTask))
         setFollowupCounts({
@@ -431,15 +487,15 @@ function App() {
           setContacts((current) => [fromApiContact({ ...apiPayload, id, displayName: `${apiPayload.firstName} ${apiPayload.lastName}`, seatCount: 0, seasonsCount: 0, rowVersion: 1 }), ...current])
         }
       } else if (payload.id) {
-        const { data } = await api.updateContact(payload.id, apiPayload, payload.rowVersion)
-        setContacts((current) => current.map((item) => item.id === payload.id ? fromApiContact(data) : item))
+        const contact = await updateContactWithVerification(api, payload.id, apiPayload, payload.rowVersion)
+        setContacts((current) => current.map((item) => item.id === payload.id ? contact : item))
       } else {
         const { data } = await api.createContact(apiPayload)
         setContacts((current) => [fromApiContact(data), ...current])
       }
       setContactRevision((current) => current + 1)
       setDrawer(null)
-      setToast(payload.id ? 'Los cambios se guardaron correctamente.' : 'El contacto se creó correctamente.')
+      setToast(payload.id ? 'Se guardó satisfactoriamente.' : 'El contacto se creó correctamente.')
       return true
     } catch (error) {
       setToast(error.message || 'No fue posible guardar el contacto.')
@@ -548,15 +604,86 @@ function App() {
     return result
   }
 
-  async function openExistingContact(id) {
+  async function openContact(contactOrId, options = {}) {
+    const id = typeof contactOrId === 'string' ? contactOrId : contactOrId?.id
+    if (!id) return
+    const requestId = latestDrawerRequest.current + 1
+    latestDrawerRequest.current = requestId
     try {
-      const contact = authClient.isDemo
-        ? contacts.find((item) => item.id === id)
-        : fromApiContact((await api.contact(id)).data)
-      if (!contact) throw new Error('No encontramos el contacto coincidente.')
-      setDrawer({ mode: 'edit', contact, kind: contact.kind })
+      let detailedContact
+      let memberships
+      if (authClient.isDemo) {
+        detailedContact = typeof contactOrId === 'object' ? contactOrId : contacts.find((item) => item.id === id)
+        memberships = detailedContact?.memberships || (detailedContact?.currentMembership ? [detailedContact.currentMembership] : [])
+      } else {
+        const [contactResponse, membershipsResponse] = await Promise.all([api.contact(id), api.memberships(id)])
+        detailedContact = contactResponse.data
+        memberships = Array.isArray(membershipsResponse.data) ? membershipsResponse.data : membershipsResponse.data?.items || []
+      }
+      if (!detailedContact) throw new Error('No encontramos el contacto coincidente.')
+      const normalizedMemberships = memberships.map(fromApiMembership).filter(Boolean)
+      const membership = currentSeasonMembership(normalizedMemberships)
+      const contact = { ...fromApiContact(detailedContact), currentMembership: membership }
+      if (requestId !== latestDrawerRequest.current) return
+      setContacts((current) => current.map((item) => item.id === id ? { ...item, ...contact } : item))
+      setDrawer({ mode: 'edit', contact, memberships: normalizedMemberships, membership, kind: contact.kind, focusMembership: Boolean(options.focusMembership) })
     } catch (error) {
+      if (requestId !== latestDrawerRequest.current) return
       setToast(error.message || 'No fue posible abrir el contacto existente.')
+    }
+  }
+
+  async function openExistingContact(id) {
+    await openContact(id)
+  }
+
+  async function saveMembership(contact, membership, draft) {
+    const membershipStatus = membershipStatusForContact(contact)
+    if (!membershipStatus) throw new Error('Los prospectos no pueden recibir abonos hasta cambiar su clasificación.')
+    const payload = toApiMembershipPayload(draft, { contact, membership })
+    try {
+      let refreshedContact
+      let refreshedMemberships
+      if (authClient.isDemo) {
+        const fixtures = await loadDemoModule()
+        const pricing = normalizeMembershipPricingQuote(fixtures.quoteDemoMembershipPricing(payload))
+        const saved = fromApiMembership({
+          ...(membership || {}),
+          ...payload,
+          ...pricing,
+          id: membership?.id || `demo-membership-${contact.id}`,
+          contactId: contact.id,
+          membershipSection: payload.section,
+          membershipStatus,
+          seasonCode: payload.seasonCode || membership?.seasonCode || 'LMP-2026-27',
+          units: payload.units.map((unit, index) => ({ ...(membership?.units?.[index] || {}), ...unit })),
+          rowVersion: Number(membership?.rowVersion || 0) + 1,
+        })
+        refreshedMemberships = [saved, ...(contact.memberships || []).filter((item) => item.id !== saved.id)]
+        refreshedContact = { ...contact, seats: saved.seatCount, currentMembership: saved }
+      } else {
+        if (membership) await api.updateMembership(membership.id, payload, membership.rowVersion)
+        else await api.createMembership(contact.id, payload)
+        const [contactResponse, membershipsResponse] = await Promise.all([api.contact(contact.id), api.memberships(contact.id)])
+        refreshedMemberships = (Array.isArray(membershipsResponse.data) ? membershipsResponse.data : membershipsResponse.data?.items || []).map(fromApiMembership).filter(Boolean)
+        refreshedContact = { ...fromApiContact(contactResponse.data), currentMembership: currentSeasonMembership(refreshedMemberships) }
+      }
+      const refreshedMembership = refreshedContact.currentMembership || currentSeasonMembership(refreshedMemberships)
+      setContacts((current) => current.map((item) => item.id === contact.id ? { ...item, ...refreshedContact, currentMembership: refreshedMembership } : item))
+      setDrawer((current) => current?.contact?.id === contact.id ? {
+        ...current,
+        contact: { ...current.contact, ...refreshedContact, currentMembership: refreshedMembership },
+        memberships: refreshedMemberships,
+        membership: refreshedMembership,
+        focusMembership: false,
+      } : current)
+      setContactRevision((current) => current + 1)
+      setDashboardRevision((current) => current + 1)
+      setToast(membership ? 'Los abonos y butacas se actualizaron correctamente.' : 'Los abonos y butacas se agregaron correctamente.')
+      return refreshedMembership
+    } catch (error) {
+      setToast(error.message || 'No fue posible guardar los abonos.')
+      throw error
     }
   }
 
@@ -699,7 +826,11 @@ function App() {
     latestContactRequest.current = requestId
     const { data, meta } = await api.contacts(filters)
     if (requestId === latestContactRequest.current) {
-      setContacts((Array.isArray(data) ? data : data?.items || []).map(fromApiContact))
+      const normalized = (Array.isArray(data) ? data : data?.items || []).map(fromApiContact)
+      setContacts((current) => normalized.map((contact) => {
+        const cached = current.find((item) => item.id === contact.id)?.currentMembership
+        return !Object.prototype.hasOwnProperty.call(contact, 'currentMembership') && cached ? { ...contact, currentMembership: cached } : contact
+      }))
     }
     return meta
   }, [api])
@@ -712,6 +843,14 @@ function App() {
     if (requestId !== latestDashboardRequest.current) return false
     setDashboardSummary(data)
     return true
+  }, [api])
+
+  const quoteMembershipPricing = useCallback(async (params) => {
+    if (authClient.isDemo) {
+      const fixtures = await loadDemoModule()
+      return normalizeMembershipPricingQuote(fixtures.quoteDemoMembershipPricing(params))
+    }
+    return normalizeMembershipPricingQuote(await api.membershipPricingQuote(params))
   }, [api])
 
   if (bootState === 'loading') return <LoadingScreen />
@@ -734,7 +873,7 @@ function App() {
     campaigns,
     configurationFixtures,
     user,
-    onEdit: (contact) => setDrawer({ mode: 'edit', contact, kind: contact.kind }),
+    onEdit: openContact,
     onCreate: (kind = 'portfolio') => setDrawer({ mode: 'create', kind }),
     onNotify: setToast,
     onExport: exportContacts,
@@ -833,6 +972,9 @@ function App() {
           onRestore={restoreContact}
           onCreateInteraction={createInteraction}
           onCreateTask={createTask}
+          onSaveMembership={saveMembership}
+          pricingCatalog={membershipPricingCatalog}
+          onQuoteMembershipPricing={quoteMembershipPricing}
           executiveOptions={availableExecutives}
         />
       ) : null}
@@ -984,6 +1126,11 @@ function DashboardPage({ contacts, tasks, followupCounts, sales, dashboardSummar
           humanInteractions: summary.humanInteractions,
           campaignMessages: summary.campaignMessages,
           unassigned: summary.unassigned,
+          pricedMemberships: summary.pricedMemberships,
+          pricedSeats: summary.pricedSeats,
+          membershipCommercialValue: summary.membershipCommercialValue,
+          membershipNetAmount: summary.membershipNetAmount,
+          membershipDiscountAmount: summary.membershipDiscountAmount,
         },
         operation: operationCounts,
         filters: { ...reportFilters, executiveName },
@@ -1019,6 +1166,8 @@ function DashboardPage({ contacts, tasks, followupCounts, sales, dashboardSummar
         <MetricCard label="Seguimientos vencidos" value={integer.format(summary.overdueFollowUps || 0)} detail="requieren atención" icon="clock" tone="red" />
         <MetricCard label="Venta documentada" value={currency.format(salesTotal)} detail={isDemo ? 'escenario sintético' : 'periodo seleccionado'} icon="wallet" tone="blue" />
       </section>
+
+      {summary.pricedMemberships != null && <section className="membership-value-panel" aria-label="Valor comercial de abonos capturados"><div className="membership-value-grid"><MetricCard label="Importe neto de abonos capturados" value={currency.format(summary.membershipNetAmount || 0)} detail={`${integer.format(summary.pricedMemberships)} membresías con precio`} icon="wallet" tone="green"/><MetricCard label="Valor comercial" value={currency.format(summary.membershipCommercialValue || 0)} detail={`${integer.format(summary.pricedSeats || 0)} abonos cotizados`} icon="layers" tone="blue"/><MetricCard label="Descuento otorgado" value={currency.format(summary.membershipDiscountAmount || 0)} detail="según promociones capturadas" icon="star" tone="gold"/></div><p>No equivale a cobrado ni utilidad.</p></section>}
 
       <section className="dashboard-grid">
         <article className="panel panel--wide">
@@ -1189,7 +1338,7 @@ function ContactsPage({ kind, contacts, contactRevision, user, availableExecutiv
         {loadError && <div className="load-error" role="alert"><Icon name="refresh" size={17}/><span>{loadError}</span><button onClick={() => setReloadToken((current) => current + 1)}>Reintentar</button></div>}
         <div className="table-scroll">
           <table className="data-table contact-table">
-            <thead><tr>{sortableHeader('Contacto', 'name')}{sortableHeader('Estatus', 'status')}<th>Etapa comercial</th>{isPortfolio && <th>Temporadas</th>}{sortableHeader('Último contacto', 'lastContact')}<th>Canal</th>{sortableHeader('Próxima acción', 'nextFollowUp')}<th>Ejecutivo</th><th>Observaciones</th><th><span className="sr-only">Acciones</span></th></tr></thead>
+            <thead><tr>{sortableHeader('Contacto', 'name')}{sortableHeader('Estatus', 'status')}{isPortfolio && <th>Abonos</th>}<th>Etapa comercial</th>{isPortfolio && <th>Temporadas</th>}{sortableHeader('Último contacto', 'lastContact')}<th>Canal</th>{sortableHeader('Próxima acción', 'nextFollowUp')}<th>Ejecutivo</th><th>Observaciones</th><th><span className="sr-only">Acciones</span></th></tr></thead>
             <tbody>{filtered.map((contact) => <ContactRow key={contact.id} contact={contact} isPortfolio={isPortfolio} onEdit={onEdit} />)}</tbody>
           </table>
           {loading && <div className="list-loading" role="status"><span className="spinner"/>Cargando contactos…</div>}
@@ -1205,7 +1354,8 @@ function ContactRow({ contact, isPortfolio, onEdit }) {
   return (
     <tr>
       <td><button className="contact-button" onClick={() => onEdit(contact)}><span className="contact-avatar">{contact.initials || initials(contact.name)}</span><span><strong>{contact.name}</strong><small>{contact.email}</small><small>{contact.phone}</small></span></button></td>
-      <td><StatusPill>{contact.type}</StatusPill>{contact.seats > 1 && <small className="subvalue">{contact.seats} abonos</small>}</td>
+      <td><StatusPill>{contact.type}</StatusPill></td>
+      {isPortfolio && <td><MembershipCell contact={contact} onEdit={onEdit}/></td>}
       <td><StatusPill>{contact.stage}</StatusPill></td>
       {isPortfolio && <td><strong>{contact.seasons || contact.declaredSeasons || '—'}</strong>{contact.seasons > 0 ? <small className="subvalue">verificadas</small> : contact.declaredSeasons != null ? <small className="subvalue">declaradas</small> : null}</td>}
       <td><span className={contact.lastContact?.includes('Sin ') ? 'muted danger-text' : ''}>{contact.lastContact}</span></td>
@@ -1215,6 +1365,19 @@ function ContactRow({ contact, isPortfolio, onEdit }) {
       <td><span className={contact.note ? 'note-preview' : 'muted'} title={contact.note || undefined}>{contact.note || 'Sin observaciones'}</span></td>
       <td><button className="icon-button" aria-label={`Editar ${contact.name}`} onClick={() => onEdit(contact)}><Icon name="more" size={19} /></button></td>
     </tr>
+  )
+}
+
+function MembershipCell({ contact, onEdit }) {
+  const loaded = Object.prototype.hasOwnProperty.call(contact, 'currentMembership')
+  const membership = contact.currentMembership
+  const seats = membership?.units?.map((unit) => unit.seatIdentifier).filter(Boolean) || []
+  const action = membership ? 'Editar' : 'Agregar'
+  return (
+    <div className="membership-cell">
+      {membership ? <><strong>{membership.localityName || 'Localidad pendiente'}</strong><small>{membership.membershipSection || 'Sección pendiente'} · {membership.seatCount} {membership.seatCount === 1 ? 'abono' : 'abonos'}</small><small title={seats.join(', ') || undefined}>{seats.length ? seats.join(', ') : 'Butacas pendientes'}</small>{membership.netAmount != null && <><span className="membership-net-value">Importe neto: {currency.format(membership.netAmount)}</span><span className="membership-commercial-value">Valor comercial: {currency.format(membership.commercialValue)} · Descuento: {currency.format(membership.discountAmount || 0)}</span></>}</> : loaded ? <><strong>Sin capturar</strong><small>Temporada actual</small></> : contact.seats > 0 ? <><strong>{contact.seats} {contact.seats === 1 ? 'abono registrado' : 'abonos registrados'}</strong><small>Abre para consultar el detalle</small></> : <><strong>Sin capturar</strong><small>Temporada actual</small></>}
+      <button type="button" onClick={() => onEdit(contact, { focusMembership: true })} aria-label={`${action} abonos de ${contact.name}`}>{action}</button>
+    </div>
   )
 }
 
@@ -1329,14 +1492,17 @@ function ConfigurationPanel({ content, config, isDemo }) {
   return <div className="configuration-grid"><section className="panel config-list"><div className="panel-heading"><div><span className="panel-kicker">{isDemo ? 'VISTA PREVIA' : 'FASE POSTERIOR'}</span><h2>{isDemo ? 'Elementos ilustrativos' : 'Sin función operativa en esta entrega'}</h2></div></div>{content.map(([name, detail, status]) => <button type="button" disabled key={name} aria-label={`${name}: función no disponible en esta entrega`}><span className="config-icon"><Icon name={config.icon}/></span><span><strong>{name}</strong><small>{detail}</small></span><StatusPill>{status}</StatusPill></button>)}{!content.length && <EmptyState title="Módulo pendiente" body="Esta primera entrega no consulta ni modifica datos para esta sección." />}</section><aside className="panel config-help"><span className="summary-icon summary-icon--blue"><Icon name={config.icon}/></span><h2>Alcance futuro</h2><p>Esta es únicamente una propuesta visual. Antes de activarla se deberán definir sus reglas, endpoints, permisos y eventos de auditoría.</p><ul><li>Sin acciones activas en esta versión</li><li>Sin almacenamiento local en el navegador</li><li>Implementación sujeta a aprobación</li></ul></aside></div>
 }
 
-function ContactDrawer({ drawer, user, onClose, onSave, onDelete, onRestore, onCreateInteraction, onCreateTask, executiveOptions = [] }) {
+function ContactDrawer({ drawer, user, onClose, onSave, onDelete, onRestore, onCreateInteraction, onCreateTask, onSaveMembership, pricingCatalog, onQuoteMembershipPricing, executiveOptions = [] }) {
   const existing = drawer.contact || {}
+  const membership = drawer.membership || currentSeasonMembership(drawer.memberships || [])
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [deleteReason, setDeleteReason] = useState('')
   const [contactMethodError, setContactMethodError] = useState('')
   const [savingContact, setSavingContact] = useState(false)
+  const [membershipSaving, setMembershipSaving] = useState(false)
   const [actionSaving, setActionSaving] = useState('')
   const [actionError, setActionError] = useState('')
+  const headingRef = useRef(null)
   const [interactionDraft, setInteractionDraft] = useState({ channel: 'phone', outcome: '', notes: '', isHumanContact: true })
   const [taskDraft, setTaskDraft] = useState({ assignedTo: existing.executiveId || user.id, dueAt: localDateTimeInput(new Date(Date.now() + 24 * 60 * 60 * 1000)), priority: 'normal', description: '' })
   const nameParts = String(existing.name || '').trim().split(/\s+/)
@@ -1373,16 +1539,21 @@ function ContactDrawer({ drawer, user, onClose, onSave, onDelete, onRestore, onC
   const mayAssign = hasPermission(user, PERMISSIONS.CONTACT_ASSIGN)
   const mayChangeSubscriberStatus = hasPermission(user, PERMISSIONS.MEMBERSHIP_WRITE)
   const mayChangeConsent = hasPermission(user, PERMISSIONS.CONTACT_WRITE_ALL)
+  const mayManageMembership = editing && !deleted && hasPermission(user, PERMISSIONS.MEMBERSHIP_WRITE)
   const mayLogInteraction = editing && !deleted && canEditContacts(user, existing) && hasPermission(user, PERMISSIONS.INTERACTION_WRITE)
   const mayCreateTask = editing && !deleted && canEditContacts(user, existing)
     && (hasPermission(user, PERMISSIONS.TASK_WRITE_ALL) || hasPermission(user, PERMISSIONS.TASK_WRITE_ASSIGNED))
   const mayAssignTask = hasPermission(user, PERMISSIONS.TASK_WRITE_ALL)
 
   useEffect(() => {
-    function handleKeyDown(event) { if (event.key === 'Escape') onClose() }
+    if (!drawer.focusMembership) headingRef.current?.focus()
+  }, [drawer.focusMembership])
+
+  useEffect(() => {
+    function handleKeyDown(event) { if (event.key === 'Escape' && !savingContact && !membershipSaving && !actionSaving) onClose() }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [onClose])
+  }, [actionSaving, membershipSaving, onClose, savingContact])
 
   function update(field, value) {
     if (field === 'email' || field === 'phone') setContactMethodError('')
@@ -1390,7 +1561,7 @@ function ContactDrawer({ drawer, user, onClose, onSave, onDelete, onRestore, onC
   }
   async function submit(event) {
     event.preventDefault()
-    if (savingContact) return
+    if (savingContact || membershipSaving) return
     if (!form.email.trim() && !form.phone.trim()) {
       setContactMethodError('Captura al menos un correo o un teléfono para continuar.')
       return
@@ -1444,9 +1615,9 @@ function ContactDrawer({ drawer, user, onClose, onSave, onDelete, onRestore, onC
   }
 
   return (
-    <div className="drawer-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
-      <aside className="drawer" role="dialog" aria-modal="true" aria-labelledby="drawer-title">
-        <header className="drawer-header"><div><span className="eyebrow">{editing ? `ID ${existing.id}` : 'Nuevo registro'}</span><h2 id="drawer-title">{editing ? existing.name : drawer.kind === 'prospect' ? 'Crear prospecto' : 'Crear contacto'}</h2></div><button className="icon-button" aria-label="Cerrar panel" onClick={onClose}><Icon name="close" size={21}/></button></header>
+    <div className="drawer-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !savingContact && !membershipSaving && !actionSaving) onClose() }}>
+      <aside className="drawer" role="dialog" aria-modal="true" aria-labelledby="drawer-title" aria-busy={savingContact || membershipSaving || Boolean(actionSaving)}>
+        <header className="drawer-header"><div><span className="eyebrow">{editing ? `ID ${existing.id}` : 'Nuevo registro'}</span><h2 id="drawer-title" ref={headingRef} tabIndex="-1">{editing ? existing.name : drawer.kind === 'prospect' ? 'Crear prospecto' : 'Crear contacto'}</h2></div><button className="icon-button" aria-label="Cerrar panel" disabled={savingContact || membershipSaving || Boolean(actionSaving)} onClick={onClose}><Icon name="close" size={21}/></button></header>
         <form onSubmit={submit}>
           <div className="drawer-body">
             {editing && <div className="contact-summary"><span className="large-avatar">{existing.initials || initials(existing.name)}</span><div><StatusPill>{existing.type}</StatusPill><span><Icon name="clock" size={14}/>Última gestión: {existing.lastContact}</span></div></div>}
@@ -1474,6 +1645,7 @@ function ContactDrawer({ drawer, user, onClose, onSave, onDelete, onRestore, onC
                 <label className="field field--full"><span>Consentimiento de contacto</span><select disabled={editing && !mayChangeConsent} value={form.consent} onChange={(event) => update('consent', event.target.value)}><option>Sí</option><option>No</option><option>No consta</option></select><small>{editing && !mayChangeConsent ? 'Solo Supervisor o Administrador puede modificar este dato.' : 'La fecha y la fuente del cambio se registran en el servidor.'}</small></label>
               </div>
             </fieldset>
+            {editing && membershipStatusForContact(existing) && <MembershipEditor membership={membership} pricingCatalog={pricingCatalog} onQuote={onQuoteMembershipPricing} canEdit={mayManageMembership} focusOnMount={drawer.focusMembership} onSave={(draft) => onSaveMembership(existing, membership, draft)} onSavingChange={setMembershipSaving}/>}
             <fieldset disabled={!mayEdit}>
               <legend>Seguimiento</legend>
               <label className="field"><span>Observación resumida</span><textarea rows="4" maxLength="500" value={form.note} onChange={(event) => update('note', event.target.value)} placeholder="Anota contexto útil para la siguiente gestión."/><small>{form.note.length}/500 caracteres</small></label>
@@ -1483,7 +1655,7 @@ function ContactDrawer({ drawer, user, onClose, onSave, onDelete, onRestore, onC
           </div>
           <footer className="drawer-footer">
             {editing && mayDelete && !confirmDelete ? <button type="button" className="delete-button" onClick={() => setConfirmDelete(true)}><Icon name="trash" size={16}/>Eliminar</button> : mayRestore ? <button type="button" className="restore-button" onClick={() => onRestore(existing)}><Icon name="refresh" size={16}/>Restaurar contacto</button> : <span />}
-            <div><SecondaryButton type="button" disabled={savingContact} onClick={onClose}>Cancelar</SecondaryButton>{mayEdit && <PrimaryButton type="submit" icon="check" disabled={savingContact}>{savingContact ? 'Guardando…' : editing ? 'Guardar cambios' : 'Crear contacto'}</PrimaryButton>}</div>
+            <div><SecondaryButton type="button" disabled={savingContact || membershipSaving} onClick={onClose}>Cancelar</SecondaryButton>{mayEdit && <PrimaryButton type="submit" icon="check" disabled={savingContact || membershipSaving}>{savingContact ? 'Guardando…' : editing ? 'Guardar cambios' : 'Crear contacto'}</PrimaryButton>}</div>
           </footer>
         </form>
       </aside>
