@@ -342,8 +342,8 @@ export class PgCrmRepository {
     await this.pool.query(
       `INSERT INTO audit_events
          (actor_id,action,entity_type,entity_id,request_id,metadata,ip_hash,user_agent)
-       VALUES ($1,$2,'auth',$1,$3,'{}'::jsonb,$4,$5)`,
-      [userId, action, context?.requestId, context?.ipHash ?? null,
+       VALUES ($1,$2,'auth',$3,$4,'{}'::jsonb,$5,$6)`,
+      [userId, action, String(userId), context?.requestId, context?.ipHash ?? null,
         context?.userAgent?.slice(0, 500) ?? null]
     );
   }
