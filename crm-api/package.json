@@ -10,7 +10,7 @@
   },
   "scripts": {
     "dev": "node --watch src/server.js",
-    "start": "node src/server.js",
+    "start": "node scripts/start-render.js",
     "start:render": "node scripts/start-render.js",
     "migrate": "node scripts/migrate.js",
     "bootstrap:admin": "node scripts/bootstrap-admin.js",
