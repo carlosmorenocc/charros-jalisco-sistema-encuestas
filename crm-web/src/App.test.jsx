@@ -45,6 +45,7 @@ describe('CRM web en modo demostración', () => {
   it('ofrece un login accesible de correo y contraseña sin persistir credenciales', async () => {
     const onLogin = vi.fn().mockResolvedValue(undefined)
     render(<LoginScreen onLogin={onLogin} notice="La sesión expiró." />)
+    expect(screen.getByRole('heading', { name: 'CRM Abonados' })).toBeInTheDocument()
     expect(screen.getByRole('status')).toHaveTextContent('La sesión expiró.')
     fireEvent.change(screen.getByLabelText('Correo corporativo'), { target: { value: 'ADMIN@CHARROSJALISCO.COM ' } })
     fireEvent.change(screen.getByLabelText('Contraseña'), { target: { value: 'contraseña-de-prueba' } })

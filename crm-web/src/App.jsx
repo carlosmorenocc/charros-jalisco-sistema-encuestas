@@ -874,7 +874,7 @@ export function LoginScreen({ onLogin, notice }) {
       <div className="gate-card gate-card--login">
         <img className="gate-logo" src="/charros-logo.jpeg" alt="Charros de Jalisco" />
         <span className="eyebrow">Plataforma interna</span>
-        <h1>CRM de abonados</h1>
+        <h1>CRM Abonados</h1>
         <p>Ingresa con las credenciales administrativas autorizadas para continuar.</p>
         {notice && <p className="login-notice" role="status">{notice}</p>}
         <form className="login-form" onSubmit={submit} aria-describedby={error ? 'login-error' : undefined}>
