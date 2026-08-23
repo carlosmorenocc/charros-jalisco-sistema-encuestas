@@ -753,7 +753,19 @@ export class PgCrmRepository {
          SELECT
            count(*) FILTER (WHERE s.status IN ('confirmed','reserved'))::integer AS confirmed_sales,
            COALESCE(sum(s.total_amount) FILTER (WHERE s.status IN ('confirmed','reserved')), 0)::numeric AS sales_amount,
-           COALESCE(sum(COALESCE(p.paid_amount,0)) FILTER (WHERE s.status IN ('confirmed','reserved')), 0)::numeric AS collected_amount
+           COALESCE(sum(COALESCE(p.paid_amount,0)) FILTER (WHERE s.status IN ('confirmed','reserved')), 0)::numeric AS collected_amount,
+           count(DISTINCT s.contact_id) FILTER (
+             WHERE s.status IN ('confirmed','reserved') AND s.sale_type='new'
+           )::integer AS sold_new_subscribers,
+           count(DISTINCT s.contact_id) FILTER (
+             WHERE s.status IN ('confirmed','reserved') AND s.sale_type='renewal'
+           )::integer AS sold_renewed_subscribers,
+           COALESCE(sum(COALESCE(i.seat_count,0)) FILTER (
+             WHERE s.status IN ('confirmed','reserved') AND s.sale_type='new'
+           ),0)::integer AS sold_new_seats,
+           COALESCE(sum(COALESCE(i.seat_count,0)) FILTER (
+             WHERE s.status IN ('confirmed','reserved') AND s.sale_type='renewal'
+           ),0)::integer AS sold_renewed_seats
          FROM sales s JOIN scoped_contacts c ON c.id = s.contact_id
          LEFT JOIN LATERAL (
            SELECT sum(p.amount + COALESCE(a.amount,0)) AS paid_amount
@@ -763,6 +775,10 @@ export class PgCrmRepository {
            ) a ON true
            WHERE p.sale_id=s.id AND p.voided_at IS NULL
          ) p ON true
+         LEFT JOIN LATERAL (
+           SELECT sum(si.quantity)::integer AS seat_count
+           FROM sale_items si WHERE si.sale_id=s.id
+         ) i ON true
          WHERE s.deleted_at IS NULL
            AND ($${fromParameter}::timestamptz IS NULL OR s.sold_at >= $${fromParameter})
            AND ($${toParameter}::timestamptz IS NULL OR s.sold_at <= $${toParameter})
@@ -782,10 +798,10 @@ export class PgCrmRepository {
       membershipNetAmount: moneyFromCents(row.membership_net_amount ?? 0),
       membershipDiscountAmount: moneyFromCents(row.membership_discount_amount ?? 0),
       renewing: Number(row.renewing),
-      newSubscribers: Number(row.new_subscribers),
-      newSeats: Number(row.new_seats ?? 0),
-      renewedSubscribers: Number(row.renewed_subscribers ?? 0),
-      renewedSeats: Number(row.renewed_seats ?? 0),
+      newSubscribers: Number(row.sold_new_subscribers ?? row.new_subscribers ?? 0),
+      newSeats: Number(row.sold_new_seats ?? row.new_seats ?? 0),
+      renewedSubscribers: Number(row.sold_renewed_subscribers ?? row.renewed_subscribers ?? 0),
+      renewedSeats: Number(row.sold_renewed_seats ?? row.renewed_seats ?? 0),
       prospects: Number(row.prospects),
       membershipSegments: {
         Compromisos: Number(row.segment_commitments ?? 0),
