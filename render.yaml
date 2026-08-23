@@ -1,0 +1,61 @@
+services:
+  - type: web
+    name: charros-crm-api-staging
+    runtime: node
+    rootDir: crm-api
+    # El API de staging puede dormir; la persistencia real vive en PostgreSQL.
+    plan: free
+    region: oregon
+    buildCommand: npm ci --omit=dev
+    # Free no admite preDeployCommand; las migraciones son idempotentes y usan
+    # advisory lock, por lo que pueden ejecutarse antes de cada arranque frío.
+    startCommand: npm run migrate && npm run start:render
+    healthCheckPath: /ready
+    autoDeployTrigger: checksPass
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: TRUST_PROXY
+        value: "1"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: charros-crm-db-staging
+          property: connectionString
+      - key: DATABASE_SSL
+        # The internal URL remains on Render's private network.
+        value: "false"
+      - key: LOCAL_ADMIN_DOMAIN
+        value: charrosjalisco.com
+      - key: CORS_ORIGINS
+        sync: false
+      - key: AUDIT_HASH_KEY
+        generateValue: true
+      - key: SESSION_HASH_KEY
+        generateValue: true
+      - key: PASSWORD_PEPPER
+        generateValue: true
+      - key: SESSION_COOKIE_SECURE
+        value: "true"
+      - key: SESSION_ABSOLUTE_TTL_MS
+        value: "28800000"
+      - key: SESSION_IDLE_TTL_MS
+        value: "2700000"
+      - key: LOGIN_RATE_LIMIT_WINDOW_MS
+        value: "900000"
+      - key: LOGIN_RATE_LIMIT_MAX
+        value: "5"
+      - key: LOGIN_RATE_LIMIT_BLOCK_MS
+        value: "900000"
+      - key: LOGIN_KDF_CONCURRENCY
+        value: "2"
+      - key: LOGIN_KDF_QUEUE_MAX
+        value: "8"
+
+databases:
+  - name: charros-crm-db-staging
+    plan: basic-256mb
+    diskSizeGB: 1
+    region: oregon
+    databaseName: charros_crm_staging
+    user: charros_crm_staging
+    ipAllowList: []

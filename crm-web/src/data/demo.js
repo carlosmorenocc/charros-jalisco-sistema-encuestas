@@ -1,0 +1,293 @@
+export const demoUser = {
+  id: 'usr-demo-admin',
+  name: 'Usuario de prueba',
+  email: 'demo.admin@example.invalid',
+  role: 'Administrador',
+  permissions: [
+    'dashboard.read',
+    'contact.read',
+    'contact.write_all',
+    'contact.assign',
+    'contact.delete',
+    'contact.restore',
+    'interaction.write',
+    'task.write_all',
+    'membership.write',
+    'sales.read',
+    'data.export',
+  ],
+}
+
+export function nextDemoContactId(count) { return `DEMO-${String(count + 1).padStart(3, '0')}` }
+export function nextDemoRecordId(kind, count) { return `${kind}-${String(count + 1).padStart(3, '0')}` }
+
+export const executives = ['Ana Torres', 'Diego Ramírez', 'Mariana Vega', 'Luis Mendoza']
+export const demoExecutiveOptions = executives.map((displayName, index) => ({ id: `demo-executive-${index + 1}`, displayName }))
+
+export const demoMembershipPricingCatalog = {
+  priceBookVersion: 'LMP-2026-27-demo-v1',
+  seasonCode: 'LMP-2026-27',
+  currency: 'MXN',
+  localities: [
+    { code: 'vip_demo', displayName: 'Palcos VIP', section: 'VIP', listUnitPrice: 29920, july25UnitPrice: 22440, july25Mode: 'official_unit', sortOrder: 1 },
+    { code: 'preferente_demo', displayName: 'Central Preferente', section: 'Preferente', listUnitPrice: 18900, july25UnitPrice: 14175, july25Mode: 'official_unit', sortOrder: 2 },
+    { code: 'lateral_1_3', displayName: 'Lateral 1RA', section: 'General', listUnitPrice: 7480, july25UnitPrice: 7480, july25Mode: 'two_for_one', sortOrder: 3 },
+  ],
+  discounts: [
+    { code: 'regular', displayName: 'Sin descuento', mode: 'regular', rateBasisPoints: 0, sortOrder: 1 },
+    { code: 'discount30', displayName: '30% histórico', mode: 'percentage', rateBasisPoints: 3000, sortOrder: 2 },
+    { code: 'july25', displayName: '25% julio 2026', mode: 'catalog_official', rateBasisPoints: null, sortOrder: 3 },
+    { code: 'discount20', displayName: '20% próximo', mode: 'percentage', rateBasisPoints: 2000, sortOrder: 4 },
+  ],
+}
+
+export function quoteDemoMembershipPricing({ localityCode, discountCode, seatCount }) {
+  const locality = demoMembershipPricingCatalog.localities.find((item) => item.code === localityCode)
+  const discount = demoMembershipPricingCatalog.discounts.find((item) => item.code === discountCode)
+  if (!locality || !discount) throw new Error('Selecciona una localidad y un descuento válidos.')
+  const count = Number(seatCount)
+  const commercialValue = locality.listUnitPrice * count
+  let netAmount = commercialValue
+  let chargedUnits = count
+  if (discount.mode === 'percentage') netAmount = Math.round(commercialValue * (10000 - discount.rateBasisPoints)) / 10000
+  if (discount.code === 'july25') {
+    chargedUnits = locality.july25Mode === 'two_for_one' ? Math.ceil(count / 2) : count
+    netAmount = locality.july25UnitPrice * chargedUnits
+  }
+  return {
+    priceBookVersion: demoMembershipPricingCatalog.priceBookVersion, currency: 'MXN', localityCode, localityName: locality.displayName,
+    section: locality.section, discountCode, discountName: discount.displayName, pricingMode: discount.code === 'july25' ? locality.july25Mode : discount.mode,
+    listUnitPrice: locality.listUnitPrice, commercialValue, netAmount, discountAmount: commercialValue - netAmount,
+    effectiveUnitPrice: netAmount / count, chargedUnits, bonusUnits: count - chargedUnits,
+  }
+}
+
+function demoMembership(contactId, membershipStatus, membershipSection, seatIdentifiers) {
+  const locality = demoMembershipPricingCatalog.localities.find((item) => item.section === membershipSection)
+  const pricing = quoteDemoMembershipPricing({ localityCode: locality.code, discountCode: 'regular', seatCount: seatIdentifiers.length })
+  return {
+    id: `demo-membership-${contactId}`,
+    contactId,
+    seasonCode: 'LMP-2026-27',
+    membershipStatus,
+    membershipSection,
+    ...pricing,
+    seatCount: seatIdentifiers.length,
+    units: seatIdentifiers.map((seatIdentifier, index) => ({ id: `demo-unit-${contactId}-${index + 1}`, unitNumber: index + 1, seatIdentifier })),
+    rowVersion: 1,
+  }
+}
+
+export const demoDashboard = {
+  totalContacts: 2508,
+  currentSubscribers: 128,
+  activeSeats: 472,
+  renewing: 96,
+  newSubscribers: 27,
+  notContacted: 397,
+  unassigned: 397,
+  overdueFollowUps: 18,
+  humanInteractions: 164,
+  campaignMessages: 1787,
+  confirmedSales: 23,
+  salesAmount: 133900,
+  collectedAmount: 98800,
+  balanceAmount: 35100,
+  pricedMemberships: 5,
+  pricedSeats: 12,
+  membershipCommercialValue: 187480,
+  membershipNetAmount: 168732,
+  membershipDiscountAmount: 18748,
+}
+
+export const demoContacts = [
+  {
+    id: 'DEMO-001',
+    name: 'Mariana López',
+    initials: 'ML',
+    email: 'mariana.lopez@example.com',
+    phone: '33 0000 1001',
+    type: 'Abonado actual',
+    stage: 'Seguimiento',
+    seasons: 4,
+    seats: 2,
+    zone: 'Central preferente',
+    currentMembership: demoMembership('DEMO-001', 'active', 'Preferente', ['P-A-12', 'P-A-13']),
+    lastContact: '21 ago 2026 · 09:40',
+    nextTask: 'Hoy · 13:00',
+    channel: 'WhatsApp',
+    executive: 'Ana Torres',
+    note: 'Confirmar asientos contiguos antes de renovar.',
+    consent: 'Sí',
+    kind: 'portfolio',
+  },
+  {
+    id: 'DEMO-002',
+    name: 'Jorge Navarro',
+    initials: 'JN',
+    email: 'jorge.navarro@example.com',
+    phone: '33 0000 1002',
+    type: 'Por renovar',
+    stage: 'Interesado',
+    seasons: 7,
+    seats: 4,
+    zone: 'Lateral primera',
+    currentMembership: demoMembership('DEMO-002', 'renewing', 'VIP', ['V-B-01', 'V-B-02', 'V-B-03', 'V-B-04']),
+    lastContact: '20 ago 2026 · 17:15',
+    nextTask: 'Hoy · 16:30',
+    channel: 'Llamada',
+    executive: 'Diego Ramírez',
+    note: 'Solicitó alternativas de pago y renovación por cuatro lugares.',
+    consent: 'Sí',
+    kind: 'portfolio',
+  },
+  {
+    id: 'DEMO-003',
+    name: 'Fernanda Ruiz',
+    initials: 'FR',
+    email: 'fernanda.ruiz@example.com',
+    phone: '33 0000 1003',
+    type: 'Abonado nuevo',
+    stage: 'Apartado',
+    seasons: 0,
+    seats: 2,
+    zone: 'Central baja',
+    currentMembership: demoMembership('DEMO-003', 'active', 'General', ['G-C-21', 'G-C-22']),
+    lastContact: '21 ago 2026 · 11:20',
+    nextTask: '22 ago · 10:00',
+    channel: 'Correo',
+    executive: 'Mariana Vega',
+    note: 'Apartado vigente; pendiente completar pago.',
+    consent: 'Sí',
+    kind: 'portfolio',
+  },
+  {
+    id: 'DEMO-004',
+    name: 'Rodrigo Salas',
+    initials: 'RS',
+    email: 'rodrigo.salas@example.com',
+    phone: '33 0000 1004',
+    type: 'Exabonado',
+    stage: 'Sin contactar',
+    seasons: 2,
+    seats: 1,
+    zone: 'Jardín derecho',
+    currentMembership: demoMembership('DEMO-004', 'expired', 'General', ['G-D-08']),
+    lastContact: 'Sin contacto humano',
+    nextTask: 'Vencida · 19 ago',
+    channel: '—',
+    executive: 'Sin asignar',
+    note: 'Importado del corte histórico; validar teléfono.',
+    consent: 'No consta',
+    kind: 'portfolio',
+  },
+  {
+    id: 'DEMO-005',
+    name: 'Patricia Gómez',
+    initials: 'PG',
+    email: 'patricia.gomez@example.com',
+    phone: '33 0000 1005',
+    type: 'Por renovar',
+    stage: 'Contactado',
+    seasons: 5,
+    seats: 3,
+    zone: 'Central preferente',
+    currentMembership: demoMembership('DEMO-005', 'renewing', 'Preferente', ['P-E-14', 'P-E-15', 'P-E-16']),
+    lastContact: '18 ago 2026 · 12:05',
+    nextTask: 'Vencida · 20 ago',
+    channel: 'Llamada',
+    executive: 'Luis Mendoza',
+    note: 'Devolver llamada después de las 18:00.',
+    consent: 'Sí',
+    kind: 'portfolio',
+  },
+  {
+    id: 'DEMO-P01',
+    name: 'Sofía Cervantes',
+    initials: 'SC',
+    email: 'sofia.cervantes@example.com',
+    phone: '33 0000 2001',
+    type: 'Prospecto',
+    stage: 'Interesado',
+    seasons: 0,
+    seats: 2,
+    zone: 'Central baja',
+    lastContact: '21 ago 2026 · 10:10',
+    nextTask: 'Hoy · 14:00',
+    channel: 'WhatsApp',
+    executive: 'Ana Torres',
+    note: 'Quiere conocer beneficios para familia.',
+    consent: 'Sí',
+    kind: 'prospect',
+  },
+  {
+    id: 'DEMO-P02',
+    name: 'Andrés Pérez',
+    initials: 'AP',
+    email: 'andres.perez@example.com',
+    phone: '33 0000 2002',
+    type: 'Prospecto',
+    stage: 'Por contactar',
+    seasons: 0,
+    seats: 1,
+    zone: 'Sin definir',
+    lastContact: 'Sin contacto humano',
+    nextTask: 'Sin tarea',
+    channel: '—',
+    executive: 'Sin asignar',
+    note: 'Registro sintético desde encuesta corta.',
+    consent: 'Sí',
+    kind: 'prospect',
+  },
+  {
+    id: 'DEMO-P03',
+    name: 'Elena Robles',
+    initials: 'ER',
+    email: 'elena.robles@example.com',
+    phone: '33 0000 2003',
+    type: 'Prospecto',
+    stage: 'Seguimiento',
+    seasons: 0,
+    seats: 4,
+    zone: 'Lateral primera',
+    lastContact: '20 ago 2026 · 15:30',
+    nextTask: '22 ago · 12:30',
+    channel: 'Llamada',
+    executive: 'Mariana Vega',
+    note: 'Enviar cotización con opciones de cuatro lugares.',
+    consent: 'Sí',
+    kind: 'prospect',
+  },
+]
+
+export const demoTasks = [
+  { id: 'T-101', time: '11:30', contact: 'Mariana López', action: 'Confirmar ubicación', channel: 'WhatsApp', owner: 'Ana Torres', status: 'En curso', priority: 'Alta' },
+  { id: 'T-102', time: '13:00', contact: 'Sofía Cervantes', action: 'Presentar beneficios', channel: 'Llamada', owner: 'Ana Torres', status: 'Pendiente', priority: 'Media' },
+  { id: 'T-103', time: '16:30', contact: 'Jorge Navarro', action: 'Compartir plan de pagos', channel: 'Correo', owner: 'Diego Ramírez', status: 'Pendiente', priority: 'Alta' },
+  { id: 'T-104', time: 'Vencida', contact: 'Patricia Gómez', action: 'Devolver llamada', channel: 'Llamada', owner: 'Luis Mendoza', status: 'Vencida', priority: 'Alta' },
+]
+
+export const demoInteractions = [
+  { id: 'I-01', when: '21 ago · 11:20', contact: 'Fernanda Ruiz', type: 'Correo', result: 'Respondió', owner: 'Mariana Vega', detail: 'Confirmó recepción del apartado.' },
+  { id: 'I-02', when: '21 ago · 10:10', contact: 'Sofía Cervantes', type: 'WhatsApp', result: 'Respondió', owner: 'Ana Torres', detail: 'Solicitó una llamada para revisar beneficios.' },
+  { id: 'I-03', when: '21 ago · 09:40', contact: 'Mariana López', type: 'WhatsApp', result: 'Seguimiento', owner: 'Ana Torres', detail: 'Requiere dos lugares contiguos.' },
+  { id: 'I-04', when: '20 ago · 17:15', contact: 'Jorge Navarro', type: 'Llamada', result: 'Interesado', owner: 'Diego Ramírez', detail: 'Evaluará alternativas de pago.' },
+]
+
+export const demoSales = [
+  { id: 'V-26081', date: '21 ago 2026', contact: 'Fernanda Ruiz', kind: 'Nuevo', zone: 'Central baja', seats: 2, total: 32400, paid: 16200, owner: 'Mariana Vega', status: 'Parcial' },
+  { id: 'V-26080', date: '20 ago 2026', contact: 'Jorge Navarro', kind: 'Renovación', zone: 'Lateral primera', seats: 4, total: 54800, paid: 54800, owner: 'Diego Ramírez', status: 'Pagado' },
+  { id: 'V-26079', date: '20 ago 2026', contact: 'Mariana López', kind: 'Renovación', zone: 'Central preferente', seats: 2, total: 37800, paid: 18900, owner: 'Ana Torres', status: 'Parcial' },
+  { id: 'V-26078', date: '19 ago 2026', contact: 'Cliente de demostración', kind: 'Nuevo', zone: 'Jardín derecho', seats: 1, total: 8900, paid: 8900, owner: 'Luis Mendoza', status: 'Pagado' },
+]
+
+export const demoCampaigns = [
+  { name: 'Nuevos consentidos · demo', sent: 1240, delivered: 1198, responses: 73, status: 'Finalizada' },
+  { name: 'Aficionados frecuentes · demo', sent: 465, delivered: 441, responses: 36, status: 'Finalizada' },
+  { name: 'Renovación · demo', sent: 82, delivered: 78, responses: 21, status: 'Finalizada' },
+]
+
+export const demoConfigurations = {
+  rewards: [['Asistencia a 3 juegos', 'Visitas', 'Activo'], ['Primera renovación', 'Renovación', 'Activo'], ['Aniversario del abonado', 'Fecha', 'Borrador']],
+  catalogs: [['Etapas comerciales', '7 valores', 'Activo'], ['Canales de contacto', '5 valores', 'Activo'], ['Productos y zonas', '10 valores', 'Versionar precios']],
+}

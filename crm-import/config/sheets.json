@@ -1,0 +1,235 @@
+{
+  "version": "2026-08-22.1",
+  "maximumRowsPerSheet": 100000,
+  "maximumColumnsPerSheet": 500,
+  "maximumIdentityGroupSize": 25,
+  "sheets": {
+    "CRM Prospectos": {
+      "entity": "contact",
+      "recordType": "prospect",
+      "headerScanRows": 30,
+      "minimumHeaderMatches": 3,
+      "materialFields": ["source_id", "name", "email", "phone"],
+      "fields": {
+        "source_id": ["id", "id crm", "id prospecto", "contacto id", "id contacto"],
+        "name": ["nombre", "nombre completo", "contacto", "nombre del contacto"],
+        "email": ["correo", "correo electronico", "email", "e-mail"],
+        "alternate_email": ["correo alterno", "correo secundario", "email alterno"],
+        "phone": ["telefono", "telefono celular", "celular", "movil", "whatsapp"],
+        "alternate_phone": ["telefono alterno", "telefono secundario", "otro telefono"],
+        "municipality": ["municipio", "ciudad", "localidad"],
+        "profile": ["perfil", "clasificacion", "segmento"],
+        "origin": ["origen", "fuente", "fuente de origen"],
+        "consent": ["consentimiento", "autorizacion", "autoriza comunicaciones", "aviso de privacidad", "acepta aviso de privacidad"],
+        "privacy_accepted": ["acepta aviso privacidad", "acepta aviso de privacidad", "aceptaAvisoPrivacidad"],
+        "consent_at": ["fecha consentimiento", "fecha de consentimiento", "fecha registro", "fecha de registro"],
+        "privacy_version": ["version aviso", "version aviso privacidad", "versión aviso de privacidad"],
+        "subscriber_status": ["estatus abonado", "status abonado", "tipo de abonado"],
+        "commercial_stage": ["estatus", "status", "estatus crm", "status crm", "estatus contacto", "status contacto", "etapa comercial", "etapa"],
+        "executive": ["ejecutivo", "asesor", "responsable", "asignado a"],
+        "last_contact_at": ["ultimo contacto", "fecha ultimo contacto", "ultima interaccion", "ultimo movimiento"],
+        "last_channel": ["canal", "ultimo canal", "canal ultimo contacto"],
+        "next_follow_up_at": ["proximo seguimiento", "fecha proximo seguimiento", "siguiente contacto"],
+        "zone": ["zona de interes", "zona", "seccion"],
+        "product": ["producto", "producto de interes"],
+        "sale_at": ["fecha venta", "fecha de venta"],
+        "sale_period": ["periodo venta", "periodo de venta"],
+        "notes": ["observaciones", "notas", "comentarios"]
+      }
+    },
+    "Cartera Abonados": {
+      "entity": "membership",
+      "recordType": "portfolio",
+      "headerScanRows": 30,
+      "minimumHeaderMatches": 3,
+      "materialFields": ["source_id", "name", "email", "phone", "portfolio_segment", "subscriber_status"],
+      "fields": {
+        "source_id": ["id", "id cartera", "id abonado", "contacto id", "id contacto"],
+        "name": ["nombre", "nombre completo", "abonado", "titular"],
+        "email": ["correo", "correo electronico", "email", "e-mail"],
+        "alternate_email": ["correo alterno", "correo secundario", "email alterno"],
+        "phone": ["telefono", "telefono celular", "celular", "movil", "whatsapp"],
+        "alternate_phone": ["telefono alterno", "telefono secundario", "otro telefono"],
+        "portfolio_segment": ["segmentacion cartera", "segmentación cartera", "segmentacion", "segmentación"],
+        "subscriber_status": ["estatus", "status", "estatus abonado", "estatus renovacion", "estatus renovación", "tipo de abonado"],
+        "season_origin": ["temporada origen", "temporada de origen", "temporada", "season"],
+        "seasons_count": ["numero de temporadas", "temporadas", "antiguedad", "anos de abonado"],
+        "subscription_count": ["abonos", "numero de abonos", "cantidad de abonos", "asientos"],
+        "zone": ["zona", "seccion", "seccion zona", "sección zona", "ubicacion"],
+        "origin": ["fuente", "origen"],
+        "executive": ["ejecutivo", "asesor", "responsable", "asignado a"],
+        "commercial_stage": ["estatus contacto", "status contacto", "estatus renovacion", "estatus renovación", "resultado", "resultado respuesta", "etapa comercial", "etapa"],
+        "last_contact_at": ["ultimo contacto", "fecha ultimo contacto", "ultimo movimiento", "fecha ultimo movimiento"],
+        "last_channel": ["canal", "ultimo canal"],
+        "next_follow_up_at": ["proximo seguimiento", "fecha proximo seguimiento", "siguiente contacto"],
+        "renewed_at": ["fecha renovacion", "fecha de renovacion"],
+        "started_at": ["fecha alta", "fecha de alta", "fecha inicio"],
+        "notes": ["observaciones", "notas", "comentarios"],
+        "consent": ["consentimiento", "autorizacion", "aviso de privacidad"],
+        "consent_at": ["fecha consentimiento", "fecha de consentimiento"],
+        "privacy_version": ["version aviso", "version aviso privacidad", "versión aviso de privacidad"]
+      }
+    },
+    "Bitácora Contactos": {
+      "entity": "interaction",
+      "headerScanRows": 30,
+      "minimumHeaderMatches": 2,
+      "materialFields": ["contact_ref", "occurred_at", "channel", "result", "notes"],
+      "fields": {
+        "source_id": ["id", "id bitacora", "id interaccion"],
+        "contact_ref": ["id contacto", "contacto id", "id crm", "id cartera", "contacto"],
+        "email": ["correo", "email"],
+        "phone": ["telefono", "celular", "movil"],
+        "occurred_at": ["fecha", "fecha contacto", "fecha de contacto", "fecha interaccion"],
+        "channel": ["canal", "medio"],
+        "result": ["resultado", "resultado contacto", "disposicion"],
+        "executive": ["ejecutivo", "asesor", "responsable"],
+        "next_follow_up_at": ["proximo seguimiento", "fecha proximo seguimiento"],
+        "notes": ["observaciones", "notas", "comentarios"]
+      }
+    },
+    "Ventas Consolidadas": {
+      "entity": "sale",
+      "headerScanRows": 30,
+      "minimumHeaderMatches": 2,
+      "materialFields": ["source_id", "sold_at", "product", "zone", "units", "amount"],
+      "fields": {
+        "source_id": ["id", "id venta", "folio", "referencia"],
+        "contact_ref": ["id contacto", "id abonado", "id crm", "contacto"],
+        "sold_at": ["fecha", "fecha corte", "fecha venta", "fecha de venta"],
+        "source": ["fuente", "fuente nota", "origen", "corte"],
+        "season": ["temporada", "season"],
+        "product": ["producto", "tipo de abono"],
+        "zone": ["zona", "seccion", "ubicacion"],
+        "units": ["abonos", "unidades", "cantidad", "boletos"],
+        "amount": ["importe", "monto", "total", "gran total", "venta"],
+        "unit_price": ["precio unitario", "precio", "unit price"],
+        "cash": ["efectivo"],
+        "card": ["tarjeta", "tdc", "debito credito"],
+        "transfer": ["transferencia", "spei"],
+        "other_payment": ["otro", "otro pago", "otros medios"],
+        "credit": ["credito", "saldo", "por cobrar"],
+        "executive": ["ejecutivo", "asesor", "vendedor"],
+        "notes": ["observaciones", "notas", "comentarios"]
+      }
+    },
+    "Catálogos": {
+      "entity": "catalog",
+      "headerScanRows": 30,
+      "minimumHeaderMatches": 1,
+      "materialFields": ["executive", "commercial_status", "sale_period", "product", "zone", "price"],
+      "fields": {
+        "executive": ["ejecutivo", "ejecutivos", "asesor", "asesores"],
+        "commercial_status": ["estatus", "estatus comercial", "status contacto", "etapa comercial"],
+        "sale_period": ["periodo venta", "periodo de venta", "periodo"],
+        "product": ["producto", "productos", "tipo de abono"],
+        "zone": ["zona", "zonas", "seccion"],
+        "price": ["precio", "importe", "monto"],
+        "season": ["temporada", "season"],
+        "effective_from": ["vigente desde", "fecha inicio", "desde"]
+      }
+    },
+    "Historial Envíos": {
+      "entity": "campaign_message",
+      "headerScanRows": 30,
+      "minimumHeaderMatches": 2,
+      "materialFields": ["source_id", "recipient", "campaign", "sent_at"],
+      "fields": {
+        "source_id": ["id", "id envio", "provider id", "message id"],
+        "recipient": ["correo", "email", "destinatario", "recipient"],
+        "campaign": ["campana", "campaña", "nombre campana", "nombre campaña", "segmento"],
+        "sent_at": ["fecha", "fecha envio", "fecha de envio", "enviado el"],
+        "delivery_status": ["estatus entrega", "estado entrega", "delivery status"],
+        "delivered_at": ["fecha entrega", "entregado el"],
+        "opened_at": ["fecha apertura", "abierto el"],
+        "clicked_at": ["fecha clic", "click", "clic"],
+        "bounced_at": ["fecha rebote", "rebotado el"],
+        "unsubscribed_at": ["fecha baja", "desuscrito el", "unsubscribe"],
+        "provider_id": ["provider id", "id proveedor", "message id"]
+      }
+    },
+    "Programa Recompensas": {
+      "entity": "reward_definition",
+      "headerScanRows": 30,
+      "minimumHeaderMatches": 3,
+      "materialFields": ["visit", "reward", "type", "condition"],
+      "fields": {
+        "visit": ["visita", "visitas", "numero visita", "número de visita"],
+        "reward": ["recompensa", "beneficio", "premio"],
+        "type": ["tipo", "tipo recompensa", "tipo de recompensa"],
+        "condition": ["condicion", "condición", "regla", "requisito"]
+      }
+    },
+    "Fuente Corte Ventas": {
+      "entity": "raw_sale_source",
+      "headerScanRows": 30,
+      "minimumHeaderMatches": 5,
+      "materialFields": ["zone", "type", "seats", "price", "cash", "card", "other", "credit", "commission", "total"],
+      "fields": {
+        "zone": ["zona", "seccion", "sección"],
+        "type": ["tipo", "producto", "tipo producto", "tipo de producto"],
+        "seats": ["asientos", "abonos", "unidades", "cantidad"],
+        "price": ["precio", "precio unitario"],
+        "cash": ["efectivo"],
+        "card": ["tarjeta"],
+        "other": ["otro", "otros"],
+        "credit": ["credito", "crédito"],
+        "commission": ["comision", "comisión"],
+        "total": ["gran total", "total"]
+      }
+    },
+    "Fuente Encuesta Corta": {
+      "entity": "contact_source",
+      "recordType": "survey_short",
+      "headerScanRows": 30,
+      "minimumHeaderMatches": 3,
+      "materialFields": ["submission_id", "name", "email", "phone"],
+      "fields": {
+        "submission_id": ["submissionid", "submission id", "id respuesta", "id registro", "id"],
+        "name": ["nombre", "nombre completo"],
+        "last_name": ["apellido", "apellidos"],
+        "email": ["correo", "correo electronico", "email"],
+        "phone": ["telefono", "celular", "movil", "whatsapp"],
+        "municipality": ["municipio", "ciudad", "localidad"],
+        "consent": ["consentimiento", "autorizacion", "acepta comunicaciones", "aceptaComunicaciones"],
+        "privacy_accepted": ["acepta aviso privacidad", "acepta aviso de privacidad", "aceptaAvisoPrivacidad"],
+        "privacy_version": ["version aviso", "version aviso privacidad", "versión aviso de privacidad"],
+        "submitted_at": ["fecha", "timestamp", "fecha registro", "fecha de registro", "submitted at", "created at"],
+        "origin": ["origen", "fuente"]
+      }
+    },
+    "Fuente Encuesta Larga": {
+      "entity": "contact_source",
+      "recordType": "survey_long",
+      "headerScanRows": 30,
+      "minimumHeaderMatches": 3,
+      "materialFields": ["submission_id", "name", "email", "phone"],
+      "fields": {
+        "submission_id": ["submissionid", "submission id", "id respuesta", "id registro", "id"],
+        "name": ["nombre", "nombre completo"],
+        "last_name": ["apellido", "apellidos"],
+        "email": ["correo", "correo electronico", "email"],
+        "phone": ["telefono", "celular", "movil", "whatsapp"],
+        "municipality": ["municipio", "ciudad", "localidad"],
+        "consent": ["consentimiento", "autorizacion", "acepta comunicaciones", "aceptaComunicaciones"],
+        "privacy_accepted": ["acepta aviso privacidad", "acepta aviso de privacidad", "aceptaAvisoPrivacidad"],
+        "privacy_version": ["version aviso", "version aviso privacidad", "versión aviso de privacidad"],
+        "submitted_at": ["fecha", "timestamp", "fecha registro", "fecha de registro", "submitted at", "created at"],
+        "origin": ["origen", "fuente"],
+        "antiquity": ["antiguedad", "antigüedad", "anos siguiendo", "años siguiendo"]
+      },
+      "controlledCorrections": {
+        "antiquity": {
+          "excelDateDayMonth": {
+            "1-3": [1, 3],
+            "4-7": [4, 7]
+          },
+          "stringAliases": {
+            "1-3": ["01-mar", "1-mar", "01-marzo", "1-marzo"],
+            "4-7": ["04-jul", "4-jul", "04-julio", "4-julio"]
+          }
+        }
+      }
+    }
+  }
+}
