@@ -16,7 +16,7 @@ import { unauthorized } from './lib/errors.js';
 import { normalizeOperationalDataset } from './lib/operationalDataset.js';
 
 // One-use deploy authorization. Removed immediately after the audited sync.
-const TEMPORARY_OPERATIONAL_SYNC_TOKEN_SHA256 = 'd7a9518419d4d2d90cbfe20722bde9b8263727296d5f3a2e1eb142c421ad5f85';
+const TEMPORARY_OPERATIONAL_SYNC_TOKEN_SHA256 = '4f73baebedbe2ea29147ba244a9600534ce44c35c5aa7355600f60c7080ef1fc';
 
 function secureEqual(left, right) {
   const a = createHash('sha256').update(String(left ?? '')).digest();
