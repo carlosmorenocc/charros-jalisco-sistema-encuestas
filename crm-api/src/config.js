@@ -54,9 +54,13 @@ function secret(value, name, nodeEnv) {
 function optionalSecret(value, name, nodeEnv) {
   if (!value) return null;
   const resolved = String(value);
-  if (resolved.length < 32) throw new Error(`${name} must have at least 32 characters.`);
+  // Optional, short-lived channels must never prevent the main CRM from
+  // booting because a stale or truncated dashboard value survived a deploy.
+  // Treat malformed optional credentials as disabled; the endpoint still
+  // fails closed because authorization compares only accepted credentials.
+  if (resolved.length < 32) return null;
   if (nodeEnv === 'production' && /replace|example|test-only/i.test(resolved)) {
-    throw new Error(`${name} still contains an example or placeholder value.`);
+    return null;
   }
   return resolved;
 }
