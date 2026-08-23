@@ -11,6 +11,7 @@ export const PERMISSIONS = Object.freeze({
   TASK_WRITE_ALL: 'task.write_all',
   MEMBERSHIP_WRITE: 'membership.write',
   SALES_READ: 'sales.read',
+  SALES_WRITE: 'sales.write',
   EXPORT_DATA: 'data.export',
 })
 

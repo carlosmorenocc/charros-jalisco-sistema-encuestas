@@ -9,6 +9,8 @@ import {
   validateMembershipCreation,
   validateMembershipSeatAssignment,
   validateSubscriptionQuote,
+  validateSale,
+  validatePayment,
   validateTask,
   validateUuid
 } from './lib/validation.js';
@@ -214,6 +216,19 @@ export function createApiRouter({ service, config }) {
 
   router.get('/sales/:id', asyncHandler(async (req, res) => {
     data(res, await service.getSale(req.actor, validateUuid(req.params.id)));
+  }));
+
+  router.post('/sales', asyncHandler(async (req, res) => {
+    data(res, await service.createSale(req.actor, validateSale(req.body), req.auditContext), 201);
+  }));
+
+  router.post('/sales/:id/payments', asyncHandler(async (req, res) => {
+    data(res, await service.addPayment(
+      req.actor,
+      validateUuid(req.params.id),
+      validatePayment(req.body),
+      req.auditContext
+    ), 201);
   }));
 
   router.get('/executives', asyncHandler(async (req, res) => {

@@ -193,15 +193,13 @@ test('CORS exacto rechaza origen ajeno y permite el host Vercel configurado', as
   });
 });
 
-test('rutas de usuarios y mutaciones contables no existen', async () => {
+test('rutas de usuarios no existen y las mutaciones contables validan su entrada', async () => {
   await withServer(async (baseUrl) => {
     for (const [method, path] of [
       ['GET', '/api/v1/users'],
       ['POST', '/api/v1/users'],
       ['PATCH', '/api/v1/users/00000000-0000-4000-8000-000000000010'],
-      ['PUT', '/api/v1/users/00000000-0000-4000-8000-000000000010/permissions'],
-      ['POST', '/api/v1/sales'],
-      ['POST', '/api/v1/sales/00000000-0000-4000-8000-000000000010/payments']
+      ['PUT', '/api/v1/users/00000000-0000-4000-8000-000000000010/permissions']
     ]) {
       const response = await fetch(`${baseUrl}${path}`, {
         method,
@@ -209,6 +207,12 @@ test('rutas de usuarios y mutaciones contables no existen', async () => {
         ...(method === 'GET' ? {} : { body: '{}' })
       });
       assert.equal(response.status, 404, `${method} ${path}`);
+    }
+    for (const path of ['/api/v1/sales', '/api/v1/sales/00000000-0000-4000-8000-000000000010/payments']) {
+      const response = await fetch(`${baseUrl}${path}`, {
+        method: 'POST', headers: { ...authHeaders(), 'content-type': 'application/json' }, body: '{}'
+      });
+      assert.equal(response.status, 400, `POST ${path}`);
     }
   });
 });

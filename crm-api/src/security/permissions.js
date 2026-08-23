@@ -33,11 +33,7 @@ export const DELEGABLE_PERMISSIONS = Object.freeze([
   PERMISSIONS.CONTACT_RESTORE
 ]);
 
-// SALES_WRITE is reserved for a later accounting workflow. Keeping its stable
-// code avoids a future migration, but no role receives it in this release.
-const allPermissions = Object.freeze(
-  Object.values(PERMISSIONS).filter((permission) => permission !== PERMISSIONS.SALES_WRITE)
-);
+const allPermissions = Object.freeze(Object.values(PERMISSIONS));
 
 export const ROLE_PERMISSIONS = Object.freeze({
   [ROLES.DIRECTION]: Object.freeze([
