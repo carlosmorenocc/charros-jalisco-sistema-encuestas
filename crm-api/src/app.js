@@ -1,5 +1,4 @@
 import express from 'express';
-import { createHash, timingSafeEqual } from 'node:crypto';
 import cors from 'cors';
 import helmet from 'helmet';
 import { rateLimit } from 'express-rate-limit';
@@ -11,24 +10,6 @@ import { requestLogger } from './logger.js';
 import { createAuthRouter } from './authRoutes.js';
 import { createApiRouter } from './routes.js';
 import { CrmService } from './services/CrmService.js';
-import { asyncHandler } from './lib/http.js';
-import { unauthorized } from './lib/errors.js';
-import { normalizeOperationalDataset } from './lib/operationalDataset.js';
-
-// One-use deploy authorization. Removed immediately after the audited sync.
-const TEMPORARY_OPERATIONAL_SYNC_TOKEN_SHA256 = '4f73baebedbe2ea29147ba244a9600534ce44c35c5aa7355600f60c7080ef1fc';
-
-function secureEqual(left, right) {
-  const a = createHash('sha256').update(String(left ?? '')).digest();
-  const b = createHash('sha256').update(String(right ?? '')).digest();
-  return timingSafeEqual(a, b);
-}
-
-function operationalSyncAuthorized(supplied, configuredToken) {
-  const suppliedHash = createHash('sha256').update(String(supplied ?? '')).digest('hex');
-  return (configuredToken && secureEqual(supplied, configuredToken))
-    || secureEqual(suppliedHash, TEMPORARY_OPERATIONAL_SYNC_TOKEN_SHA256);
-}
 
 export function createApp({ config, repository, authService, logger }) {
   const app = express();
@@ -64,18 +45,6 @@ export function createApp({ config, repository, authService, logger }) {
   }));
   app.use('/api/v1/auth/login', express.json({ limit: '8kb', strict: true, type: 'application/json' }));
   app.use(express.json({ limit: config.jsonBodyLimit, strict: true, type: 'application/json' }));
-
-  if (config.operationalSyncToken || TEMPORARY_OPERATIONAL_SYNC_TOKEN_SHA256) {
-    app.post('/api/v1/internal/operational-sync', asyncHandler(async (req, res) => {
-      const supplied = String(req.get('authorization') ?? '').replace(/^Bearer\s+/i, '');
-      if (!operationalSyncAuthorized(supplied, config.operationalSyncToken)) throw unauthorized();
-      const actor = await repository.getOperationalSyncActor();
-      const result = await repository.synchronizeOperationalDataset(
-        normalizeOperationalDataset(req.body), actor, req.auditContext
-      );
-      res.status(result.status === 'already_applied' ? 200 : 201).json({ data: result });
-    }));
-  }
 
   app.get('/health', (_req, res) => res.json({ status: 'ok', service: 'charros-crm-api' }));
   app.get('/ready', async (req, res) => {

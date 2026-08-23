@@ -51,16 +51,6 @@ function secret(value, name, nodeEnv) {
   return resolved;
 }
 
-function optionalSecret(value, name, nodeEnv) {
-  if (!value) return null;
-  const resolved = String(value);
-  if (resolved.length < 32) throw new Error(`${name} must have at least 32 characters.`);
-  if (nodeEnv === 'production' && /replace|example|test-only/i.test(resolved)) {
-    throw new Error(`${name} still contains an example or placeholder value.`);
-  }
-  return resolved;
-}
-
 export function loadConfig(env = process.env) {
   const nodeEnv = env.NODE_ENV ?? 'development';
   if (env.AUTH_MODE || env.ENTRA_TENANT_ID || env.ENTRA_API_AUDIENCE) {
@@ -127,7 +117,6 @@ export function loadConfig(env = process.env) {
     jsonBodyLimit: env.JSON_BODY_LIMIT ?? '1mb',
     rateLimitWindowMs: integer(env.RATE_LIMIT_WINDOW_MS, 60_000, 'RATE_LIMIT_WINDOW_MS', { min: 1_000 }),
     rateLimitMax: integer(env.RATE_LIMIT_MAX, 180, 'RATE_LIMIT_MAX', { min: 10 }),
-    exportRowLimit: integer(env.EXPORT_ROW_LIMIT, 50_000, 'EXPORT_ROW_LIMIT', { min: 1, max: 100_000 }),
-    operationalSyncToken: optionalSecret(env.OPERATIONAL_SYNC_TOKEN, 'OPERATIONAL_SYNC_TOKEN', nodeEnv)
+    exportRowLimit: integer(env.EXPORT_ROW_LIMIT, 50_000, 'EXPORT_ROW_LIMIT', { min: 1, max: 100_000 })
   });
 }
