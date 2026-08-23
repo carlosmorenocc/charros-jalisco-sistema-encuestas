@@ -138,6 +138,5 @@ export function createApiClient({
     executives: (filters = { active: true }) => request(`/executives${encodeQuery(filters)}`),
     exportContacts: (filters) => requestBlob(`/exports/contacts.csv${encodeQuery(filters)}`),
     recordDashboardPdfRequest: (filters) => request('/exports/dashboard-pdf-events', { method: 'POST', body: { filters } }),
-    synchronizeOperationalDataset: (payload) => request('/admin/operational-dataset', { method: 'POST', body: payload }),
   }
 }
