@@ -128,6 +128,9 @@ test('aplica temporada en ventas y dashboard con parámetros SQL', async () => {
   assert.match(calls[1].sql, /s\.season_code = \$3/);
   assert.equal(calls[1].params.at(-1), 'LMP-2026-27');
   assert.match(calls[1].sql, /membership_status IN \('active','renewing'\)/);
+  assert.match(calls[1].sql, /s\.sale_type='new'/);
+  assert.match(calls[1].sql, /s\.status IN \('confirmed','reserved'\)/);
+  assert.match(calls[1].sql, /sum\(si\.quantity\)/);
   assert.equal(summary.pricedMemberships, 2);
   assert.equal(summary.pricedSeats, 3);
   assert.equal(summary.membershipCommercialValue, 44920);

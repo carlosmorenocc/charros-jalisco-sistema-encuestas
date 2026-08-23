@@ -544,6 +544,7 @@ function App() {
         setContacts((current) => [fromApiContact(data), ...current])
       }
       setContactRevision((current) => current + 1)
+      setDashboardRevision((current) => current + 1)
       setDrawer(null)
       setToast(payload.id ? 'Se guardó satisfactoriamente.' : 'El contacto se creó correctamente.')
       return true
@@ -773,6 +774,7 @@ function App() {
       }
       setInteractions((current) => [fromApiInteraction(created), ...current])
       setContactRevision((current) => current + 1)
+      setDashboardRevision((current) => current + 1)
       setToast('La interacción se registró correctamente.')
       return created
     } catch (error) {
@@ -805,6 +807,7 @@ function App() {
         overdue: current.overdue + (overdue ? 1 : 0),
       } : current)
       setContactRevision((current) => current + 1)
+      setDashboardRevision((current) => current + 1)
       setToast('La tarea se programó correctamente.')
       return created
     } catch (error) {
@@ -832,6 +835,7 @@ function App() {
         completed: current.completed + (dueToday ? 1 : 0),
       } : current)
       setContactRevision((current) => current + 1)
+      setDashboardRevision((current) => current + 1)
       setToast('La tarea se marcó como completada.')
       return updated
     } catch (error) {
@@ -850,6 +854,7 @@ function App() {
       if (!contact.executiveId) setUnassignedTotal((current) => Math.max(0, current - 1))
       setFollowupCounts(null)
       setContactRevision((current) => current + 1)
+      setDashboardRevision((current) => current + 1)
       setDrawer(null)
       setToast('El contacto se eliminó de forma lógica y puede restaurarse por auditoría.')
     } catch (error) {
@@ -866,6 +871,7 @@ function App() {
         setContacts((current) => current.map((item) => item.id === contact.id ? { ...item, deletedAt: null } : item))
       }
       setContactRevision((current) => current + 1)
+      setDashboardRevision((current) => current + 1)
       setDrawer(null)
       setToast('El contacto se restauró correctamente y volvió a su cartera.')
     } catch (error) {
