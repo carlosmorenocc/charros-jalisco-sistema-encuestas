@@ -3,7 +3,7 @@ services:
     name: charros-crm-api-staging
     runtime: node
     rootDir: crm-api
-    # El API de staging puede dormir; la persistencia real vive en PostgreSQL.
+    # El API puede dormir; la persistencia operativa real vive en PostgreSQL.
     plan: free
     region: oregon
     buildCommand: npm ci --omit=dev
