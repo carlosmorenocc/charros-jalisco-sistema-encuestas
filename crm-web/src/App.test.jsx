@@ -1,9 +1,19 @@
 import React from 'react'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
-import App, { contactMatchesPatch, LoginScreen, revokeSessionSafely, updateContactWithVerification, verifyPersistedContactPatch } from './App'
+import App, { contactMatchesPatch, LoginScreen, revokeSessionSafely, salesForDashboard, updateContactWithVerification, verifyPersistedContactPatch } from './App'
 
 describe('CRM web en modo demostración', () => {
+  it('calcula venta documentada con la misma fuente que Ventas e incluye apartados', () => {
+    const sales = [
+      { id: 'hugo', soldAt: '2026-08-23T12:00:00.000Z', owner: 'JESÚS GONZÁLEZ', total: 4207, commercialStatus: 'Apartada' },
+      { id: 'diana', soldAt: '2026-07-22T12:00:00.000Z', owner: 'JESÚS GONZÁLEZ', total: 8415, commercialStatus: 'Confirmada' },
+    ]
+    const august = salesForDashboard(sales, { from: '2026-08-01T00:00:00.000Z', to: '2026-08-31T23:59:59.999Z' })
+    expect(august.map((sale) => sale.id)).toEqual(['hugo'])
+    expect(august.reduce((sum, sale) => sum + sale.total, 0)).toBe(4207)
+  })
+
   it('muestra el reporte sin la franja de modo demostración', async () => {
     render(<App />)
     expect(await screen.findByRole('heading', { name: 'Reporte Dirección' })).toBeInTheDocument()

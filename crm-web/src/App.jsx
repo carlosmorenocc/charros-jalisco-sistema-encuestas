@@ -108,6 +108,19 @@ function selectedPeriodLabel(period, fromDate, toDate, now = new Date()) {
   return 'seleccionado'
 }
 
+export function salesForDashboard(sales, { executiveName, from, to } = {}) {
+  const fromTime = from ? new Date(from).getTime() : null
+  const toTime = to ? new Date(to).getTime() : null
+  return sales.filter((sale) => {
+    if (executiveName && sale.owner !== executiveName) return false
+    const occurredAt = new Date(sale.soldAt || sale.occurredAt || 0).getTime()
+    if ((fromTime !== null || toTime !== null) && !Number.isFinite(occurredAt)) return false
+    if (fromTime !== null && occurredAt < fromTime) return false
+    if (toTime !== null && occurredAt > toTime) return false
+    return !['Cancelada', 'Reembolsada'].includes(sale.commercialStatus)
+  })
+}
+
 function Icon({ name, size = 18, strokeWidth = 1.8 }) {
   const paths = {
     chart: <><path d="M4 19V9"/><path d="M10 19V5"/><path d="M16 19v-7"/><path d="M3 19h17"/></>,
@@ -1174,13 +1187,11 @@ function DashboardPage({ contacts, tasks, followupCounts, sales, dashboardSummar
   const selectedExecutiveName = availableExecutives.find((item) => item.id === reportFilters.executiveId)?.displayName
   const demoContactsInScope = isDemo && selectedExecutiveName ? contacts.filter((contact) => contact.executive === selectedExecutiveName) : contacts
   const selectedBounds = periodBounds(reportFilters.period, reportFilters.fromDate, reportFilters.toDate)
-  const demoSalesInScope = isDemo ? sales.filter((sale) => {
-    if (selectedExecutiveName && sale.owner !== selectedExecutiveName) return false
-    const occurredAt = sale.occurredAt ? new Date(sale.occurredAt).getTime() : NaN
-    if (selectedBounds.from && Number.isFinite(occurredAt) && occurredAt < new Date(selectedBounds.from).getTime()) return false
-    if (selectedBounds.to && Number.isFinite(occurredAt) && occurredAt > new Date(selectedBounds.to).getTime()) return false
-    return true
-  }) : sales
+  const dashboardSalesInScope = salesForDashboard(sales, {
+    executiveName: selectedExecutiveName,
+    from: selectedBounds.from,
+    to: selectedBounds.to,
+  })
   const demoNewSubscribers = isDemo ? demoContactsInScope.filter((contact) => {
     if (contact.type !== 'Abonado nuevo' || !contact.renewalDate) return false
     const occurredAt = new Date(contact.renewalDate).getTime()
@@ -1233,11 +1244,11 @@ function DashboardPage({ contacts, tasks, followupCounts, sales, dashboardSummar
     membershipSegments: demoMembershipSegments,
     notContacted: demoContactsInScope.filter((contact) => ['Sin contactar', 'Por contactar'].includes(contact.stage)).length,
     unassigned: demoContactsInScope.filter((contact) => contact.executive === 'SIN ASIGNAR').length,
-    confirmedSales: demoSalesInScope.length,
-    salesAmount: demoSalesInScope.reduce((sum, sale) => sum + Number(sale.total || 0), 0),
-    collectedAmount: demoSalesInScope.reduce((sum, sale) => sum + Number(sale.paid || 0), 0),
+    confirmedSales: dashboardSalesInScope.length,
+    salesAmount: dashboardSalesInScope.reduce((sum, sale) => sum + Number(sale.total || 0), 0),
+    collectedAmount: dashboardSalesInScope.reduce((sum, sale) => sum + Number(sale.paid || 0), 0),
   } : (dashboardSummary || {})
-  const salesTotal = Number(summary.salesAmount ?? sales.reduce((sum, sale) => sum + Number(sale.total || 0), 0))
+  const salesTotal = dashboardSalesInScope.reduce((sum, sale) => sum + Number(sale.total || 0), 0)
   const totalContacts = Math.max(1, Number(summary.totalContacts || contacts.length || 1))
   const funnelRows = [
     ['Contactos en alcance', Number(summary.totalContacts || 0), 100, 'blue'],
