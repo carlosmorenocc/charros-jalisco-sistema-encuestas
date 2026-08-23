@@ -754,8 +754,12 @@ export class PgCrmRepository {
            COALESCE(sum(COALESCE(p.paid_amount,0)) FILTER (WHERE s.status = 'confirmed'), 0)::numeric AS collected_amount
          FROM sales s JOIN scoped_contacts c ON c.id = s.contact_id
          LEFT JOIN LATERAL (
-           SELECT sum(amount) AS paid_amount FROM payments
-           WHERE sale_id=s.id AND voided_at IS NULL
+           SELECT sum(p.amount + COALESCE(a.amount,0)) AS paid_amount
+           FROM payments p
+           LEFT JOIN LATERAL (
+             SELECT sum(amount) AS amount FROM payment_adjustments WHERE payment_id=p.id
+           ) a ON true
+           WHERE p.sale_id=s.id AND p.voided_at IS NULL
          ) p ON true
          WHERE s.deleted_at IS NULL
            AND ($${fromParameter}::timestamptz IS NULL OR s.sold_at >= $${fromParameter})
@@ -1793,7 +1797,12 @@ export class PgCrmRepository {
               count(*) OVER()::integer AS total_count
        FROM sales s JOIN contacts c ON c.id=s.contact_id LEFT JOIN app_users u ON u.id=s.executive_id
        LEFT JOIN LATERAL (
-         SELECT sum(amount) AS paid_amount FROM payments WHERE sale_id=s.id AND voided_at IS NULL
+         SELECT sum(p.amount + COALESCE(a.amount,0)) AS paid_amount
+         FROM payments p
+         LEFT JOIN LATERAL (
+           SELECT sum(amount) AS amount FROM payment_adjustments WHERE payment_id=p.id
+         ) a ON true
+         WHERE p.sale_id=s.id AND p.voided_at IS NULL
        ) p ON true
        LEFT JOIN LATERAL (
          SELECT jsonb_agg(jsonb_build_object(
@@ -1821,10 +1830,14 @@ export class PgCrmRepository {
               COALESCE(i.items,'[]'::jsonb) AS items,COALESCE(p.payments,'[]'::jsonb) AS payments
        FROM sales s JOIN contacts c ON c.id=s.contact_id LEFT JOIN app_users u ON u.id=s.executive_id
        LEFT JOIN LATERAL (
-         SELECT sum(amount) AS paid_amount,
-           jsonb_agg(jsonb_build_object('id',id,'amount',amount,'method',method,
-             'paidAt',paid_at,'reference',reference,'createdAt',created_at) ORDER BY paid_at) AS payments
-         FROM payments WHERE sale_id=s.id AND voided_at IS NULL
+         SELECT sum(p.amount + COALESCE(a.amount,0)) AS paid_amount,
+           jsonb_agg(jsonb_build_object('id',p.id,'amount',p.amount + COALESCE(a.amount,0),'method',p.method,
+             'paidAt',p.paid_at,'reference',p.reference,'createdAt',p.created_at) ORDER BY p.paid_at) AS payments
+         FROM payments p
+         LEFT JOIN LATERAL (
+           SELECT sum(amount) AS amount FROM payment_adjustments WHERE payment_id=p.id
+         ) a ON true
+         WHERE p.sale_id=s.id AND p.voided_at IS NULL
        ) p ON true
        LEFT JOIN LATERAL (
          SELECT jsonb_agg(jsonb_build_object('id',id,'product',product,'zone',zone,

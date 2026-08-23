@@ -1,9 +1,21 @@
--- El campo RECIBIDO del reporte detallado es la fuente para cobranza. Estas
--- órdenes existen, pero el corte 00:49 no documenta todavía dinero recibido.
--- Se conserva el movimiento importado como anulado para mantener trazabilidad.
-UPDATE payments
-SET voided_at = COALESCE(voided_at, now()),
-    void_reason = COALESCE(void_reason, 'Conciliación con RECIBIDO · Reporte 2026-08-23 00:49')
+-- Payments es append-only. Las conciliaciones también forman un ledger
+-- inmutable: nunca alteran el movimiento fuente y su suma determina el cobrado.
+CREATE TABLE payment_adjustments (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  payment_id uuid NOT NULL REFERENCES payments(id),
+  amount numeric(14,2) NOT NULL CHECK (amount <> 0),
+  reason text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (payment_id, reason)
+);
+
+CREATE TRIGGER payment_adjustments_immutable
+  BEFORE UPDATE OR DELETE ON payment_adjustments
+  FOR EACH ROW EXECUTE FUNCTION reject_history_mutation();
+
+INSERT INTO payment_adjustments (payment_id, amount, reason)
+SELECT id, -amount, 'Conciliación con RECIBIDO · Reporte 2026-08-23 00:49'
+FROM payments
 WHERE voided_at IS NULL
   AND reference IN (
     '15391893', '15380359', '15380215', '15380060', '15379738', '15376573',
