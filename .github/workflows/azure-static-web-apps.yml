@@ -4,6 +4,12 @@ on:
   push:
     branches:
       - main
+    paths-ignore:
+      - "crm-api/**"
+      - "crm-import/**"
+      - "crm-web/**"
+      - "render.yaml"
+      - ".github/workflows/crm-ci.yml"
   pull_request:
     types: [opened, synchronize, reopened, closed]
 
