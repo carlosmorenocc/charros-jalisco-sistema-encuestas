@@ -1940,14 +1940,15 @@ export class PgCrmRepository {
           );
         } else {
           const primaryItem = data.items[0];
+          const membershipSeatCount = data.items.reduce((sum, item) => sum + item.quantity, 0);
           const membership = await client.query(
             `INSERT INTO memberships
               (contact_id,season_code,membership_status,seat_count,zone,section,product,start_date,created_by,updated_by)
              VALUES ($1,$2,'active',$3,$4,'General',$5,$6,$7,$7) RETURNING id`,
-            [data.contactId, data.seasonCode, primaryItem.quantity, primaryItem.zone ?? null,
+            [data.contactId, data.seasonCode, membershipSeatCount, primaryItem.zone ?? null,
               primaryItem.product, data.soldAt ?? new Date(), actor.id]
           );
-          for (let index = 1; index <= primaryItem.quantity; index += 1) {
+          for (let index = 1; index <= membershipSeatCount; index += 1) {
             await client.query(
               `INSERT INTO membership_units (membership_id,unit_number,zone,product,created_by,updated_by)
                VALUES ($1,$2,$3,$4,$5,$5)`,

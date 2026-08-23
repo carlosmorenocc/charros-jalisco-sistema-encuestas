@@ -1,9 +1,16 @@
 import React from 'react'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
-import App, { contactMatchesPatch, LoadingScreen, LoginScreen, revokeSessionSafely, salesForDashboard, updateContactWithVerification, verifyPersistedContactPatch } from './App'
+import App, { buildSaleItems, contactMatchesPatch, LoadingScreen, LoginScreen, revokeSessionSafely, salesForDashboard, updateContactWithVerification, verifyPersistedContactPatch } from './App'
 
 describe('CRM web en modo demostración', () => {
+  it('calcula 2x1 con precio oficial, unidades con cargo y bonificadas', () => {
+    expect(buildSaleItems({ kind: 'new', zone: 'Lateral 1a-3a', quantity: 3, unitPrice: 7480, promotion2x1: true })).toEqual([
+      { product: 'ABONO NUEVO · PROMOCIÓN 2X1 (CON CARGO)', zone: 'Lateral 1a-3a', quantity: 2, unitPrice: 7480 },
+      { product: 'ABONO NUEVO · PROMOCIÓN 2X1 (BONIFICADO)', zone: 'Lateral 1a-3a', quantity: 1, unitPrice: 0 },
+    ])
+  })
+
   it('muestra la marca y el mensaje acordado durante la recarga', () => {
     render(<LoadingScreen />)
     expect(screen.getByRole('img', { name: 'Charros de Jalisco' })).toHaveAttribute('src', '/charros-logo.jpeg')

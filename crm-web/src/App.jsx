@@ -121,6 +121,17 @@ export function salesForDashboard(sales, { executiveName, from, to } = {}) {
   })
 }
 
+export function buildSaleItems({ kind, zone, quantity, unitPrice, promotion2x1 }) {
+  const product = kind === 'renewal' ? 'RENOVACIÓN DE ABONO' : 'ABONO NUEVO'
+  if (!promotion2x1) return [{ product, zone: zone || undefined, quantity, unitPrice }]
+  const chargedUnits = Math.ceil(quantity / 2)
+  const bonusUnits = quantity - chargedUnits
+  return [
+    { product: `${product} · PROMOCIÓN 2X1 (CON CARGO)`, zone, quantity: chargedUnits, unitPrice },
+    ...(bonusUnits ? [{ product: `${product} · PROMOCIÓN 2X1 (BONIFICADO)`, zone, quantity: bonusUnits, unitPrice: 0 }] : []),
+  ]
+}
+
 function Icon({ name, size = 18, strokeWidth = 1.8 }) {
   const paths = {
     chart: <><path d="M4 19V9"/><path d="M10 19V5"/><path d="M16 19v-7"/><path d="M3 19h17"/></>,
@@ -962,6 +973,7 @@ function App() {
     interactions,
     sales,
     dashboardSummary,
+    pricingCatalog: membershipPricingCatalog,
     isDemo: authClient.isDemo,
     availableExecutives,
     campaigns,
@@ -1645,7 +1657,7 @@ function InteractionLog({ interactions }) {
   )
 }
 
-function SalesPage({ sales, contacts, isDemo, user, availableExecutives, onAddPayment, onCreateSale, onCreate, saleClosure, onClearSaleClosure }) {
+function SalesPage({ sales, contacts, isDemo, user, availableExecutives, pricingCatalog, onAddPayment, onCreateSale, onCreate, saleClosure, onClearSaleClosure }) {
   const [search, setSearch] = useState('')
   const [payment, setPayment] = useState('Todos los pagos')
   const [owner, setOwner] = useState('Todos los ejecutivos')
@@ -1660,7 +1672,10 @@ function SalesPage({ sales, contacts, isDemo, user, availableExecutives, onAddPa
   const [saleError, setSaleError] = useState('')
   const [savingSale, setSavingSale] = useState(false)
   const [contactSearch, setContactSearch] = useState('')
-  const [saleDraft, setSaleDraft] = useState({ externalOrderNumber: '', contactId: '', executiveId: '', kind: 'new', closeStage: 'reserved', zone: '', quantity: 1, unitPrice: '', soldAt: new Date().toISOString().slice(0, 10), paymentAmount: '', paymentMethod: 'Transferencia', paymentReference: '', notes: '' })
+  const [saleDraft, setSaleDraft] = useState({ externalOrderNumber: '', contactId: '', executiveId: '', kind: 'new', closeStage: 'reserved', localityCode: '', zone: '', promotion2x1: false, quantity: 1, unitPrice: '', soldAt: new Date().toISOString().slice(0, 10), paymentAmount: '', paymentMethod: 'Transferencia', paymentReference: '', notes: '' })
+  const saleLocalities = pricingCatalog?.localities || []
+  const selectedLocality = saleLocalities.find((item) => item.code === saleDraft.localityCode)
+  const promotionEligible = selectedLocality?.july25Mode === 'two_for_one'
   const contactOptions = [...new Map([
     ...contacts.map((contact) => [contact.id, { id: contact.id, name: contact.name }]),
     ...sales.filter((sale) => sale.contactId).map((sale) => [sale.contactId, { id: sale.contactId, name: sale.contact }]),
@@ -1697,6 +1712,10 @@ function SalesPage({ sales, contacts, isDemo, user, availableExecutives, onAddPa
   const seats = filteredSales.reduce((sum, sale) => sum + Number(sale.seats || 0), 0)
   const partialCount = filteredSales.filter((sale) => sale.status === 'Parcial').length
   const collectedPercentage = total > 0 ? Math.round((paid / total) * 100) : 0
+  const draftQuantity = Number(saleDraft.quantity || 0)
+  const draftUnitPrice = Number(saleDraft.unitPrice || 0)
+  const draftChargedUnits = saleDraft.promotion2x1 && promotionEligible ? Math.ceil(draftQuantity / 2) : draftQuantity
+  const draftDocumentedTotal = draftChargedUnits * draftUnitPrice
   async function submitPayment(event) {
     event.preventDefault()
     const amount = Number(paymentDraft.amount)
@@ -1715,14 +1734,16 @@ function SalesPage({ sales, contacts, isDemo, user, availableExecutives, onAddPa
   async function submitSale(event) {
     event.preventDefault()
     const quantity = Number(saleDraft.quantity); const unitPrice = Number(saleDraft.unitPrice); const paymentAmount = Number(saleDraft.paymentAmount || 0)
-    const totalAmount = quantity * unitPrice
-    if (!saleDraft.externalOrderNumber.trim() || !saleDraft.contactId || !saleDraft.executiveId || !Number.isInteger(quantity) || quantity < 1 || !Number.isFinite(unitPrice) || unitPrice < 0 || paymentAmount < 0 || paymentAmount > totalAmount) {
-      setSaleError('Completa número de orden, titular, ejecutivo, cantidad y precio; el cobro inicial no puede superar el total.')
+    const promotion2x1 = Boolean(saleDraft.promotion2x1 && promotionEligible)
+    const items = buildSaleItems({ kind: saleDraft.kind, zone: saleDraft.zone, quantity, unitPrice, promotion2x1 })
+    const totalAmount = items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0)
+    if (!saleDraft.externalOrderNumber.trim() || !saleDraft.contactId || !saleDraft.executiveId || !saleDraft.localityCode || !Number.isInteger(quantity) || quantity < 1 || !Number.isFinite(unitPrice) || unitPrice < 0 || paymentAmount < 0 || paymentAmount > totalAmount) {
+      setSaleError('Completa número de orden, titular, ejecutivo, zona, cantidad y precio; el cobro inicial no puede superar el total.')
       return
     }
     setSavingSale(true); setSaleError('')
     try {
-      await onCreateSale({ externalOrderNumber: saleDraft.externalOrderNumber.trim(), saleType: saleDraft.kind, closeStage: saleDraft.closeStage, contactId: saleDraft.contactId, executiveId: saleDraft.executiveId, seasonCode: 'LMP-2026-27', status: saleDraft.closeStage === 'won' ? 'confirmed' : 'reserved', soldAt: new Date(`${saleDraft.soldAt}T12:00:00`).toISOString(), currency: 'MXN', notes: saleDraft.notes || undefined, items: [{ product: saleDraft.kind === 'renewal' ? 'RENOVACIÓN DE ABONO' : 'ABONO NUEVO', zone: saleDraft.zone || undefined, quantity, unitPrice }], payments: paymentAmount > 0 ? [{ amount: paymentAmount, method: saleDraft.paymentMethod, paidAt: new Date(`${saleDraft.soldAt}T12:00:00`).toISOString(), reference: saleDraft.paymentReference || undefined }] : [] })
+      await onCreateSale({ externalOrderNumber: saleDraft.externalOrderNumber.trim(), saleType: saleDraft.kind, closeStage: saleDraft.closeStage, contactId: saleDraft.contactId, executiveId: saleDraft.executiveId, seasonCode: 'LMP-2026-27', status: saleDraft.closeStage === 'won' ? 'confirmed' : 'reserved', soldAt: new Date(`${saleDraft.soldAt}T12:00:00`).toISOString(), currency: 'MXN', notes: [promotion2x1 ? 'Promoción 2x1 Lateral 1ra–3ra aplicada automáticamente.' : '', saleDraft.notes].filter(Boolean).join(' ') || undefined, items, payments: paymentAmount > 0 ? [{ amount: paymentAmount, method: saleDraft.paymentMethod, paidAt: new Date(`${saleDraft.soldAt}T12:00:00`).toISOString(), reference: saleDraft.paymentReference || undefined }] : [] })
       setSaleOpen(false)
     } catch (error) { setSaleError(error.message || 'No fue posible crear la venta.') }
     finally { setSavingSale(false) }
@@ -1738,7 +1759,17 @@ function SalesPage({ sales, contacts, isDemo, user, availableExecutives, onAddPa
         <label className="field"><span>Cierre *</span><select value={saleDraft.closeStage} onChange={(event) => setSaleDraft((current) => ({ ...current, closeStage: event.target.value }))}><option value="reserved">Apartado</option><option value="won">Ganado</option></select></label>
         <label className="field field--full"><span>Buscar titular</span><input value={contactSearch} onChange={(event) => setContactSearch(event.target.value)} placeholder="Escribe nombre o apellido…"/><small>Filtra el acervo completo de contactos, incluidos prospectos.</small></label>
         <label className="field field--full"><span>Titular *</span><select value={saleDraft.contactId} onChange={(event) => setSaleDraft((current) => ({ ...current, contactId: event.target.value }))}><option value="">Selecciona una persona</option>{filteredContactOptions.map((contact) => <option key={contact.id} value={contact.id}>{contact.name}</option>)}</select><small>¿No existe? <button type="button" className="text-button" onClick={() => { setSaleOpen(false); onClearSaleClosure(); onCreate('portfolio') }}>Crear contacto nuevo</button></small></label>
-        <label className="field"><span>Tipo *</span><select value={saleDraft.kind} onChange={(event) => setSaleDraft((current) => ({ ...current, kind: event.target.value }))}><option value="new">Abono nuevo</option><option value="renewal">Renovación</option></select></label><label className="field"><span>Ejecutivo *</span><select value={saleDraft.executiveId} onChange={(event) => setSaleDraft((current) => ({ ...current, executiveId: event.target.value }))}><option value="">Selecciona</option>{availableExecutives.map((item) => <option key={item.id} value={item.id}>{item.displayName}</option>)}</select></label><label className="field"><span>Fecha *</span><input type="date" value={saleDraft.soldAt} onChange={(event) => setSaleDraft((current) => ({ ...current, soldAt: event.target.value }))}/></label><label className="field"><span>Zona</span><input value={saleDraft.zone} onChange={(event) => setSaleDraft((current) => ({ ...current, zone: event.target.value }))}/></label><label className="field"><span>Cantidad de abonos *</span><input type="number" min="1" max="20" value={saleDraft.quantity} onChange={(event) => setSaleDraft((current) => ({ ...current, quantity: event.target.value }))}/></label><label className="field"><span>Precio unitario *</span><input type="number" min="0" step="0.01" value={saleDraft.unitPrice} onChange={(event) => setSaleDraft((current) => ({ ...current, unitPrice: event.target.value }))}/></label><label className="field"><span>Cobro inicial</span><input type="number" min="0" step="0.01" value={saleDraft.paymentAmount} onChange={(event) => setSaleDraft((current) => ({ ...current, paymentAmount: event.target.value }))}/><small>Puede ser $0, apartado o liquidación. Saldo: {currency.format(Math.max(0, Number(saleDraft.quantity || 0) * Number(saleDraft.unitPrice || 0) - Number(saleDraft.paymentAmount || 0)))}</small></label><label className="field"><span>Método</span><select value={saleDraft.paymentMethod} onChange={(event) => setSaleDraft((current) => ({ ...current, paymentMethod: event.target.value }))}><option>Transferencia</option><option>Tarjeta</option><option>Efectivo</option><option>Depósito</option><option>Otro</option></select></label><label className="field"><span>Referencia del cobro</span><input value={saleDraft.paymentReference} onChange={(event) => setSaleDraft((current) => ({ ...current, paymentReference: event.target.value }))}/></label><label className="field field--full"><span>Notas</span><textarea rows="3" value={saleDraft.notes} onChange={(event) => setSaleDraft((current) => ({ ...current, notes: event.target.value }))}/></label></div>{saleError && <p className="manual-submit-error" role="alert">{saleError}</p>}</div><footer className="drawer-footer"><button type="button" className="button button--secondary" onClick={() => { setSaleOpen(false); onClearSaleClosure() }}>Cancelar</button><button type="submit" className="button button--primary" disabled={savingSale}>{savingSale ? 'Guardando…' : saleDraft.closeStage === 'won' ? 'Registrar venta ganada' : 'Registrar apartado'}</button></footer></form></aside></div>}
+        <label className="field"><span>Tipo *</span><select value={saleDraft.kind} onChange={(event) => setSaleDraft((current) => ({ ...current, kind: event.target.value }))}><option value="new">Abono nuevo</option><option value="renewal">Renovación</option></select></label>
+        <label className="field"><span>Ejecutivo *</span><select value={saleDraft.executiveId} onChange={(event) => setSaleDraft((current) => ({ ...current, executiveId: event.target.value }))}><option value="">Selecciona</option>{availableExecutives.map((item) => <option key={item.id} value={item.id}>{item.displayName}</option>)}</select></label>
+        <label className="field"><span>Fecha *</span><input type="date" value={saleDraft.soldAt} onChange={(event) => setSaleDraft((current) => ({ ...current, soldAt: event.target.value }))}/></label>
+        <label className="field"><span>Zona *</span><select value={saleDraft.localityCode} onChange={(event) => { const locality = saleLocalities.find((item) => item.code === event.target.value); setSaleDraft((current) => ({ ...current, localityCode: event.target.value, zone: locality?.displayName || '', unitPrice: locality?.listUnitPrice ?? '', promotion2x1: false })) }}><option value="">Selecciona una zona</option>{saleLocalities.map((item) => <option key={item.code} value={item.code}>{item.displayName}</option>)}</select></label>
+        {promotionEligible && <label className="check-field field--full promotion-option"><input type="checkbox" checked={saleDraft.promotion2x1} onChange={(event) => setSaleDraft((current) => ({ ...current, promotion2x1: event.target.checked }))}/><span><strong>Aplicar promoción 2x1</strong><small>Exclusiva de Lateral 1ra–3ra: se cobra una unidad y se bonifica la siguiente.</small></span></label>}
+        <label className="field"><span>Cantidad de abonos *</span><input type="number" min="1" max="20" value={saleDraft.quantity} onChange={(event) => setSaleDraft((current) => ({ ...current, quantity: event.target.value }))}/></label>
+        <label className="field"><span>Precio oficial por unidad *</span><input type="number" min="0" step="0.01" readOnly={Boolean(selectedLocality)} value={saleDraft.unitPrice} onChange={(event) => setSaleDraft((current) => ({ ...current, unitPrice: event.target.value }))}/><small>{saleDraft.promotion2x1 && promotionEligible ? `${draftChargedUnits} con cargo · ${Math.max(0, draftQuantity - draftChargedUnits)} bonificados · Total ${currency.format(draftDocumentedTotal)}` : 'Precio oficial del catálogo.'}</small></label>
+        <label className="field"><span>Cobro inicial</span><input type="number" min="0" step="0.01" value={saleDraft.paymentAmount} onChange={(event) => setSaleDraft((current) => ({ ...current, paymentAmount: event.target.value }))}/><small>Puede ser $0, apartado o liquidación. Saldo: {currency.format(Math.max(0, draftDocumentedTotal - Number(saleDraft.paymentAmount || 0)))}</small></label>
+        <label className="field"><span>Método</span><select value={saleDraft.paymentMethod} onChange={(event) => setSaleDraft((current) => ({ ...current, paymentMethod: event.target.value }))}><option>Transferencia</option><option>Tarjeta</option><option>Efectivo</option><option>Depósito</option><option>Otro</option></select></label>
+        <label className="field"><span>Referencia del cobro</span><input value={saleDraft.paymentReference} onChange={(event) => setSaleDraft((current) => ({ ...current, paymentReference: event.target.value }))}/></label>
+        <label className="field field--full"><span>Notas</span><textarea rows="3" value={saleDraft.notes} onChange={(event) => setSaleDraft((current) => ({ ...current, notes: event.target.value }))}/></label></div>{saleError && <p className="manual-submit-error" role="alert">{saleError}</p>}</div><footer className="drawer-footer"><button type="button" className="button button--secondary" onClick={() => { setSaleOpen(false); onClearSaleClosure() }}>Cancelar</button><button type="submit" className="button button--primary" disabled={savingSale}>{savingSale ? 'Guardando…' : saleDraft.closeStage === 'won' ? 'Registrar venta ganada' : 'Registrar apartado'}</button></footer></form></aside></div>}
     </div>
   )
 }

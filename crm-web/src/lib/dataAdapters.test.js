@@ -107,6 +107,17 @@ describe('adaptadores de contacto', () => {
     expect(sale.zone).toBe('Central')
   })
 
+  it('reconoce la venta heredada de Pedro como promoción 2x1 sin alterar su total', () => {
+    const sale = fromApiSale({
+      id: 'pedro-sale', contactName: 'PEDRO SIGALA GALLARDO', status: 'confirmed',
+      totalAmount: 7480, paidAmount: 7480,
+      items: [{ product: 'ABONO NUEVO', quantity: 2, unitPrice: 3740, zone: 'Lateral 1a-3a' }],
+    })
+    expect(sale.total).toBe(7480)
+    expect(sale.promotion).toBe('Promoción 2x1')
+    expect(sale.zone).toContain('Promoción 2x1')
+  })
+
   it('marca como vencida una tarea abierta cuya fecha ya pasó', () => {
     const task = fromApiTask({
       id: 'task-1', status: 'pending', dueAt: '2020-01-01T00:00:00.000Z',
