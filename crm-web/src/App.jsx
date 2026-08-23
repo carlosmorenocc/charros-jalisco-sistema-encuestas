@@ -1081,8 +1081,8 @@ function App() {
   )
 }
 
-function LoadingScreen() {
-  return <main className="gate-screen"><div className="gate-card"><div className="brand-mark">Ch</div><div className="spinner" /><h1>Preparando tu espacio de trabajo</h1><p>Validando la sesión segura y los permisos…</p></div></main>
+export function LoadingScreen() {
+  return <main className="gate-screen"><div className="gate-card" role="status" aria-live="polite"><div className="loading-brand"><img src="/charros-logo.jpeg" alt="Charros de Jalisco" /></div><div className="spinner" /><h1>Cargando CRM…</h1><p>Validando la sesión segura y actualizada.</p></div></main>
 }
 
 export function LoginScreen({ onLogin, notice }) {
