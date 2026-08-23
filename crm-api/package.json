@@ -17,7 +17,7 @@
     "reset:admin": "node scripts/bootstrap-admin.js --reset",
     "test": "node --test",
     "test:watch": "node --test --test-isolation=none --watch",
-    "check": "node --check src/server.js && node --check src/app.js && node --check src/authRoutes.js && node --check src/routes.js && node --check src/config.js && node --check src/lib/validation.js && node --check src/lib/membershipPricing.js && node --check src/lib/idempotency.js && node --check src/services/CrmService.js && node --check src/security/LocalAuthService.js && node --check src/security/password.js && node --check src/security/startupAdminBootstrap.js && node --check src/repositories/PgCrmRepository.js && node --check scripts/bootstrap-admin.js && node --check scripts/start-render.js"
+    "check": "node --check src/server.js && node --check src/app.js && node --check src/authRoutes.js && node --check src/routes.js && node --check src/config.js && node --check src/lib/validation.js && node --check src/lib/operationalDataset.js && node --check src/lib/membershipPricing.js && node --check src/lib/idempotency.js && node --check src/services/CrmService.js && node --check src/security/LocalAuthService.js && node --check src/security/password.js && node --check src/security/startupAdminBootstrap.js && node --check src/repositories/PgCrmRepository.js && node --check scripts/bootstrap-admin.js && node --check scripts/start-render.js"
   },
   "dependencies": {
     "cors": "^2.8.5",

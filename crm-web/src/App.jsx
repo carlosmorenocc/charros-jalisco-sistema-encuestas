@@ -254,6 +254,7 @@ function App() {
   const [dashboardSummary, setDashboardSummary] = useState(null)
   const [availableExecutives, setAvailableExecutives] = useState([])
   const [configurationFixtures, setConfigurationFixtures] = useState({})
+  const datasetInputRef = useRef(null)
   const [membershipPricingCatalog, setMembershipPricingCatalog] = useState(null)
   const [bootState, setBootState] = useState(startupConfigurationError ? 'error' : 'loading')
   const [bootError, setBootError] = useState(startupConfigurationError)
@@ -842,6 +843,22 @@ function App() {
     }
   }
 
+  async function synchronizeOperationalDataset(file) {
+    if (!file) return
+    try {
+      const payload = JSON.parse(await file.text())
+      if (!window.confirm('Esta sincronización archivará la cartera anterior y activará únicamente el corte auditado LMP. ¿Continuar?')) return
+      setToast('Sincronizando el corte operativo auditado…')
+      const { data: result } = await api.synchronizeOperationalDataset(payload)
+      setToast(`Sincronización completa: ${result.metrics.contacts} titulares y ${result.metrics.units} butacas.`)
+      window.setTimeout(() => window.location.reload(), 1200)
+    } catch (error) {
+      setToast(error.message || 'No fue posible sincronizar el corte operativo.')
+    } finally {
+      if (datasetInputRef.current) datasetInputRef.current.value = ''
+    }
+  }
+
   const loadContacts = useCallback(async (filters) => {
     if (authClient.isDemo) return { page: 1, pageSize: 0, total: 0, totalPages: 1 }
     const requestId = latestContactRequest.current + 1
@@ -951,9 +968,11 @@ function App() {
             {userOpen && (
               <div className="dropdown-menu dropdown-menu--user">
                 <div className="user-summary"><strong>{user?.name}</strong><span>{user?.email}</span></div>
+                {(user?.role === 'Administrador' || user?.role === 'admin') && <button onClick={() => datasetInputRef.current?.click()}><Icon name="upload" size={17} />Sincronizar corte LMP</button>}
                 <button onClick={logout}><Icon name="logout" size={17} />Cerrar sesión</button>
               </div>
             )}
+            <input ref={datasetInputRef} hidden type="file" accept="application/json,.json" onChange={(event) => synchronizeOperationalDataset(event.target.files?.[0])}/>
           </div>
         </div>
       </header>

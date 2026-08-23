@@ -16,6 +16,7 @@ import { rowsToCsv } from './lib/csv.js';
 import { badRequest } from './lib/errors.js';
 import { effectivePermissions } from './security/permissions.js';
 import { requestBodyHash } from './lib/idempotency.js';
+import { normalizeOperationalDataset } from './lib/operationalDataset.js';
 
 function data(res, value, status = 200, meta = undefined) {
   return res.status(status).json({ data: value, ...(meta ? { meta } : {}) });
@@ -47,6 +48,15 @@ export function createApiRouter({ service, config }) {
   router.get('/dashboard/summary', asyncHandler(async (req, res) => {
     const filters = parseListQuery(req.query);
     data(res, await service.dashboard(req.actor, filters));
+  }));
+
+  router.post('/admin/operational-dataset', asyncHandler(async (req, res) => {
+    const result = await service.synchronizeOperationalDataset(
+      req.actor,
+      normalizeOperationalDataset(req.body),
+      req.auditContext
+    );
+    data(res, result, result.status === 'already_applied' ? 200 : 201);
   }));
 
   router.get('/pricing/subscriptions/catalog', asyncHandler(async (req, res) => {

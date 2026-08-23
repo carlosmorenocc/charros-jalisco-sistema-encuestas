@@ -666,7 +666,7 @@ export class PgCrmRepository {
        ), contact_metrics AS (
          SELECT
            count(*)::integer AS total_contacts,
-           count(*) FILTER (WHERE subscriber_status IN ('current_subscriber','new_subscriber'))::integer AS current_subscribers,
+           count(*) FILTER (WHERE subscriber_status IN ('current_subscriber','new_subscriber') AND is_commitment_only=false)::integer AS current_subscribers,
            count(*) FILTER (WHERE subscriber_status = 'renewing')::integer AS renewing,
            count(*) FILTER (WHERE subscriber_status = 'prospect')::integer AS prospects,
            count(*) FILTER (WHERE subscriber_status = 'new_subscriber' AND EXISTS (
@@ -676,7 +676,8 @@ export class PgCrmRepository {
                AND ($${fromParameter}::timestamptz IS NULL OR COALESCE(nm.renewal_date,nm.start_date,nm.created_at) >= $${fromParameter})
                AND ($${toParameter}::timestamptz IS NULL OR COALESCE(nm.renewal_date,nm.start_date,nm.created_at) <= $${toParameter})
            ))::integer AS new_subscribers,
-           count(*) FILTER (WHERE subscriber_status = 'current_subscriber' AND EXISTS (
+           count(*) FILTER (WHERE subscriber_status = 'current_subscriber' AND is_commitment_only=false AND (
+             ($${fromParameter}::timestamptz IS NULL AND $${toParameter}::timestamptz IS NULL) OR EXISTS (
              SELECT 1 FROM memberships rm
              WHERE rm.contact_id=scoped_contacts.id AND rm.deleted_at IS NULL
                AND rm.membership_status='active'
@@ -684,7 +685,7 @@ export class PgCrmRepository {
                AND NOT (lower(COALESCE(rm.product,'')) LIKE '%compromiso%' OR lower(COALESCE(rm.zone,''))='zona suites')
                AND ($${fromParameter}::timestamptz IS NULL OR COALESCE(rm.renewal_date,rm.start_date,rm.created_at) >= $${fromParameter})
                AND ($${toParameter}::timestamptz IS NULL OR COALESCE(rm.renewal_date,rm.start_date,rm.created_at) <= $${toParameter})
-           ))::integer AS renewed_subscribers,
+           )))::integer AS renewed_subscribers,
            count(*) FILTER (WHERE commercial_stage IN ('unassigned','to_contact'))::integer AS not_contacted,
            count(*) FILTER (WHERE executive_id IS NULL)::integer AS unassigned,
            count(*) FILTER (WHERE next_follow_up_at < now())::integer AS overdue_follow_ups
@@ -2013,6 +2014,144 @@ export class PgCrmRepository {
         filters: event.filters
       }, context.ipHash ?? null, context.userAgent?.slice(0, 500) ?? null]
     );
+  }
+
+  async synchronizeOperationalDataset(dataset, actor, context) {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(`SELECT pg_advisory_xact_lock(hashtext('charros-crm-operational-dataset'))`);
+      const prior = await client.query(
+        'SELECT metrics,imported_at FROM operational_dataset_runs WHERE dataset_sha256=$1',
+        [dataset.datasetSha256]
+      );
+      if (prior.rowCount) {
+        await client.query('ROLLBACK');
+        return { status: 'already_applied', metrics: prior.rows[0].metrics, importedAt: prior.rows[0].imported_at };
+      }
+
+      await client.query(
+        `UPDATE app_users SET display_name=CASE email
+           WHEN 'crm.assignment.esmeralda@charrosjalisco.com' THEN 'ESMERALDA RUVALCABA'
+           WHEN 'crm.assignment.jesus@charrosjalisco.com' THEN 'JESÚS GONZÁLEZ'
+           WHEN 'crm.assignment.rosana@charrosjalisco.com' THEN 'ROSAANA'
+           ELSE display_name END
+         WHERE email IN ('crm.assignment.esmeralda@charrosjalisco.com','crm.assignment.jesus@charrosjalisco.com','crm.assignment.rosana@charrosjalisco.com')`
+      );
+      const users = await client.query(
+        `SELECT id,split_part(email,'@',1) AS code FROM app_users
+         WHERE email IN ('crm.assignment.esmeralda@charrosjalisco.com','crm.assignment.jesus@charrosjalisco.com','crm.assignment.rosana@charrosjalisco.com')
+           AND deleted_at IS NULL`
+      );
+      const executiveIds = Object.fromEntries(users.rows.map((row) => [row.code.replace('crm.assignment.', ''), row.id]));
+      const contacts = dataset.contacts.map((item) => ({ ...item, executiveId: executiveIds[item.executiveCode] ?? null }));
+      const sales = dataset.sales.map((item) => ({ ...item, executiveId: executiveIds[item.executiveCode] ?? null }));
+      const salesRows = sales.map((item) => ({
+        id: item.id, contact_id: item.contactId, executive_id: item.executiveId,
+        sold_at: item.soldAt, total: item.total, paid: item.paid, seats: item.seats,
+        zone: item.zone, external_ref: item.externalRef, kind: item.kind
+      }));
+
+      await client.query(
+        `UPDATE contacts SET deleted_at=now(),deleted_by=$1,
+           delete_reason='Fuera del universo operativo auditado LMP 2026-2027'
+         WHERE deleted_at IS NULL`, [actor.id]
+      );
+      await client.query(
+        `INSERT INTO contacts
+          (id,external_ref,first_name,last_name,email,phone,subscriber_status,commercial_stage,
+           executive_id,source,consent_status,summary_notes,is_commitment_only,created_by,updated_by)
+         SELECT x.id,x.external_ref,x.first_name,x.last_name,x.email,x.phone,x.subscriber_status,
+           x.commercial_stage,x.executive_id,$2,'unknown',x.notes,x.is_commitment_only,$1,$1
+         FROM jsonb_to_recordset($3::jsonb) AS x(
+           id uuid,external_ref text,first_name text,last_name text,email text,phone text,
+           subscriber_status text,commercial_stage text,executive_id uuid,notes text,is_commitment_only boolean
+         )`, [actor.id, dataset.source, JSON.stringify(contacts.map((item) => ({
+          id: item.id, external_ref: item.externalRef, first_name: item.firstName, last_name: item.lastName,
+          email: item.email, phone: item.phone, subscriber_status: item.subscriberStatus,
+          commercial_stage: item.commercialStage, executive_id: item.executiveId,
+          notes: item.notes, is_commitment_only: item.isCommitmentOnly
+        })))]
+      );
+      await client.query(
+        `INSERT INTO memberships
+          (id,contact_id,season_code,membership_status,seat_count,zone,product,start_date,renewal_date,
+           section,created_by,updated_by)
+         SELECT x.id,x.contact_id,'LMP-2026-27','active',x.seat_count,x.zone,x.product,
+           COALESCE(x.renewal_date,current_date),x.renewal_date,x.section,$1,$1
+         FROM jsonb_to_recordset($2::jsonb) AS x(
+           id uuid,contact_id uuid,seat_count integer,zone text,product text,renewal_date date,section text
+         )`, [actor.id, JSON.stringify(dataset.memberships.map((item) => ({
+          id: item.id, contact_id: item.contactId, seat_count: item.seatCount, zone: item.zone,
+          product: item.product, renewal_date: item.renewalDate?.slice(0, 10) || null, section: item.section
+        })))]
+      );
+      await client.query(
+        `INSERT INTO membership_units
+          (id,membership_id,unit_number,seat_identifier,zone,product,created_by,updated_by)
+         SELECT x.id,x.membership_id,x.unit_number,x.seat_identifier,x.zone,x.product,$1,$1
+         FROM jsonb_to_recordset($2::jsonb) AS x(
+           id uuid,membership_id uuid,unit_number integer,seat_identifier text,zone text,product text
+         )`, [actor.id, JSON.stringify(dataset.units.map((item) => ({
+          id: item.id, membership_id: item.membershipId, unit_number: item.unitNumber,
+          seat_identifier: item.seatIdentifier, zone: item.zone, product: item.product
+        })))]
+      );
+      await client.query(
+        `INSERT INTO sales
+          (id,contact_id,executive_id,season_code,status,sold_at,total_amount,paid_amount,notes,created_by,updated_by)
+         SELECT x.id,x.contact_id,x.executive_id,'LMP-2026-27','confirmed',x.sold_at,
+           x.total,x.paid,'BoletoMóvil orden ' || x.external_ref || ' · ' || x.kind,$1,$1
+         FROM jsonb_to_recordset($2::jsonb) AS x(
+           id uuid,contact_id uuid,executive_id uuid,sold_at timestamptz,total numeric,paid numeric,external_ref text,kind text
+         )`, [actor.id, JSON.stringify(salesRows)]
+      );
+      await client.query(
+        `INSERT INTO sale_items (id,sale_id,product,zone,quantity,unit_price)
+         SELECT gen_random_uuid(),x.id,x.kind,x.zone,x.seats,
+           CASE WHEN x.seats > 0 THEN round(x.total/x.seats,2) ELSE x.total END
+         FROM jsonb_to_recordset($1::jsonb) AS x(id uuid,kind text,zone text,seats integer,total numeric)`,
+        [JSON.stringify(salesRows)]
+      );
+      await client.query(
+        `INSERT INTO payments (id,sale_id,amount,method,paid_at,reference,created_by)
+         SELECT gen_random_uuid(),x.id,x.paid,'BoletoMóvil',x.sold_at,x.external_ref,$1
+         FROM jsonb_to_recordset($2::jsonb) AS x(id uuid,paid numeric,sold_at timestamptz,external_ref text)
+         WHERE x.paid > 0`, [actor.id, JSON.stringify(salesRows)]
+      );
+      await client.query(
+        `INSERT INTO operational_dataset_runs (dataset_sha256,source_label,metrics,imported_by)
+         VALUES ($1,$2,$3,$4)`, [dataset.datasetSha256, dataset.source, dataset.metrics, actor.id]
+      );
+      await client.query(
+        `INSERT INTO audit_events
+          (actor_id,action,entity_type,entity_id,request_id,metadata,ip_hash,user_agent)
+         VALUES ($1,'dataset.operational_synchronized','operational_dataset',$2,$3,$4,$5,$6)`,
+        [actor.id, dataset.datasetSha256, context.requestId, dataset.metrics,
+          context.ipHash ?? null, context.userAgent?.slice(0, 500) ?? null]
+      );
+      const verification = await client.query(
+        `SELECT
+           (SELECT count(*)::integer FROM contacts WHERE deleted_at IS NULL) AS contacts,
+           (SELECT count(*)::integer FROM memberships m JOIN contacts c ON c.id=m.contact_id
+             WHERE m.deleted_at IS NULL AND c.deleted_at IS NULL) AS memberships,
+           (SELECT count(*)::integer FROM membership_units u JOIN memberships m ON m.id=u.membership_id
+             JOIN contacts c ON c.id=m.contact_id WHERE u.deleted_at IS NULL AND m.deleted_at IS NULL AND c.deleted_at IS NULL) AS units,
+           (SELECT count(*)::integer FROM sales s JOIN contacts c ON c.id=s.contact_id
+             WHERE s.deleted_at IS NULL AND c.deleted_at IS NULL) AS sales`
+      );
+      const actual = Object.fromEntries(Object.entries(verification.rows[0]).map(([name, value]) => [name, Number(value)]));
+      if (Object.entries(dataset.metrics).some(([name, value]) => actual[name] !== value)) {
+        throw new Error(`OPERATIONAL_DATASET_VERIFICATION_FAILED:${JSON.stringify(actual)}`);
+      }
+      await client.query('COMMIT');
+      return { status: 'synchronized', metrics: actual, datasetSha256: dataset.datasetSha256 };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   async listAuditEvents({ page, pageSize, actorId, entityType }) {

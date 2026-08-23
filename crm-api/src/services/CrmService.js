@@ -16,6 +16,13 @@ export class CrmService {
     return this.repository.dashboardSummary({ actor, filters });
   }
 
+  async synchronizeOperationalDataset(actor, dataset, context) {
+    if (actor.role !== 'admin') throw forbidden('Solo el Administrador puede sincronizar el corte operativo.');
+    requirePermission(actor, PERMISSIONS.CONTACT_WRITE_ALL);
+    requirePermission(actor, PERMISSIONS.MEMBERSHIP_WRITE);
+    return this.repository.synchronizeOperationalDataset(dataset, actor, context);
+  }
+
   async getSubscriptionPricingCatalog(actor) {
     requirePermission(actor, PERMISSIONS.CONTACT_READ);
     return this.repository.getSubscriptionPricingCatalog();
