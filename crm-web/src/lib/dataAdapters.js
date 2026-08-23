@@ -215,11 +215,13 @@ export function fromApiSale(sale) {
   const paid = Number(sale.paidAmount || 0)
   const paymentStatus = paid <= 0 ? 'Pendiente' : paid < total ? 'Parcial' : 'Pagado'
   const commercialStatus = ({ draft: 'Borrador', reserved: 'Apartada', confirmed: 'Confirmada', cancelled: 'Cancelada', refunded: 'Reembolsada' })[sale.status] || sale.status || 'Sin definir'
+  const product = String(sale.items?.[0]?.product || '').toUpperCase()
+  const movementKind = product.includes('RENOV') ? 'Renovación' : product.includes('ABONO') ? 'Nuevo' : '—'
   return {
     ...sale,
     date: sale.soldAt ? new Intl.DateTimeFormat('es-MX', { day: 'numeric', month: 'short', year: 'numeric' }).format(new Date(sale.soldAt)) : 'Sin fecha',
     contact: sale.contactName || 'Contacto',
-    kind: sale.saleType === 'renewal' ? 'Renovación' : sale.saleType === 'new' ? 'Nuevo' : '—',
+    kind: sale.saleType === 'renewal' ? 'Renovación' : sale.saleType === 'new' ? 'Nuevo' : movementKind,
     zone: sale.items?.[0]?.zone || sale.items?.[0]?.zoneName || 'Sin definir',
     seats,
     total,

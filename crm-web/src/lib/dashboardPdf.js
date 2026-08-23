@@ -102,6 +102,17 @@ function line(x1, y1, x2, y2, stroke, lineWidth = 1) {
   return `q\n${color(stroke)} RG\n${lineWidth} w\n${x1} ${y1} m ${x2} ${y2} l S\nQ`
 }
 
+function arcStroke(cx, cy, radius, start, end, stroke, lineWidth = 12) {
+  const span = Math.max(0, end - start)
+  const steps = Math.max(2, Math.ceil(span / (Math.PI / 24)))
+  const points = Array.from({ length: steps + 1 }, (_, index) => {
+    const angle = start + span * (index / steps) - Math.PI / 2
+    return [cx + Math.cos(angle) * radius, cy + Math.sin(angle) * radius]
+  })
+  const [first, ...rest] = points
+  return `q\n${color(stroke)} RG\n${lineWidth} w\n${first[0].toFixed(2)} ${first[1].toFixed(2)} m\n${rest.map(([x, y]) => `${x.toFixed(2)} ${y.toFixed(2)} l`).join('\n')}\nS\nQ`
+}
+
 function text(value, x, y, { font = 'F1', size = 10, fill = COLORS.ink } = {}) {
   return `BT\n/${font} ${size} Tf\n${color(fill)} rg\n1 0 0 1 ${x} ${y} Tm\n<${hexText(value)}> Tj\nET`
 }
@@ -255,7 +266,6 @@ function createContentStream(report, logoDimensions) {
   const { summary = {}, operation = {}, filters = {}, generatedAt, isDemo = false } = report
   const totalContacts = Math.max(1, asNumber(summary.totalContacts))
   const currentSubscribers = asNumber(summary.currentSubscribers)
-  const membershipNetAmount = asNumber(summary.membershipNetAmount)
   const commands = [rect(0, 0, PAGE_WIDTH, PAGE_HEIGHT, COLORS.surface)]
 
   commands.push(rect(0, 575, PAGE_WIDTH, 20, COLORS.navy))
@@ -318,7 +328,6 @@ function createContentStream(report, logoDimensions) {
     ['Por renovar', asNumber(summary.renewing), COLORS.gold],
     ['Abonados nuevos', asNumber(summary.newSubscribers), COLORS.violet],
     ['Prospectos', asNumber(summary.prospects), COLORS.gold],
-    ['Sin contactar', asNumber(summary.notContacted), COLORS.blue],
   ]
   composition.forEach(([label, value, accent], index) => {
     const y = 308 - index * 27
@@ -331,8 +340,20 @@ function createContentStream(report, logoDimensions) {
   commands.push(rect(rightX, 255, rightWidth, 116, COLORS.white, COLORS.line))
   drawPanelHeading(commands, rightX + 16, 352, 'Segmentación de la cartera', 'Abonos por segmento')
   const pdfSegments = [['Compromisos', COLORS.red], ['VIP', COLORS.gold], ['Preferente', COLORS.blue], ['General', COLORS.green]]
+  const segmentTotal = pdfSegments.reduce((sum, [label]) => sum + asNumber(summary.membershipSegments?.[label]), 0)
+  let segmentCursor = 0
+  if (segmentTotal > 0) {
+    pdfSegments.forEach(([label, accent]) => {
+      const start = segmentCursor / segmentTotal * Math.PI * 2
+      segmentCursor += asNumber(summary.membershipSegments?.[label])
+      const end = segmentCursor / segmentTotal * Math.PI * 2
+      commands.push(arcStroke(rightX + 55, 302, 30, start, end, accent, 12))
+    })
+  } else commands.push(arcStroke(rightX + 55, 302, 30, 0, Math.PI * 2, COLORS.line, 12))
+  commands.push(text(formatInteger(segmentTotal), rightX + 43, 300, { font: 'F2', size: 11, fill: COLORS.ink }))
+  commands.push(text('ABONOS', rightX + 41, 290, { font: 'F2', size: 5.5, fill: COLORS.muted }))
   pdfSegments.forEach(([label, accent], index) => {
-    const x = rightX + 16 + (index % 2) * 166
+    const x = rightX + 105 + (index % 2) * 110
     const y = 315 - Math.floor(index / 2) * 37
     commands.push(rect(x, y, 7, 7, accent))
     commands.push(text(label.toUpperCase(), x + 13, y + 1, { font: 'F2', size: 6.3, fill: COLORS.muted }))
@@ -359,7 +380,7 @@ function createContentStream(report, logoDimensions) {
   commands.push(rect(36, 69, 770, 29, COLORS.lightBlue))
   commands.push(text(isDemo ? 'DATOS SINTÉTICOS · NO USAR PARA DECISIONES' : 'CONFIDENCIAL · USO INTERNO', 49, 86, { font: 'F2', size: 7, fill: isDemo ? COLORS.red : COLORS.navy }))
   commands.push(text(isDemo ? 'Documento de prueba sin datos reales; no representa resultados operativos.' : 'Este documento resume información operativa. No debe compartirse fuera de Club Charros de Jalisco.', 49, 75, { size: 7, fill: COLORS.muted }))
-  commands.push(text(isDemo ? 'Fuente: escenario sintético local · Sin datos reales.' : 'Fuente: CRM Abonados · Importe neto capturado; no equivale a cobrado ni utilidad.', 36, 47, { size: 6.8, fill: COLORS.muted }))
+  commands.push(text(isDemo ? 'Fuente: escenario sintético local · Sin datos reales.' : 'Fuente: CRM Abonados · Reportes de órdenes y bases históricas conciliadas.', 36, 47, { size: 6.8, fill: COLORS.muted }))
   commands.push(text('Página 1 de 1', 747, 47, { font: 'F2', size: 6.8, fill: COLORS.muted }))
   return commands.join('\n')
 }

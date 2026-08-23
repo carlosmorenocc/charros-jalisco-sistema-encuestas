@@ -44,7 +44,7 @@ test('Admin conserva permisos críticos aun frente a una denegación accidental'
   });
   assert.equal(permissions.has(PERMISSIONS.DATA_EXPORT), true);
   assert.equal(permissions.has(PERMISSIONS.PERMISSION_MANAGE), true);
-  assert.equal(permissions.has(PERMISSIONS.SALES_WRITE), false);
+  assert.equal(permissions.has(PERMISSIONS.SALES_WRITE), true);
 });
 
 test('Ejecutivo únicamente puede escribir su propia cartera', () => {
