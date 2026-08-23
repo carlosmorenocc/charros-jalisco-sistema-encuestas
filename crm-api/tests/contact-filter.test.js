@@ -138,6 +138,35 @@ test('aplica temporada en ventas y dashboard con parámetros SQL', async () => {
   assert.equal(summary.membershipDiscountAmount, 7440);
 });
 
+test('Dirección suma el total documentado de apartados y separa el cobro recibido', async () => {
+  const pool = {
+    async query() {
+      return { rows: [{
+        total_contacts: 1, current_subscribers: 1, renewing: 0,
+        new_subscribers: 0, renewed_subscribers: 0, new_seats: 0, renewed_seats: 0,
+        sold_new_subscribers: 1, sold_renewed_subscribers: 0,
+        sold_new_seats: 1, sold_renewed_seats: 0,
+        not_contacted: 0, unassigned: 0, overdue_follow_ups: 0,
+        active_seats: 0, human_interactions: 0, campaign_messages: 0,
+        confirmed_sales: 1, sales_amount: 4207, collected_amount: 1500
+      }] };
+    }
+  };
+  const subject = new PgCrmRepository(pool, {
+    tenantId: '00000000-0000-4000-8000-000000000001'
+  });
+
+  const summary = await subject.dashboardSummary({
+    actor: { id: 'admin-id', role: 'admin' },
+    filters: { season: 'LMP-2026-27' }
+  });
+
+  assert.equal(summary.newSubscribers, 1);
+  assert.equal(summary.newSeats, 1);
+  assert.equal(summary.salesAmount, 4207);
+  assert.equal(summary.collectedAmount, 1500);
+});
+
 test('bitácora global y tareas abiertas conservan el alcance del ejecutivo', async () => {
   const calls = [];
   const pool = {
