@@ -176,6 +176,9 @@ test('cotizacion exige localidad, descuento y cantidad explicitos', () => {
 
 test('venta confirmada exige fecha y los pagos deben ser positivos', () => {
   assert.throws(() => validateSale({
+    externalOrderNumber: '26000123',
+    saleType: 'new',
+    closeStage: 'won',
     contactId: UUID,
     executiveId: UUID,
     seasonCode: 'LMP-2026-27',

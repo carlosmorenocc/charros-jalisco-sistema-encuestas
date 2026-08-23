@@ -458,6 +458,9 @@ export function validateSale(input) {
   const items = Array.isArray(input.items) ? input.items : [];
   if (!items.length) throw badRequest('La venta requiere al menos un concepto.');
   const result = {
+    externalOrderNumber: cleanString(input.externalOrderNumber, { required: true, max: 80, field: 'externalOrderNumber' }),
+    saleType: enumValue(input.saleType, ['new', 'renewal'], 'saleType', { required: true }),
+    closeStage: enumValue(input.closeStage ?? (input.status === 'reserved' ? 'reserved' : 'won'), ['reserved', 'won'], 'closeStage', { required: true }),
     contactId: uuid(input.contactId, 'contactId', { required: true }),
     executiveId: uuid(input.executiveId, 'executiveId', { required: true }),
     seasonCode: canonicalSeason(input.seasonCode, { required: true }),
@@ -478,6 +481,9 @@ export function validateSale(input) {
       reference: cleanString(payment.reference, { max: 160, field: `payments[${index}].reference` })
     }))
   };
+  if (!/^[A-Za-z0-9][A-Za-z0-9._\-/]{0,79}$/.test(result.externalOrderNumber)) {
+    throw badRequest('externalOrderNumber contiene caracteres no permitidos.');
+  }
   if (result.status === 'confirmed' && !result.soldAt) {
     throw badRequest('soldAt es obligatoria para confirmar una venta.');
   }
