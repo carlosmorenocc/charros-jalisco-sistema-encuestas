@@ -63,7 +63,7 @@ function initials(name = '') {
 
 export function fromApiContact(contact) {
   if (contact.name && contact.type && !contact.firstName && !contact.subscriberStatus) return contact
-  const name = contact.displayName || `${contact.firstName || ''} ${contact.lastName || ''}`.trim()
+  const name = (contact.displayName || `${contact.firstName || ''} ${contact.lastName || ''}`.trim()).toLocaleUpperCase('es-MX')
   const hasMembershipSummary = Object.prototype.hasOwnProperty.call(contact, 'membershipId')
   const currentMembership = contact.membershipId ? fromApiMembership({
     id: contact.membershipId,

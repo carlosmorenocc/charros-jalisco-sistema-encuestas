@@ -13,7 +13,7 @@ describe('adaptadores de contacto', () => {
       seasonsCount: 5,
       consentStatus: 'yes',
     })
-    expect(contact.name).toBe('Persona Ejemplo')
+    expect(contact.name).toBe('PERSONA EJEMPLO')
     expect(contact.type).toBe('Por renovar')
     expect(contact.stage).toBe('Seguimiento')
     expect(contact.seats).toBe(3)

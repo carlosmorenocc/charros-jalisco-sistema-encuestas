@@ -41,7 +41,7 @@ describe('reporte ejecutivo PDF', () => {
     expect(blob.type).toBe('application/pdf')
     expect(blob.size).toBeGreaterThan(1_000)
     expect(buildDashboardPdfFilename({ ...report.filters, generatedAt }))
-      .toBe('reporte-direccion-lmp-2026-27-este-mes-2026-08-21.pdf')
+      .toBe('reporte-direccion-lmp-2026-27-mensual-2026-08-21.pdf')
   })
 
   it('descarga el archivo sin enviarlo a ningún endpoint', async () => {
@@ -64,7 +64,7 @@ describe('reporte ejecutivo PDF', () => {
 
     expect(fetchImpl).toHaveBeenCalledWith('/charros-logo.jpeg', { cache: 'force-cache', credentials: 'same-origin' })
     expect(documentRef.body.appendChild).toHaveBeenCalledWith(link)
-    expect(link.download).toBe('reporte-direccion-lmp-2026-27-este-mes-2026-08-21.pdf')
+    expect(link.download).toBe('reporte-direccion-lmp-2026-27-mensual-2026-08-21.pdf')
     expect(link.click).toHaveBeenCalledOnce()
     expect(link.remove).toHaveBeenCalledOnce()
     expect(urlApi.revokeObjectURL).toHaveBeenCalledWith('blob:dashboard')

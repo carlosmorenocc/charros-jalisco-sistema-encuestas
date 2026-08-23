@@ -74,7 +74,14 @@ function localDateBoundary(value, endOfDay = false) {
   return date.toISOString()
 }
 
-function periodBounds(period) {
+function periodBounds(period, fromDate, toDate) {
+  if (period === 'all' && !fromDate && !toDate) return {}
+  if (fromDate || toDate || period === 'custom') {
+    return {
+      from: localDateBoundary(fromDate),
+      to: localDateBoundary(toDate, true),
+    }
+  }
   const now = new Date()
   if (period === 'today') return localDayBounds(now)
   const start = new Date(now)
@@ -84,6 +91,21 @@ function periodBounds(period) {
   const end = new Date(now)
   end.setHours(23, 59, 59, 999)
   return { from: start.toISOString(), to: end.toISOString() }
+}
+
+function selectedPeriodLabel(period, fromDate, toDate, now = new Date()) {
+  const date = new Intl.DateTimeFormat('es-MX', { day: 'numeric', month: 'long', year: 'numeric' })
+  const month = new Intl.DateTimeFormat('es-MX', { month: 'long', year: 'numeric' })
+  if (period === 'today') return date.format(now)
+  if (period === 'month' && !fromDate && !toDate) return month.format(now)
+  if (period === 'all' && !fromDate && !toDate) return 'todo el tiempo'
+  const bounds = periodBounds(period, fromDate, toDate)
+  const start = bounds.from ? new Date(bounds.from) : null
+  const end = bounds.to ? new Date(bounds.to) : null
+  if (start && end) return `${date.format(start)} al ${date.format(end)}`
+  if (start) return `desde ${date.format(start)}`
+  if (end) return `hasta ${date.format(end)}`
+  return 'seleccionado'
 }
 
 function Icon({ name, size = 18, strokeWidth = 1.8 }) {
@@ -889,12 +911,6 @@ function App() {
   return (
     <div className="app-shell">
       <a className="skip-link" href="#main-content">Saltar al contenido principal</a>
-      {authClient.isDemo && (
-        <div className="demo-banner" role="status">
-          <span className="demo-pulse" />
-          Modo demostración · Todos los nombres y resultados visibles son sintéticos
-        </div>
-      )}
       <header className="topbar">
         <button className="mobile-menu-button" aria-label="Abrir navegación" aria-expanded={mobileOpen} onClick={() => setMobileOpen((value) => !value)}>
           <Icon name={mobileOpen ? 'close' : 'menu'} size={22} />
@@ -1048,7 +1064,9 @@ function GlobalFilters({ executiveOptions = [], filters, onChange, disabled = fa
   return (
     <div className="global-filters" aria-label="Filtros del reporte">
       <label><span>Temporada</span><select disabled={disabled} value={filters.season} onChange={(event) => onChange({ ...filters, season: event.target.value })}><option value="LMP-2026-27">LMP 2026-2027</option></select></label>
-      <label><span>Periodo</span><select disabled={disabled} value={filters.period} onChange={(event) => onChange({ ...filters, period: event.target.value })}><option value="today">Hoy</option><option value="week">Últimos 7 días</option><option value="month">Este mes</option></select></label>
+      <label><span>Periodo</span><select disabled={disabled} value={filters.period} onChange={(event) => onChange({ ...filters, period: event.target.value, fromDate: '', toDate: '' })}><option value="today">Hoy</option><option value="week">Semanal</option><option value="month">Mensual</option><option value="all">Todo el tiempo</option>{filters.period === 'custom' && <option value="custom">Rango de fechas</option>}</select></label>
+      <label><span>Desde</span><input disabled={disabled} type="date" value={filters.fromDate} max={filters.toDate || undefined} onChange={(event) => onChange({ ...filters, period: 'custom', fromDate: event.target.value })}/></label>
+      <label><span>Hasta</span><input disabled={disabled} type="date" value={filters.toDate} min={filters.fromDate || undefined} onChange={(event) => onChange({ ...filters, period: 'custom', toDate: event.target.value })}/></label>
       <label><span>Ejecutivo</span><select disabled={disabled} value={filters.executiveId} onChange={(event) => onChange({ ...filters, executiveId: event.target.value })}><option value="">Todos</option>{executiveOptions.map((item) => <option key={item.id} value={item.id}>{item.displayName}</option>)}</select></label>
       {disabled && <small className="demo-filter-note">Filtros disponibles con el API corporativo.</small>}
     </div>
@@ -1064,12 +1082,92 @@ function MetricCard({ label, value, detail, trend, icon, tone = 'blue' }) {
   )
 }
 
+function SegmentedMetricCard({ label, options, selected, onSelect, detail, icon, tone = 'green' }) {
+  const active = options.find((option) => option.id === selected) || options[0]
+  return (
+    <article className="metric-card metric-card--segmented">
+      <div className={`metric-icon metric-icon--${tone}`}><Icon name={icon} size={20} /></div>
+      <div className="metric-copy"><span>{label}</span><strong>{integer.format(active.value || 0)}</strong><small>{detail}</small></div>
+      <div className="metric-segments" role="group" aria-label={`Segmentación de ${label}`}>
+        {options.map((option) => <button type="button" key={option.id} className={selected === option.id ? 'active' : ''} aria-pressed={selected === option.id} onClick={() => onSelect(option.id)}>{option.label}</button>)}
+      </div>
+    </article>
+  )
+}
+
 function DashboardPage({ contacts, tasks, followupCounts, sales, dashboardSummary, dashboardRevision, isDemo, availableExecutives, onNavigate, onNotify, onLoadDashboard, onAuthorizeDashboardPdf }) {
-  const [reportFilters, setReportFilters] = useState({ season: 'LMP-2026-27', period: 'month', executiveId: '' })
-  const [loadedFilterKey, setLoadedFilterKey] = useState(isDemo ? 'LMP-2026-27|month|' : '')
+  const [reportFilters, setReportFilters] = useState({ season: 'LMP-2026-27', period: 'month', fromDate: '', toDate: '', executiveId: '' })
+  const [loadedFilterKey, setLoadedFilterKey] = useState(isDemo ? 'LMP-2026-27|month|||' : '')
   const [pdfState, setPdfState] = useState({ status: 'idle', message: '' })
+  const [subscriberMetricMode, setSubscriberMetricMode] = useState('new')
+  const [seatMetricMode, setSeatMetricMode] = useState('new')
   contacts = contacts.filter((contact) => !contact.deletedAt)
-  const summary = dashboardSummary || {}
+  const selectedExecutiveName = availableExecutives.find((item) => item.id === reportFilters.executiveId)?.displayName
+  const demoContactsInScope = isDemo && selectedExecutiveName ? contacts.filter((contact) => contact.executive === selectedExecutiveName) : contacts
+  const selectedBounds = periodBounds(reportFilters.period, reportFilters.fromDate, reportFilters.toDate)
+  const demoSalesInScope = isDemo ? sales.filter((sale) => {
+    if (selectedExecutiveName && sale.owner !== selectedExecutiveName) return false
+    const occurredAt = sale.occurredAt ? new Date(sale.occurredAt).getTime() : NaN
+    if (selectedBounds.from && Number.isFinite(occurredAt) && occurredAt < new Date(selectedBounds.from).getTime()) return false
+    if (selectedBounds.to && Number.isFinite(occurredAt) && occurredAt > new Date(selectedBounds.to).getTime()) return false
+    return true
+  }) : sales
+  const demoNewSubscribers = isDemo ? demoContactsInScope.filter((contact) => {
+    if (contact.type !== 'Abonado nuevo' || !contact.renewalDate) return false
+    const occurredAt = new Date(contact.renewalDate).getTime()
+    if (!Number.isFinite(occurredAt)) return false
+    if (selectedBounds.from && occurredAt < new Date(selectedBounds.from).getTime()) return false
+    if (selectedBounds.to && occurredAt > new Date(selectedBounds.to).getTime()) return false
+    return true
+  }) : []
+  const demoNewSeats = isDemo ? demoContactsInScope.reduce((total, contact) => total + (contact.newSeatEvents || []).filter((value) => {
+    const occurredAt = new Date(value).getTime()
+    if (!Number.isFinite(occurredAt)) return false
+    if (selectedBounds.from && occurredAt < new Date(selectedBounds.from).getTime()) return false
+    if (selectedBounds.to && occurredAt > new Date(selectedBounds.to).getTime()) return false
+    return true
+  }).length, 0) : 0
+  const inSelectedPeriod = (value) => {
+    const occurredAt = new Date(value).getTime()
+    if (!Number.isFinite(occurredAt)) return false
+    if (selectedBounds.from && occurredAt < new Date(selectedBounds.from).getTime()) return false
+    if (selectedBounds.to && occurredAt > new Date(selectedBounds.to).getTime()) return false
+    return true
+  }
+  const demoRenewedSubscribers = isDemo ? demoContactsInScope.filter((contact) => {
+    if (contact.type !== 'Abonado actual' || contact.isCommitmentOnly) return false
+    if (!selectedBounds.from && !selectedBounds.to) return true
+    return contact.renewalDate && inSelectedPeriod(contact.renewalDate)
+  }).length : 0
+  const demoRenewedSeats = isDemo ? demoContactsInScope.reduce((total, contact) => {
+    if (contact.type !== 'Abonado actual' || contact.isCommitmentOnly) return total
+    const events = contact.renewedSeatEvents?.length
+      ? contact.renewedSeatEvents
+      : Array.from({ length: Number(contact.seats || 0) }, () => contact.renewalDate)
+    return total + events.filter(inSelectedPeriod).length
+  }, 0) : 0
+  const demoMembershipSegments = isDemo ? demoContactsInScope.reduce((totals, contact) => {
+    Object.entries(contact.membershipSegments || {}).forEach(([segment, count]) => { totals[segment] = (totals[segment] || 0) + Number(count || 0) })
+    return totals
+  }, {}) : {}
+  const summary = isDemo ? {
+    ...(dashboardSummary || {}),
+    totalContacts: demoContactsInScope.length,
+    currentSubscribers: demoContactsInScope.filter((contact) => ['Abonado actual', 'Abonado nuevo'].includes(contact.type) && !contact.isCommitmentOnly).length,
+    activeSeats: demoContactsInScope.filter((contact) => ['Abonado actual', 'Abonado nuevo'].includes(contact.type)).reduce((sum, contact) => sum + Number(contact.seats || 0), 0),
+    renewing: demoContactsInScope.filter((contact) => contact.type === 'Por renovar').length,
+    newSubscribers: demoNewSubscribers.length,
+    newSeats: demoNewSeats,
+    renewedSubscribers: demoRenewedSubscribers,
+    renewedSeats: demoRenewedSeats,
+    prospects: demoContactsInScope.filter((contact) => contact.type === 'Prospecto').length,
+    membershipSegments: demoMembershipSegments,
+    notContacted: demoContactsInScope.filter((contact) => ['Sin contactar', 'Por contactar'].includes(contact.stage)).length,
+    unassigned: demoContactsInScope.filter((contact) => contact.executive === 'SIN ASIGNAR').length,
+    confirmedSales: demoSalesInScope.length,
+    salesAmount: demoSalesInScope.reduce((sum, sale) => sum + Number(sale.total || 0), 0),
+    collectedAmount: demoSalesInScope.reduce((sum, sale) => sum + Number(sale.paid || 0), 0),
+  } : (dashboardSummary || {})
   const salesTotal = Number(summary.salesAmount ?? sales.reduce((sum, sale) => sum + Number(sale.total || 0), 0))
   const totalContacts = Math.max(1, Number(summary.totalContacts || contacts.length || 1))
   const funnelRows = [
@@ -1077,15 +1175,40 @@ function DashboardPage({ contacts, tasks, followupCounts, sales, dashboardSummar
     ['Abonados actuales', Number(summary.currentSubscribers || 0), Number(summary.currentSubscribers || 0) / totalContacts * 100, 'green'],
     ['Por renovar', Number(summary.renewing || 0), Number(summary.renewing || 0) / totalContacts * 100, 'gold'],
     ['Abonados nuevos', Number(summary.newSubscribers || 0), Number(summary.newSubscribers || 0) / totalContacts * 100, 'violet'],
+    ['Prospectos', Number(summary.prospects || 0), Number(summary.prospects || 0) / totalContacts * 100, 'gold'],
     ['Sin contactar', Number(summary.notContacted || 0), Number(summary.notContacted || 0) / totalContacts * 100, 'blue'],
   ]
+  const segmentRows = [
+    ['Compromisos', Number(summary.membershipSegments?.Compromisos || 0), '#a33b46'],
+    ['VIP', Number(summary.membershipSegments?.VIP || 0), '#d5a228'],
+    ['Preferente', Number(summary.membershipSegments?.Preferente || 0), '#2a73b7'],
+    ['General', Number(summary.membershipSegments?.General || 0), '#2c9b70'],
+  ]
+  const segmentTotal = segmentRows.reduce((sum, [, value]) => sum + value, 0)
+  const newSubscriberPeriodLabel = selectedPeriodLabel(reportFilters.period, reportFilters.fromDate, reportFilters.toDate)
+  const subscriberMetricOptions = [
+    { id: 'new', label: 'Nuevos', value: summary.newSubscribers },
+    { id: 'renewed', label: 'Renovados', value: summary.renewedSubscribers },
+    { id: 'total', label: 'N + R', value: Number(summary.newSubscribers || 0) + Number(summary.renewedSubscribers || 0) },
+  ]
+  const seatMetricOptions = [
+    { id: 'new', label: 'Nuevos', value: summary.newSeats },
+    { id: 'renewed', label: 'Renovados', value: summary.renewedSeats },
+    { id: 'total', label: 'N + R', value: Number(summary.newSeats || 0) + Number(summary.renewedSeats || 0) },
+  ]
+  let segmentCursor = 0
+  const segmentGradient = segmentTotal ? `conic-gradient(${segmentRows.map(([, value, color]) => {
+    const start = segmentCursor
+    segmentCursor += value / segmentTotal * 100
+    return `${color} ${start}% ${segmentCursor}%`
+  }).join(', ')})` : 'conic-gradient(#d8dde4 0 100%)'
   const operationCounts = followupCounts || {
     scheduled: tasks.length,
     pending: tasks.filter((task) => task.status === 'Pendiente' || task.status === 'En curso').length,
     completed: tasks.filter((task) => task.status === 'Completada').length,
     overdue: tasks.filter((task) => task.status === 'Vencida').length,
   }
-  const filterKey = `${reportFilters.season}|${reportFilters.period}|${reportFilters.executiveId}`
+  const filterKey = `${reportFilters.season}|${reportFilters.period}|${reportFilters.fromDate}|${reportFilters.toDate}|${reportFilters.executiveId}`
   const reportIsReady = Boolean(dashboardSummary) && (isDemo || loadedFilterKey === filterKey)
   const executiveName = availableExecutives.find((item) => item.id === reportFilters.executiveId)?.displayName || 'Todos los ejecutivos'
   useEffect(() => {
@@ -1096,11 +1219,11 @@ function DashboardPage({ contacts, tasks, followupCounts, sales, dashboardSummar
     }
     let active = true
     setLoadedFilterKey('')
-    onLoadDashboard({ season: reportFilters.season, executiveId: reportFilters.executiveId || undefined, ...periodBounds(reportFilters.period) })
+    onLoadDashboard({ season: reportFilters.season, executiveId: reportFilters.executiveId || undefined, ...periodBounds(reportFilters.period, reportFilters.fromDate, reportFilters.toDate) })
       .then((applied) => { if (active && applied !== false) setLoadedFilterKey(filterKey) })
       .catch((error) => { if (active) onNotify(error.message || 'No fue posible actualizar el reporte.') })
     return () => { active = false }
-  }, [dashboardRevision, filterKey, isDemo, onLoadDashboard, onNotify, reportFilters.executiveId, reportFilters.period, reportFilters.season])
+  }, [dashboardRevision, filterKey, isDemo, onLoadDashboard, onNotify, reportFilters.executiveId, reportFilters.fromDate, reportFilters.period, reportFilters.season, reportFilters.toDate])
 
   async function downloadDashboardPdf() {
     if (!reportIsReady || pdfState.status === 'generating') return
@@ -1110,7 +1233,7 @@ function DashboardPage({ contacts, tasks, followupCounts, sales, dashboardSummar
         await onAuthorizeDashboardPdf({
           season: reportFilters.season,
           executiveId: reportFilters.executiveId || undefined,
-          ...periodBounds(reportFilters.period),
+          ...periodBounds(reportFilters.period, reportFilters.fromDate, reportFilters.toDate),
         })
       }
       await downloadExecutiveDashboardPdf({
@@ -1120,8 +1243,12 @@ function DashboardPage({ contacts, tasks, followupCounts, sales, dashboardSummar
           activeSeats: summary.activeSeats,
           renewing: summary.renewing,
           newSubscribers: summary.newSubscribers,
+          newSeats: summary.newSeats,
+          renewedSubscribers: summary.renewedSubscribers,
+          renewedSeats: summary.renewedSeats,
+          prospects: summary.prospects,
+          membershipSegments: summary.membershipSegments,
           notContacted: summary.notContacted,
-          overdueFollowUps: summary.overdueFollowUps,
           salesAmount: salesTotal,
           humanInteractions: summary.humanInteractions,
           campaignMessages: summary.campaignMessages,
@@ -1155,16 +1282,16 @@ function DashboardPage({ contacts, tasks, followupCounts, sales, dashboardSummar
   )
   return (
     <div className="page-wrap">
-      <PageHeader eyebrow="Vista ejecutiva" title="Reporte Dirección" description="Pulso comercial de abonados y renovaciones, en una sola lectura." actions={reportActions} />
-      <GlobalFilters executiveOptions={availableExecutives} filters={reportFilters} onChange={setReportFilters} disabled={isDemo} />
+      <PageHeader eyebrow="Vista ejecutiva" title="Reporte Dirección" description={<>Seguimiento de venta y renovación de abonados <strong className="charros-name">Charros de Jalisco</strong></>} actions={reportActions} />
+      <GlobalFilters executiveOptions={availableExecutives} filters={reportFilters} onChange={setReportFilters} />
 
       <section className="metrics-grid" aria-label="Indicadores principales">
-        <MetricCard label="Abonados actuales" value={integer.format(summary.currentSubscribers || 0)} detail="titulares identificados" icon="people" />
-        <MetricCard label="Abonos activos" value={integer.format(summary.activeSeats || 0)} detail="personas y lugares separados" icon="layers" tone="violet" />
-        <MetricCard label="Por renovar" value={integer.format(summary.renewing || 0)} detail="cartera elegible" icon="refresh" tone="gold" />
-        <MetricCard label="Abonados nuevos" value={integer.format(summary.newSubscribers || 0)} detail="clasificados actualmente como nuevos" icon="chart" tone="green" />
-        <MetricCard label="Seguimientos vencidos" value={integer.format(summary.overdueFollowUps || 0)} detail="requieren atención" icon="clock" tone="red" />
-        <MetricCard label="Venta documentada" value={currency.format(salesTotal)} detail={isDemo ? 'escenario sintético' : 'periodo seleccionado'} icon="wallet" tone="blue" />
+        <MetricCard label="Abonados actuales" value={integer.format(summary.currentSubscribers || 0)} detail="Titulares Identificados" icon="people" />
+        <MetricCard label="Abonos Activos" value={integer.format(summary.activeSeats || 0)} detail="Butacas Individuales" icon="layers" tone="violet" />
+        <MetricCard label="Por renovar" value={integer.format(summary.renewing || 0)} detail="Personas por renovar sus abonos" icon="refresh" tone="gold" />
+        <SegmentedMetricCard label="Titulares" options={subscriberMetricOptions} selected={subscriberMetricMode} onSelect={setSubscriberMetricMode} detail={`Periodo: ${newSubscriberPeriodLabel}`} icon="chart" tone="green" />
+        <SegmentedMetricCard label="Abonos" options={seatMetricOptions} selected={seatMetricMode} onSelect={setSeatMetricMode} detail={`Butacas individuales · Periodo: ${newSubscriberPeriodLabel}`} icon="layers" tone="violet" />
+        <MetricCard label="Venta documentada" value={currency.format(salesTotal)} detail="periodo seleccionado" icon="wallet" tone="blue" />
       </section>
 
       {summary.pricedMemberships != null && <section className="membership-value-panel" aria-label="Valor comercial de abonos capturados"><div className="membership-value-grid"><MetricCard label="Importe neto de abonos capturados" value={currency.format(summary.membershipNetAmount || 0)} detail={`${integer.format(summary.pricedMemberships)} membresías con precio`} icon="wallet" tone="green"/><MetricCard label="Valor comercial" value={currency.format(summary.membershipCommercialValue || 0)} detail={`${integer.format(summary.pricedSeats || 0)} abonos cotizados`} icon="layers" tone="blue"/><MetricCard label="Descuento otorgado" value={currency.format(summary.membershipDiscountAmount || 0)} detail="según promociones capturadas" icon="star" tone="gold"/></div><p>No equivale a cobrado ni utilidad.</p></section>}
@@ -1177,7 +1304,11 @@ function DashboardPage({ contacts, tasks, followupCounts, sales, dashboardSummar
               <div className="funnel-row" key={label}><div className="funnel-label"><span>{label}</span><strong>{value}</strong></div><div className="progress-track"><span className={`progress-fill progress-fill--${tone}`} style={{ width: `${width}%` }} /></div></div>
             ))}
           </div>
-          <div className="panel-footnote"><Icon name="chart" size={16} /><span><strong>{integer.format(summary.humanInteractions || 0)}</strong> interacciones humanas</span><span className="separator" />{integer.format(summary.campaignMessages || 0)} envíos de campaña, medidos por separado</div>
+        </article>
+
+        <article className="panel panel--wide">
+          <div className="panel-heading"><div><span className="panel-kicker">SEGMENTACIÓN DE LA CARTERA</span><h2>Abonos por segmento</h2></div><span className="small-chip">{integer.format(segmentTotal)} abonos</span></div>
+          <div className="donut-layout"><div className="donut segment-donut" style={{background: segmentGradient}}><div><strong>{integer.format(segmentTotal)}</strong><span>abonos activos</span></div></div><div className="donut-legend">{segmentRows.map(([label, value, color]) => <div key={label}><i className="legend-dot" style={{background: color}}/><span>{label}</span><strong>{integer.format(value)}</strong></div>)}</div></div>
         </article>
 
         <article className="panel operation-card">
@@ -1189,11 +1320,6 @@ function DashboardPage({ contacts, tasks, followupCounts, sales, dashboardSummar
             <div><span className="operation-dot operation-dot--red" /><strong>{operationCounts.overdue}</strong><small>Vencidas</small></div>
           </div>
           {tasks[0] ? <div className="next-action"><span className="mini-avatar">{initials(tasks[0].contact)}</span><div><small>Siguiente · {tasks[0].time}</small><strong>{tasks[0].contact}</strong><span>{tasks[0].action}</span></div><Icon name="chevron" size={17} /></div> : <div className="next-action"><span className="mini-avatar">✓</span><div><small>Agenda al día</small><strong>Sin acciones pendientes</strong><span>No hay acciones programadas para este corte.</span></div></div>}
-        </article>
-
-        <article className="panel panel--wide">
-          <div className="panel-heading"><div><span className="panel-kicker">SALUD DE CARTERA</span><h2>Estado general</h2></div></div>
-          <div className="donut-layout"><div className="donut" style={{background: `conic-gradient(#2c9b70 0 ${Math.min(100, Number(summary.currentSubscribers || 0) / totalContacts * 100)}%, #d8dde4 0)`}}><div><strong>{Math.round(Number(summary.currentSubscribers || 0) / totalContacts * 100)}%</strong><span>abonados actuales</span></div></div><div className="donut-legend"><div><i className="legend-dot legend-dot--green"/><span>Abonados actuales al corte</span><strong>{integer.format(summary.currentSubscribers || 0)}</strong></div><div><i className="legend-dot legend-dot--blue"/><span>Interacciones humanas del periodo</span><strong>{integer.format(summary.humanInteractions || 0)}</strong></div><div><i className="legend-dot legend-dot--gold"/><span>Seguimientos vencidos al corte</span><strong>{integer.format(summary.overdueFollowUps || 0)}</strong></div><div><i className="legend-dot legend-dot--neutral"/><span>Sin asignar al corte</span><strong>{integer.format(summary.unassigned || 0)}</strong></div></div></div>
         </article>
       </section>
 
@@ -1463,7 +1589,7 @@ function SalesPage({ sales, isDemo }) {
   const collectedPercentage = total > 0 ? Math.round((paid / total) * 100) : 0
   return (
     <div className="page-wrap">
-      <PageHeader eyebrow="Control comercial" title="Ventas" description="Corte de hasta 50 movimientos recientes, con pagos y abonos vinculados al contacto responsable." />
+      <PageHeader eyebrow="Control comercial" title="Ventas" description="Movimientos, pagos y abonos vinculados al contacto responsable." />
       <section className="sales-metrics"><div><span>Venta en corte cargado</span><strong>{currency.format(total)}</strong><small>Temporada LMP 2026–2027</small></div><div><span>Cobrado en el corte</span><strong>{currency.format(paid)}</strong><small>{collectedPercentage}% del total cargado</small></div><div><span>Saldo en el corte</span><strong>{currency.format(Math.max(0, total - paid))}</strong><small>{partialCount} movimientos parciales</small></div><div><span>Abonos asociados</span><strong>{seats}</strong><small>{filteredSales.length} movimientos cargados</small></div></section>
       <section className="panel list-panel"><div className="toolbar"><label className="search-field"><span className="sr-only">Buscar venta</span><Icon name="search" size={18}/><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar folio, contacto o zona…"/></label><div className="toolbar-filters"><select aria-label="Estatus de pago" value={payment} onChange={(event) => setPayment(event.target.value)}><option>Todos los pagos</option><option>Pendiente</option><option>Parcial</option><option>Pagado</option></select></div></div><div className="table-scroll"><table className="data-table"><thead><tr><th>Folio</th><th>Fecha</th><th>Contacto</th><th>Zona</th><th>Abonos</th><th>Total</th><th>Cobrado</th><th>Ejecutivo</th><th>Pago</th><th>Estado comercial</th></tr></thead><tbody>{filteredSales.map((sale) => <tr key={sale.id}><td><strong className="link-value">{sale.id}</strong></td><td>{sale.date}</td><td><strong>{sale.contact}</strong></td><td>{sale.zone}</td><td>{sale.seats}</td><td><strong>{currency.format(sale.total)}</strong></td><td>{currency.format(sale.paid)}</td><td>{sale.owner}</td><td><StatusPill>{sale.status}</StatusPill></td><td>{sale.commercialStatus || '—'}</td></tr>)}</tbody></table>{!filteredSales.length && <EmptyState title="Sin movimientos" body="No hay ventas que coincidan con los filtros seleccionados." />}</div><div className="table-footer"><span>{filteredSales.length} movimientos {isDemo ? 'sintéticos' : 'cargados'}</span><small>Los pagos y movimientos cancelados conservan historial de auditoría.</small></div></section>
     </div>

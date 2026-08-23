@@ -666,9 +666,25 @@ export class PgCrmRepository {
        ), contact_metrics AS (
          SELECT
            count(*)::integer AS total_contacts,
-           count(*) FILTER (WHERE subscriber_status = 'current_subscriber')::integer AS current_subscribers,
+           count(*) FILTER (WHERE subscriber_status IN ('current_subscriber','new_subscriber'))::integer AS current_subscribers,
            count(*) FILTER (WHERE subscriber_status = 'renewing')::integer AS renewing,
-           count(*) FILTER (WHERE subscriber_status = 'new_subscriber')::integer AS new_subscribers,
+           count(*) FILTER (WHERE subscriber_status = 'prospect')::integer AS prospects,
+           count(*) FILTER (WHERE subscriber_status = 'new_subscriber' AND EXISTS (
+             SELECT 1 FROM memberships nm
+             WHERE nm.contact_id=scoped_contacts.id AND nm.deleted_at IS NULL
+               AND nm.season_code=COALESCE($${seasonParameter}::text,'LMP-2026-27')
+               AND ($${fromParameter}::timestamptz IS NULL OR COALESCE(nm.renewal_date,nm.start_date,nm.created_at) >= $${fromParameter})
+               AND ($${toParameter}::timestamptz IS NULL OR COALESCE(nm.renewal_date,nm.start_date,nm.created_at) <= $${toParameter})
+           ))::integer AS new_subscribers,
+           count(*) FILTER (WHERE subscriber_status = 'current_subscriber' AND EXISTS (
+             SELECT 1 FROM memberships rm
+             WHERE rm.contact_id=scoped_contacts.id AND rm.deleted_at IS NULL
+               AND rm.membership_status='active'
+               AND rm.season_code=COALESCE($${seasonParameter}::text,'LMP-2026-27')
+               AND NOT (lower(COALESCE(rm.product,'')) LIKE '%compromiso%' OR lower(COALESCE(rm.zone,''))='zona suites')
+               AND ($${fromParameter}::timestamptz IS NULL OR COALESCE(rm.renewal_date,rm.start_date,rm.created_at) >= $${fromParameter})
+               AND ($${toParameter}::timestamptz IS NULL OR COALESCE(rm.renewal_date,rm.start_date,rm.created_at) <= $${toParameter})
+           ))::integer AS renewed_subscribers,
            count(*) FILTER (WHERE commercial_stage IN ('unassigned','to_contact'))::integer AS not_contacted,
            count(*) FILTER (WHERE executive_id IS NULL)::integer AS unassigned,
            count(*) FILTER (WHERE next_follow_up_at < now())::integer AS overdue_follow_ups
@@ -676,6 +692,21 @@ export class PgCrmRepository {
        ), membership_metrics AS (
          SELECT
            COALESCE(sum(m.seat_count) FILTER (WHERE m.membership_status='active'),0)::integer AS active_seats,
+           COALESCE(sum(m.seat_count) FILTER (
+             WHERE m.membership_status='active' AND c.subscriber_status='new_subscriber'
+               AND ($${fromParameter}::timestamptz IS NULL OR COALESCE(m.renewal_date,m.start_date,m.created_at) >= $${fromParameter})
+               AND ($${toParameter}::timestamptz IS NULL OR COALESCE(m.renewal_date,m.start_date,m.created_at) <= $${toParameter})
+           ),0)::integer AS new_seats,
+           COALESCE(sum(m.seat_count) FILTER (
+             WHERE m.membership_status='active' AND c.subscriber_status='current_subscriber'
+               AND NOT (lower(COALESCE(m.product,'')) LIKE '%compromiso%' OR lower(COALESCE(m.zone,''))='zona suites')
+               AND ($${fromParameter}::timestamptz IS NULL OR COALESCE(m.renewal_date,m.start_date,m.created_at) >= $${fromParameter})
+               AND ($${toParameter}::timestamptz IS NULL OR COALESCE(m.renewal_date,m.start_date,m.created_at) <= $${toParameter})
+           ),0)::integer AS renewed_seats,
+           COALESCE(sum(m.seat_count) FILTER (WHERE m.membership_status='active' AND (lower(COALESCE(m.product,'')) LIKE '%compromiso%' OR lower(COALESCE(m.zone,''))='zona suites')),0)::integer AS segment_commitments,
+           COALESCE(sum(m.seat_count) FILTER (WHERE m.membership_status='active' AND NOT (lower(COALESCE(m.product,'')) LIKE '%compromiso%' OR lower(COALESCE(m.zone,''))='zona suites') AND m.section='VIP'),0)::integer AS segment_vip,
+           COALESCE(sum(m.seat_count) FILTER (WHERE m.membership_status='active' AND NOT (lower(COALESCE(m.product,'')) LIKE '%compromiso%' OR lower(COALESCE(m.zone,''))='zona suites') AND m.section='Preferente'),0)::integer AS segment_preferente,
+           COALESCE(sum(m.seat_count) FILTER (WHERE m.membership_status='active' AND NOT (lower(COALESCE(m.product,'')) LIKE '%compromiso%' OR lower(COALESCE(m.zone,''))='zona suites') AND (m.section='General' OR m.section IS NULL)),0)::integer AS segment_general,
            count(*) FILTER (
              WHERE m.membership_status IN ('active','renewing')
                AND m.price_book_version IS NOT NULL
@@ -745,6 +776,16 @@ export class PgCrmRepository {
       membershipDiscountAmount: moneyFromCents(row.membership_discount_amount ?? 0),
       renewing: Number(row.renewing),
       newSubscribers: Number(row.new_subscribers),
+      newSeats: Number(row.new_seats ?? 0),
+      renewedSubscribers: Number(row.renewed_subscribers ?? 0),
+      renewedSeats: Number(row.renewed_seats ?? 0),
+      prospects: Number(row.prospects),
+      membershipSegments: {
+        Compromisos: Number(row.segment_commitments ?? 0),
+        VIP: Number(row.segment_vip ?? 0),
+        Preferente: Number(row.segment_preferente ?? 0),
+        General: Number(row.segment_general ?? 0)
+      },
       notContacted: Number(row.not_contacted),
       unassigned: Number(row.unassigned),
       overdueFollowUps: Number(row.overdue_follow_ups),

@@ -18,8 +18,10 @@ const COLORS = Object.freeze({
 
 const PERIOD_LABELS = Object.freeze({
   today: 'Hoy',
-  week: 'Últimos 7 días',
-  month: 'Este mes',
+  week: 'Semanal',
+  month: 'Mensual',
+  custom: 'Rango personalizado',
+  all: 'Todo el tiempo',
 })
 
 const WINDOWS_1252 = Object.freeze({
@@ -285,11 +287,11 @@ function createContentStream(report, logoDimensions) {
   const metricWidth = (770 - metricGap * 5) / 6
   const metrics = [
     ['Abonados actuales', formatInteger(currentSubscribers), COLORS.blue],
-    ['Abonos activos', formatInteger(summary.activeSeats), COLORS.violet],
+    ['Abonos Activos', formatInteger(summary.activeSeats), COLORS.violet],
     ['Por renovar', formatInteger(summary.renewing), COLORS.gold],
-    ['Abonados nuevos', formatInteger(summary.newSubscribers), COLORS.green],
-    ['Seguimientos vencidos', formatInteger(summary.overdueFollowUps), COLORS.red],
-    ['Importe neto abonos', formatCurrency(membershipNetAmount), COLORS.navy],
+    ['Titulares N / R', `${formatInteger(summary.newSubscribers)} / ${formatInteger(summary.renewedSubscribers)}`, COLORS.green],
+    ['Abonos N / R', `${formatInteger(summary.newSeats)} / ${formatInteger(summary.renewedSeats)}`, COLORS.violet],
+    ['Venta documentada', formatCurrency(summary.salesAmount), COLORS.navy],
   ]
   metrics.forEach(([label, value, accent], index) => drawMetric(commands, {
     x: 36 + index * (metricWidth + metricGap),
@@ -315,22 +317,32 @@ function createContentStream(report, logoDimensions) {
     ['Abonados actuales', currentSubscribers, COLORS.green],
     ['Por renovar', asNumber(summary.renewing), COLORS.gold],
     ['Abonados nuevos', asNumber(summary.newSubscribers), COLORS.violet],
+    ['Prospectos', asNumber(summary.prospects), COLORS.gold],
     ['Sin contactar', asNumber(summary.notContacted), COLORS.blue],
   ]
   composition.forEach(([label, value, accent], index) => {
-    const y = 303 - index * 32
+    const y = 308 - index * 27
     const percentage = label === 'Contactos en alcance' ? 1 : clamp(value / totalContacts, 0, 1)
     commands.push(text(label, leftX + 16, y + 11, { size: 7.5, fill: COLORS.muted }))
     commands.push(text(formatInteger(value), leftX + 338, y + 11, { font: 'F2', size: 8, fill: COLORS.ink }))
     commands.push(rect(leftX + 16, y, 352, 5, COLORS.line))
     commands.push(rect(leftX + 16, y, Math.max(value > 0 ? 2 : 0, 352 * percentage), 5, accent))
   })
-  commands.push(text(`${formatInteger(summary.humanInteractions)} interacciones humanas · ${formatInteger(summary.campaignMessages)} envíos de campaña`, leftX + 16, 151, { size: 7.5, fill: COLORS.muted }))
-
   commands.push(rect(rightX, 255, rightWidth, 116, COLORS.white, COLORS.line))
-  drawPanelHeading(commands, rightX + 16, 352, 'Operación global del día', 'Seguimientos')
-  commands.push(text(formatInteger(operation.scheduled), rightX + 16, 310, { font: 'F2', size: 24, fill: COLORS.navy }))
-  commands.push(text('acciones programadas', rightX + 55, 314, { size: 7.5, fill: COLORS.muted }))
+  drawPanelHeading(commands, rightX + 16, 352, 'Segmentación de la cartera', 'Abonos por segmento')
+  const pdfSegments = [['Compromisos', COLORS.red], ['VIP', COLORS.gold], ['Preferente', COLORS.blue], ['General', COLORS.green]]
+  pdfSegments.forEach(([label, accent], index) => {
+    const x = rightX + 16 + (index % 2) * 166
+    const y = 315 - Math.floor(index / 2) * 37
+    commands.push(rect(x, y, 7, 7, accent))
+    commands.push(text(label.toUpperCase(), x + 13, y + 1, { font: 'F2', size: 6.3, fill: COLORS.muted }))
+    commands.push(text(formatInteger(summary.membershipSegments?.[label]), x + 13, y - 13, { font: 'F2', size: 13, fill: COLORS.ink }))
+  })
+
+  commands.push(rect(rightX, bodyY, rightWidth, 104, COLORS.white, COLORS.line))
+  drawPanelHeading(commands, rightX + 16, 222, 'Operación global del día', 'Seguimientos')
+  commands.push(text(formatInteger(operation.scheduled), rightX + 16, 180, { font: 'F2', size: 24, fill: COLORS.navy }))
+  commands.push(text('acciones programadas', rightX + 55, 184, { size: 7.5, fill: COLORS.muted }))
   const operationItems = [
     ['Pendientes', operation.pending, COLORS.blue],
     ['Completadas', operation.completed, COLORS.green],
@@ -338,23 +350,10 @@ function createContentStream(report, logoDimensions) {
   ]
   operationItems.forEach(([label, value, accent], index) => {
     const x = rightX + 16 + index * 108
-    commands.push(rect(x, 274, 5, 5, accent))
-    commands.push(text(formatInteger(value), x + 10, 272, { font: 'F2', size: 10, fill: COLORS.ink }))
-    commands.push(text(label, x + 10, 260, { size: 6.5, fill: COLORS.muted }))
+    commands.push(rect(x, 149, 5, 5, accent))
+    commands.push(text(formatInteger(value), x + 10, 147, { font: 'F2', size: 10, fill: COLORS.ink }))
+    commands.push(text(label, x + 10, 138, { size: 6.5, fill: COLORS.muted }))
   })
-  commands.push(text('Corte operativo general; no se segmenta por ejecutivo.', rightX + 174, 340, { size: 6.2, fill: COLORS.muted }))
-
-  commands.push(rect(rightX, bodyY, rightWidth, 104, COLORS.white, COLORS.line))
-  drawPanelHeading(commands, rightX + 16, 222, 'Salud de cartera', 'Estado general')
-  const currentPercentage = Math.round(clamp(currentSubscribers / totalContacts, 0, 1) * 100)
-  commands.push(text(`${currentPercentage}%`, rightX + 16, 174, { font: 'F2', size: 25, fill: COLORS.green }))
-  commands.push(text('abonados actuales', rightX + 16, 158, { size: 7, fill: COLORS.muted }))
-  commands.push(line(rightX + 112, 151, rightX + 112, 204, COLORS.line))
-  commands.push(text('INTERACCIONES HUMANAS', rightX + 130, 193, { font: 'F2', size: 6.2, fill: COLORS.muted }))
-  commands.push(text(formatInteger(summary.humanInteractions), rightX + 130, 177, { font: 'F2', size: 12, fill: COLORS.ink }))
-  commands.push(text('SIN ASIGNAR', rightX + 242, 193, { font: 'F2', size: 6.2, fill: COLORS.muted }))
-  commands.push(text(formatInteger(summary.unassigned), rightX + 242, 177, { font: 'F2', size: 12, fill: COLORS.ink }))
-  commands.push(text(`Corte seleccionado · ${formatInteger(summary.overdueFollowUps)} seguimientos vencidos`, rightX + 130, 151, { size: 6.8, fill: COLORS.muted }))
 
   commands.push(line(36, 111, 806, 111, COLORS.line))
   commands.push(rect(36, 69, 770, 29, COLORS.lightBlue))

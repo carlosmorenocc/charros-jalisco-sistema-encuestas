@@ -150,8 +150,8 @@ export function validateUuid(value, field = 'id') {
 export function validateContact(input, { partial = false } = {}) {
   if (!isObject(input)) throw badRequest('El cuerpo del contacto debe ser un objeto.');
   const result = pickDefined({
-    firstName: cleanString(input.firstName, { required: !partial, max: 100, field: 'firstName' }),
-    lastName: cleanString(input.lastName, { required: !partial, max: 140, field: 'lastName' }),
+    firstName: cleanString(input.firstName, { required: !partial, max: 100, field: 'firstName' })?.toLocaleUpperCase('es-MX'),
+    lastName: cleanString(input.lastName, { required: !partial, max: 140, field: 'lastName' })?.toLocaleUpperCase('es-MX'),
     email: email(input.email),
     phone: phone(input.phone),
     municipality: cleanString(input.municipality, { max: 120, field: 'municipality' }),

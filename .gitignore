@@ -19,3 +19,4 @@ crm-import/**/*.xls
 crm-import/**/*.csv
 crm-api/coverage/
 crm-web/coverage/
+crm-web/public/crm-private-data.json

@@ -21,7 +21,8 @@ test('normaliza un contacto válido y exige un medio de contacto', () => {
     firstName: '  Ana María ', lastName: ' López ', email: 'ANA@EXAMPLE.COM',
     subscriberStatus: 'prospect', commercialStage: 'to_contact'
   });
-  assert.equal(contact.firstName, 'Ana María');
+  assert.equal(contact.firstName, 'ANA MARÍA');
+  assert.equal(contact.lastName, 'LÓPEZ');
   assert.equal(contact.email, 'ana@example.com');
   assert.throws(() => validateContact({
     firstName: 'Ana', lastName: 'López', subscriberStatus: 'prospect', commercialStage: 'to_contact'

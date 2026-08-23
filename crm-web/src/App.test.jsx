@@ -4,10 +4,10 @@ import { describe, expect, it, vi } from 'vitest'
 import App, { contactMatchesPatch, LoginScreen, revokeSessionSafely, updateContactWithVerification, verifyPersistedContactPatch } from './App'
 
 describe('CRM web en modo demostración', () => {
-  it('muestra el reporte y deja claro que los datos son sintéticos', async () => {
+  it('muestra el reporte sin la franja de modo demostración', async () => {
     render(<App />)
     expect(await screen.findByRole('heading', { name: 'Reporte Dirección' })).toBeInTheDocument()
-    expect(await screen.findByText(/Todos los nombres y resultados visibles son sintéticos/i)).toBeInTheDocument()
+    expect(screen.queryByText(/Modo demostración/i)).not.toBeInTheDocument()
     expect(await screen.findByRole('button', { name: 'Descargar PDF' })).toBeInTheDocument()
   })
 
@@ -110,7 +110,7 @@ describe('CRM web en modo demostración', () => {
     const persisted = { id: 'contact-1', firstName: 'Persona', lastName: 'Ejemplo', subscriberStatus: 'renewing', commercialStage: 'follow_up', email: patch.email, summaryNotes: patch.summaryNotes }
     const api = { updateContact: vi.fn().mockResolvedValue({ data: null }), contact: vi.fn().mockResolvedValue({ data: persisted }) }
 
-    await expect(updateContactWithVerification(api, 'contact-1', patch, 4)).resolves.toMatchObject({ id: 'contact-1', name: 'Persona Ejemplo', note: 'Confirmado' })
+    await expect(updateContactWithVerification(api, 'contact-1', patch, 4)).resolves.toMatchObject({ id: 'contact-1', name: 'PERSONA EJEMPLO', note: 'Confirmado' })
     expect(api.contact).toHaveBeenCalledWith('contact-1')
 
     const mismatchApi = { updateContact: vi.fn().mockResolvedValue({ data: null }), contact: vi.fn().mockResolvedValue({ data: { ...persisted, summaryNotes: 'Otro' } }) }
