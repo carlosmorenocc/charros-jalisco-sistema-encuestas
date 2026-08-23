@@ -2154,6 +2154,20 @@ export class PgCrmRepository {
     }
   }
 
+  async getOperationalSyncActor() {
+    const result = await this.pool.query(
+      `SELECT id,email,display_name,role FROM app_users
+       WHERE role='admin' AND active=true AND deleted_at IS NULL ORDER BY created_at`
+    );
+    if (result.rowCount !== 1) throw new Error(`EXACTLY_ONE_ACTIVE_ADMIN_REQUIRED:${result.rowCount}`);
+    return {
+      id: result.rows[0].id,
+      email: result.rows[0].email,
+      displayName: result.rows[0].display_name,
+      role: result.rows[0].role
+    };
+  }
+
   async listAuditEvents({ page, pageSize, actorId, entityType }) {
     const params = [];
     const where = [];
