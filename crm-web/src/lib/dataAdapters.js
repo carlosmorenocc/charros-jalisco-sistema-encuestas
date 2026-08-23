@@ -216,13 +216,20 @@ export function fromApiSale(sale) {
   const paymentStatus = paid <= 0 ? 'Pendiente' : paid < total ? 'Parcial' : 'Pagado'
   const commercialStatus = ({ draft: 'Borrador', reserved: 'Apartada', confirmed: 'Confirmada', cancelled: 'Cancelada', refunded: 'Reembolsada' })[sale.status] || sale.status || 'Sin definir'
   const product = String(sale.items?.[0]?.product || '').toUpperCase()
+  const rawZone = sale.items?.[0]?.zone || sale.items?.[0]?.zoneName || 'Sin definir'
+  const explicitTwoForOne = (sale.items || []).some((item) => String(item.product || '').toUpperCase().includes('2X1'))
+  const inferredLegacyTwoForOne = /LATERAL.*1.*3/i.test(rawZone)
+    && (sale.items || []).length === 1
+    && Math.abs(Number(sale.items?.[0]?.unitPrice || 0) - 3740) < 0.01
+  const promotion = explicitTwoForOne || inferredLegacyTwoForOne ? 'Promoción 2x1' : ''
   const movementKind = product.includes('RENOV') ? 'Renovación' : product.includes('ABONO') ? 'Nuevo' : '—'
   return {
     ...sale,
     date: sale.soldAt ? new Intl.DateTimeFormat('es-MX', { day: 'numeric', month: 'short', year: 'numeric' }).format(new Date(sale.soldAt)) : 'Sin fecha',
     contact: sale.contactName || 'Contacto',
     kind: sale.saleType === 'renewal' ? 'Renovación' : sale.saleType === 'new' ? 'Nuevo' : movementKind,
-    zone: sale.items?.[0]?.zone || sale.items?.[0]?.zoneName || 'Sin definir',
+    zone: promotion ? `${rawZone} · ${promotion}` : rawZone,
+    promotion,
     seats,
     total,
     paid,
