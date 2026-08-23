@@ -247,6 +247,18 @@ async function loadAllSales(api, filters = {}) {
   return { data: items, meta: { ...first.meta, total: items.length } }
 }
 
+async function loadAllTasks(api, filters = {}) {
+  const pageSize = 100
+  const first = await api.tasks({ ...filters, page: 1, pageSize })
+  const items = [...(Array.isArray(first.data) ? first.data : first.data?.items || [])]
+  const totalPages = Math.max(1, Number(first.meta?.totalPages || 1))
+  for (let page = 2; page <= totalPages; page += 1) {
+    const response = await api.tasks({ ...filters, page, pageSize })
+    items.push(...(Array.isArray(response.data) ? response.data : response.data?.items || []))
+  }
+  return { data: items, meta: { ...first.meta, total: items.length } }
+}
+
 function App() {
   const [activePage, setActivePage] = useState(() => window.location.hash.replace('#/', '') || 'dashboard')
   const [mobileOpen, setMobileOpen] = useState(false)
@@ -273,6 +285,7 @@ function App() {
   const [sessionDeadline, setSessionDeadline] = useState('')
   const [authRevision, setAuthRevision] = useState(0)
   const [drawer, setDrawer] = useState(null)
+  const [saleClosure, setSaleClosure] = useState(null)
   const [toast, setToast] = useState('')
   const latestContactRequest = useRef(0)
   const latestDashboardRequest = useRef(0)
@@ -298,6 +311,7 @@ function App() {
     setConfigurationFixtures({})
     setMembershipPricingCatalog(null)
     setDrawer(null)
+    setSaleClosure(null)
     setToast('')
     setUserOpen(false)
     setMoreOpen(false)
@@ -384,8 +398,9 @@ function App() {
           : Promise.resolve({ data: [] })
         const today = localDayBounds()
         const now = new Date().toISOString()
-        const [summaryResponse, todayOpenResponse, todayCompletedResponse, overdueResponse, salesResponse, executiveResponse, unassignedResponse, interactionResponse, pricingCatalogResponse] = await Promise.all([
+        const [summaryResponse, allOpenResponse, todayOpenResponse, todayCompletedResponse, overdueResponse, salesResponse, executiveResponse, unassignedResponse, interactionResponse, pricingCatalogResponse] = await Promise.all([
           api.dashboard({ season: 'LMP-2026-27', ...periodBounds('month') }),
+          loadAllTasks(api, { taskState: 'open', sort: 'dueAt', order: 'asc' }),
           api.tasks({ ...today, taskState: 'open', page: 1, pageSize: 100 }),
           api.tasks({ ...today, taskState: 'completed', page: 1, pageSize: 100 }),
           api.tasks({ taskState: 'open', to: now, sort: 'dueAt', order: 'desc', page: 1, pageSize: 100 }),
@@ -397,6 +412,7 @@ function App() {
         ])
         if (!active) return
         const { data: summaryData } = summaryResponse
+        const allOpenData = allOpenResponse.data
         const todayOpenData = Array.isArray(todayOpenResponse.data) ? todayOpenResponse.data : todayOpenResponse.data?.items || []
         const todayCompletedData = Array.isArray(todayCompletedResponse.data) ? todayCompletedResponse.data : todayCompletedResponse.data?.items || []
         const overdueTaskData = Array.isArray(overdueResponse.data) ? overdueResponse.data : overdueResponse.data?.items || []
@@ -405,7 +421,7 @@ function App() {
         setUser(currentUser)
         setDashboardSummary(summaryData)
         setMembershipPricingCatalog(normalizeMembershipPricingCatalog(pricingCatalogResponse))
-        const combinedTasks = [...todayOpenData, ...todayCompletedData, ...overdueTaskData]
+        const combinedTasks = [...allOpenData, ...todayCompletedData, ...overdueTaskData]
         setTasks([...new Map(combinedTasks.map((item) => [item.id, item])).values()].map(fromApiTask))
         setFollowupCounts({
           scheduled: Number(todayOpenResponse.meta?.total || 0) + Number(todayCompletedResponse.meta?.total || 0),
@@ -596,6 +612,10 @@ function App() {
     } else {
       const response = await api.createManualRegistration(payload, idempotencyKey)
       result = response.data
+      if (result?.contact) {
+        const normalizedContact = fromApiContact(result.contact)
+        setContacts((current) => [normalizedContact, ...current.filter((item) => item.id !== normalizedContact.id)])
+      }
       if (result?.initialInteraction) {
         const normalized = fromApiInteraction({
           ...result.initialInteraction,
@@ -623,7 +643,7 @@ function App() {
       const dueTime = new Date(result.nextTask.dueAt).getTime()
       const dueToday = dueTime >= new Date(today.from).getTime() && dueTime <= new Date(today.to).getTime()
       const overdue = dueTime < Date.now()
-      if (dueToday || overdue) setTasks((current) => [normalized, ...current.filter((item) => item.id !== normalized.id)])
+      setTasks((current) => [normalized, ...current.filter((item) => item.id !== normalized.id)])
       setFollowupCounts((current) => current ? {
         ...current,
         scheduled: current.scheduled + (dueToday ? 1 : 0),
@@ -652,7 +672,9 @@ function App() {
     await api.createSale(payload)
     const refreshed = await loadAllSales(api, { season: 'LMP-2026-27' })
     setSales(refreshed.data.map(fromApiSale))
+    setContactRevision((current) => current + 1)
     setDashboardRevision((current) => current + 1)
+    setSaleClosure(null)
     setToast('La venta y su cobro inicial quedaron registrados.')
   }
 
@@ -775,7 +797,7 @@ function App() {
       const dueTime = new Date(created.dueAt).getTime()
       const dueToday = dueTime >= new Date(today.from).getTime() && dueTime <= new Date(today.to).getTime()
       const overdue = dueTime < Date.now()
-      if (dueToday || overdue) setTasks((current) => [normalizedTask, ...current])
+      setTasks((current) => [normalizedTask, ...current.filter((item) => item.id !== normalizedTask.id)])
       setFollowupCounts((current) => current ? {
         ...current,
         scheduled: current.scheduled + (dueToday ? 1 : 0),
@@ -938,6 +960,13 @@ function App() {
     onCompleteTask: completeTask,
     onAddPayment: addSalePayment,
     onCreateSale: createSale,
+    saleClosure,
+    onClearSaleClosure: () => setSaleClosure(null),
+    onRequestSaleClosure: (contact, stage) => {
+      setDrawer(null)
+      setSaleClosure({ contact, stage })
+      navigate('sales')
+    },
     onNavigate: navigate,
   }
 
@@ -1021,6 +1050,7 @@ function App() {
           onRestore={restoreContact}
           onCreateInteraction={createInteraction}
           onCreateTask={createTask}
+          onRequestSaleClosure={context.onRequestSaleClosure}
           onSaveMembership={saveMembership}
           pricingCatalog={membershipPricingCatalog}
           onQuoteMembershipPricing={quoteMembershipPricing}
@@ -1382,7 +1412,7 @@ function ContactsPage({ kind, contacts, contactRevision, user, availableExecutiv
   }, [kind, debouncedSearch, status, stage, owner, channel, from, to, dateField, pageSize, showDeleted, sort, order])
 
   const serverQuery = useMemo(() => ({
-    segment: kind,
+    segment: isPortfolio ? undefined : kind,
     page,
     pageSize,
     search: debouncedSearch || undefined,
@@ -1397,7 +1427,7 @@ function ContactsPage({ kind, contacts, contactRevision, user, availableExecutiv
     deletedOnly: showDeleted ? true : undefined,
     sort,
     order,
-  }), [kind, page, pageSize, debouncedSearch, status, stage, owner, channel, from, to, dateField, showDeleted, sort, order])
+  }), [isPortfolio, kind, page, pageSize, debouncedSearch, status, stage, owner, channel, from, to, dateField, showDeleted, sort, order])
 
   useEffect(() => {
     if (isDemo) return undefined
@@ -1411,7 +1441,7 @@ function ContactsPage({ kind, contacts, contactRevision, user, availableExecutiv
     return () => { active = false }
   }, [contactRevision, isDemo, onLoadContacts, pageSize, reloadToken, serverQuery])
 
-  const source = contacts.filter((contact) => contact.kind === kind && Boolean(contact.deletedAt) === showDeleted)
+  const source = contacts.filter((contact) => (isPortfolio || contact.kind === kind) && Boolean(contact.deletedAt) === showDeleted)
   const filtered = isDemo ? source.filter((contact) => {
     const query = search.toLowerCase()
     const ownerName = availableExecutives.find((item) => item.id === owner)?.displayName
@@ -1535,10 +1565,10 @@ function FollowupPage({ tasks, interactions, unassignedContacts, unassignedTotal
   const [tab, setTab] = useState('tasks')
   const visibleTasks = tab === 'overdue' ? tasks.filter((task) => task.status === 'Vencida') : tasks
   const unassigned = unassignedContacts.filter((contact) => !contact.deletedAt)
-  const completedCount = followupCounts?.completed ?? tasks.filter((task) => task.status === 'Completada').length
-  const overdueCount = followupCounts?.overdue ?? tasks.filter((task) => task.status === 'Vencida').length
-  const pendingCount = followupCounts?.pending ?? tasks.filter((task) => task.status === 'Pendiente' || task.status === 'En curso').length
-  const scheduledCount = followupCounts?.scheduled ?? tasks.length
+  const completedCount = tasks.filter((task) => task.status === 'Completada').length
+  const overdueCount = tasks.filter((task) => task.status === 'Vencida').length
+  const pendingCount = tasks.filter((task) => task.status === 'Pendiente' || task.status === 'En curso' || task.status === 'Vencida').length
+  const scheduledCount = tasks.length
   const exactUnassignedCount = unassignedTotal || unassigned.length
   return (
     <div className="page-wrap">
@@ -1598,7 +1628,7 @@ function InteractionLog({ interactions }) {
   )
 }
 
-function SalesPage({ sales, contacts, isDemo, user, availableExecutives, onAddPayment, onCreateSale }) {
+function SalesPage({ sales, contacts, isDemo, user, availableExecutives, onAddPayment, onCreateSale, onCreate, saleClosure, onClearSaleClosure }) {
   const [search, setSearch] = useState('')
   const [payment, setPayment] = useState('Todos los pagos')
   const [owner, setOwner] = useState('Todos los ejecutivos')
@@ -1612,17 +1642,33 @@ function SalesPage({ sales, contacts, isDemo, user, availableExecutives, onAddPa
   const [saleOpen, setSaleOpen] = useState(false)
   const [saleError, setSaleError] = useState('')
   const [savingSale, setSavingSale] = useState(false)
-  const [saleDraft, setSaleDraft] = useState({ contactId: '', executiveId: '', kind: 'new', zone: '', quantity: 1, unitPrice: '', soldAt: new Date().toISOString().slice(0, 10), paymentAmount: '', paymentMethod: 'Transferencia', paymentReference: '', notes: '' })
+  const [contactSearch, setContactSearch] = useState('')
+  const [saleDraft, setSaleDraft] = useState({ externalOrderNumber: '', contactId: '', executiveId: '', kind: 'new', closeStage: 'reserved', zone: '', quantity: 1, unitPrice: '', soldAt: new Date().toISOString().slice(0, 10), paymentAmount: '', paymentMethod: 'Transferencia', paymentReference: '', notes: '' })
   const contactOptions = [...new Map([
     ...contacts.map((contact) => [contact.id, { id: contact.id, name: contact.name }]),
     ...sales.filter((sale) => sale.contactId).map((sale) => [sale.contactId, { id: sale.contactId, name: sale.contact }]),
   ]).values()].sort((a, b) => a.name.localeCompare(b.name, 'es'))
+  const filteredContactOptions = contactOptions.filter((contact) => !contactSearch.trim() || contact.name.toLowerCase().includes(contactSearch.trim().toLowerCase()))
+  useEffect(() => {
+    if (!saleClosure?.contact?.id) return
+    setSaleDraft((current) => ({ ...current,
+      contactId: saleClosure.contact.id,
+      executiveId: saleClosure.contact.executiveId || current.executiveId,
+      kind: saleClosure.contact.type === 'Por renovar' || saleClosure.contact.type === 'Abonado actual' ? 'renewal' : 'new',
+      closeStage: saleClosure.stage === 'Ganado' ? 'won' : 'reserved',
+      zone: saleClosure.contact.zone === 'Sin definir' ? '' : saleClosure.contact.zone || '',
+      quantity: Number(saleClosure.contact.seats || 1),
+    }))
+    setContactSearch(saleClosure.contact.name || '')
+    setSaleError('')
+    setSaleOpen(true)
+  }, [saleClosure])
   const owners = [...new Set(sales.map((sale) => sale.owner).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es'))
   const kinds = [...new Set(sales.map((sale) => sale.kind).filter((value) => value && value !== '—'))].sort((a, b) => a.localeCompare(b, 'es'))
   const filteredSales = sales.filter((sale) => {
     const query = search.trim().toLowerCase()
     const occurredAt = sale.occurredAt ? new Date(sale.occurredAt).getTime() : NaN
-    return (!query || `${sale.id} ${sale.contact} ${sale.zone}`.toLowerCase().includes(query))
+    return (!query || `${sale.externalOrderNumber || ''} ${sale.id} ${sale.contact} ${sale.zone}`.toLowerCase().includes(query))
       && (payment === 'Todos los pagos' || sale.status === payment)
       && (owner === 'Todos los ejecutivos' || sale.owner === owner)
       && (kind === 'Todos los movimientos' || sale.kind === kind)
@@ -1653,13 +1699,13 @@ function SalesPage({ sales, contacts, isDemo, user, availableExecutives, onAddPa
     event.preventDefault()
     const quantity = Number(saleDraft.quantity); const unitPrice = Number(saleDraft.unitPrice); const paymentAmount = Number(saleDraft.paymentAmount || 0)
     const totalAmount = quantity * unitPrice
-    if (!saleDraft.contactId || !saleDraft.executiveId || !Number.isInteger(quantity) || quantity < 1 || !Number.isFinite(unitPrice) || unitPrice < 0 || paymentAmount < 0 || paymentAmount > totalAmount) {
-      setSaleError('Completa titular, ejecutivo, cantidad y precio; el cobro inicial no puede superar el total.')
+    if (!saleDraft.externalOrderNumber.trim() || !saleDraft.contactId || !saleDraft.executiveId || !Number.isInteger(quantity) || quantity < 1 || !Number.isFinite(unitPrice) || unitPrice < 0 || paymentAmount < 0 || paymentAmount > totalAmount) {
+      setSaleError('Completa número de orden, titular, ejecutivo, cantidad y precio; el cobro inicial no puede superar el total.')
       return
     }
     setSavingSale(true); setSaleError('')
     try {
-      await onCreateSale({ contactId: saleDraft.contactId, executiveId: saleDraft.executiveId, seasonCode: 'LMP-2026-27', status: 'confirmed', soldAt: new Date(`${saleDraft.soldAt}T12:00:00`).toISOString(), currency: 'MXN', notes: saleDraft.notes || undefined, items: [{ product: saleDraft.kind === 'renewal' ? 'RENOVACIÓN DE ABONO' : 'ABONO NUEVO', zone: saleDraft.zone || undefined, quantity, unitPrice }], payments: paymentAmount > 0 ? [{ amount: paymentAmount, method: saleDraft.paymentMethod, paidAt: new Date(`${saleDraft.soldAt}T12:00:00`).toISOString(), reference: saleDraft.paymentReference || undefined }] : [] })
+      await onCreateSale({ externalOrderNumber: saleDraft.externalOrderNumber.trim(), saleType: saleDraft.kind, closeStage: saleDraft.closeStage, contactId: saleDraft.contactId, executiveId: saleDraft.executiveId, seasonCode: 'LMP-2026-27', status: saleDraft.closeStage === 'won' ? 'confirmed' : 'reserved', soldAt: new Date(`${saleDraft.soldAt}T12:00:00`).toISOString(), currency: 'MXN', notes: saleDraft.notes || undefined, items: [{ product: saleDraft.kind === 'renewal' ? 'RENOVACIÓN DE ABONO' : 'ABONO NUEVO', zone: saleDraft.zone || undefined, quantity, unitPrice }], payments: paymentAmount > 0 ? [{ amount: paymentAmount, method: saleDraft.paymentMethod, paidAt: new Date(`${saleDraft.soldAt}T12:00:00`).toISOString(), reference: saleDraft.paymentReference || undefined }] : [] })
       setSaleOpen(false)
     } catch (error) { setSaleError(error.message || 'No fue posible crear la venta.') }
     finally { setSavingSale(false) }
@@ -1668,9 +1714,14 @@ function SalesPage({ sales, contacts, isDemo, user, availableExecutives, onAddPa
     <div className="page-wrap">
       <PageHeader eyebrow="Control comercial" title="Ventas" description="Movimientos, pagos y abonos vinculados al contacto responsable." actions={hasPermission(user, PERMISSIONS.SALES_WRITE) && <button type="button" className="button button--primary" onClick={() => { setSaleOpen(true); setSaleError('') }}>Nueva venta</button>} />
       <section className="sales-metrics"><div><span>Venta en corte cargado</span><strong>{currency.format(total)}</strong><small>Temporada LMP 2026–2027</small></div><div><span>Cobrado en el corte</span><strong>{currency.format(paid)}</strong><small>{collectedPercentage}% del total cargado</small></div><div><span>Saldo en el corte</span><strong>{currency.format(Math.max(0, total - paid))}</strong><small>{partialCount} movimientos parciales</small></div><div><span>Abonos asociados</span><strong>{seats}</strong><small>{filteredSales.length} movimientos cargados</small></div></section>
-      <section className="panel list-panel"><div className="toolbar"><label className="search-field"><span className="sr-only">Buscar venta</span><Icon name="search" size={18}/><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar folio, contacto o zona…"/></label><div className="toolbar-filters"><select aria-label="Estatus de pago" value={payment} onChange={(event) => setPayment(event.target.value)}><option>Todos los pagos</option><option>Pendiente</option><option>Parcial</option><option>Pagado</option></select><select aria-label="Ejecutivo" value={owner} onChange={(event) => setOwner(event.target.value)}><option>Todos los ejecutivos</option>{owners.map((value) => <option key={value}>{value}</option>)}</select><select aria-label="Tipo de movimiento" value={kind} onChange={(event) => setKind(event.target.value)}><option>Todos los movimientos</option>{kinds.map((value) => <option key={value}>{value}</option>)}</select><label className="compact-date"><span>Desde</span><input type="date" value={from} onChange={(event) => setFrom(event.target.value)}/></label><label className="compact-date"><span>Hasta</span><input type="date" value={to} onChange={(event) => setTo(event.target.value)}/></label></div></div><div className="table-scroll"><table className="data-table"><thead><tr><th>Folio</th><th>Fecha</th><th>Contacto</th><th>Zona</th><th>Abonos</th><th>Total</th><th>Cobrado</th><th>Ejecutivo</th><th>Pago</th><th>Estado comercial</th>{hasPermission(user, PERMISSIONS.SALES_WRITE) && <th>Acción</th>}</tr></thead><tbody>{filteredSales.map((sale) => <tr key={sale.id}><td><strong className="link-value">{sale.id}</strong></td><td>{sale.date}</td><td><strong>{sale.contact}</strong></td><td>{sale.zone}</td><td>{sale.seats}</td><td><strong>{currency.format(sale.total)}</strong></td><td>{currency.format(sale.paid)}</td><td>{sale.owner}</td><td><StatusPill>{sale.status}</StatusPill></td><td>{sale.commercialStatus || '—'}</td>{hasPermission(user, PERMISSIONS.SALES_WRITE) && <td>{sale.paid < sale.total ? <button type="button" className="text-button" onClick={() => { setPaymentSale(sale); setPaymentDraft({ amount: '', method: 'Transferencia', paidAt: new Date().toISOString().slice(0, 10), reference: '' }); setPaymentError('') }}>Registrar cobro</button> : 'Liquidado'}</td>}</tr>)}</tbody></table>{!filteredSales.length && <EmptyState title="Sin movimientos" body="No hay ventas que coincidan con los filtros seleccionados." />}</div><div className="table-footer"><span>{filteredSales.length} de {sales.length} movimientos cargados</span><small>Los indicadores y la tabla responden a los filtros. Los pagos conservan historial de auditoría.</small></div></section>
+      <section className="panel list-panel"><div className="toolbar"><label className="search-field"><span className="sr-only">Buscar venta</span><Icon name="search" size={18}/><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar orden, contacto o zona…"/></label><div className="toolbar-filters"><select aria-label="Estatus de pago" value={payment} onChange={(event) => setPayment(event.target.value)}><option>Todos los pagos</option><option>Pendiente</option><option>Parcial</option><option>Pagado</option></select><select aria-label="Ejecutivo" value={owner} onChange={(event) => setOwner(event.target.value)}><option>Todos los ejecutivos</option>{owners.map((value) => <option key={value}>{value}</option>)}</select><select aria-label="Tipo de movimiento" value={kind} onChange={(event) => setKind(event.target.value)}><option>Todos los movimientos</option>{kinds.map((value) => <option key={value}>{value}</option>)}</select><label className="compact-date"><span>Desde</span><input type="date" value={from} onChange={(event) => setFrom(event.target.value)}/></label><label className="compact-date"><span>Hasta</span><input type="date" value={to} onChange={(event) => setTo(event.target.value)}/></label></div></div><div className="table-scroll"><table className="data-table"><thead><tr><th>Número de orden</th><th>Fecha</th><th>Contacto</th><th>Zona</th><th>Abonos</th><th>Total</th><th>Cobrado</th><th>Ejecutivo</th><th>Pago</th><th>Estado comercial</th>{hasPermission(user, PERMISSIONS.SALES_WRITE) && <th>Acción</th>}</tr></thead><tbody>{filteredSales.map((sale) => <tr key={sale.id}><td><strong className="link-value">{sale.externalOrderNumber || sale.id}</strong></td><td>{sale.date}</td><td><strong>{sale.contact}</strong></td><td>{sale.zone}</td><td>{sale.seats}</td><td><strong>{currency.format(sale.total)}</strong></td><td>{currency.format(sale.paid)}</td><td>{sale.owner}</td><td><StatusPill>{sale.status}</StatusPill></td><td>{sale.commercialStatus || '—'}</td>{hasPermission(user, PERMISSIONS.SALES_WRITE) && <td>{sale.paid < sale.total ? <button type="button" className="text-button" onClick={() => { setPaymentSale(sale); setPaymentDraft({ amount: '', method: 'Transferencia', paidAt: new Date().toISOString().slice(0, 10), reference: '' }); setPaymentError('') }}>Registrar cobro</button> : 'Liquidado'}</td>}</tr>)}</tbody></table>{!filteredSales.length && <EmptyState title="Sin movimientos" body="No hay ventas que coincidan con los filtros seleccionados." />}</div><div className="table-footer"><span>{filteredSales.length} de {sales.length} movimientos cargados</span><small>Los indicadores y la tabla responden a los filtros. Los pagos conservan historial de auditoría.</small></div></section>
       {paymentSale && <div className="drawer-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !savingPayment) setPaymentSale(null) }}><aside className="drawer" role="dialog" aria-modal="true" aria-labelledby="payment-title"><header className="drawer-header"><div><span className="eyebrow">Control de cobranza</span><h2 id="payment-title">Registrar cobro</h2><p>{paymentSale.contact} · Saldo {currency.format(Math.max(0, paymentSale.total - paymentSale.paid))}</p></div><button type="button" className="icon-button" aria-label="Cerrar" onClick={() => setPaymentSale(null)}>×</button></header><form onSubmit={submitPayment}><div className="drawer-body"><div className="form-grid"><label className="field"><span>Importe recibido *</span><input autoFocus type="number" min="0.01" step="0.01" value={paymentDraft.amount} onChange={(event) => setPaymentDraft((current) => ({ ...current, amount: event.target.value }))}/></label><label className="field"><span>Método *</span><select value={paymentDraft.method} onChange={(event) => setPaymentDraft((current) => ({ ...current, method: event.target.value }))}><option>Transferencia</option><option>Tarjeta</option><option>Efectivo</option><option>Depósito</option><option>Otro</option></select></label><label className="field"><span>Fecha *</span><input type="date" value={paymentDraft.paidAt} onChange={(event) => setPaymentDraft((current) => ({ ...current, paidAt: event.target.value }))}/></label><label className="field"><span>Referencia</span><input maxLength="160" value={paymentDraft.reference} onChange={(event) => setPaymentDraft((current) => ({ ...current, reference: event.target.value }))}/></label></div>{paymentError && <p className="manual-submit-error" role="alert">{paymentError}</p>}</div><footer className="drawer-footer"><button type="button" className="button button--secondary" onClick={() => setPaymentSale(null)}>Cancelar</button><button type="submit" className="button button--primary" disabled={savingPayment}>{savingPayment ? 'Guardando…' : 'Guardar cobro'}</button></footer></form></aside></div>}
-      {saleOpen && <div className="drawer-backdrop" role="presentation"><aside className="drawer drawer--manual" role="dialog" aria-modal="true" aria-labelledby="sale-title"><header className="drawer-header"><div><span className="eyebrow">Alta guiada</span><h2 id="sale-title">Nueva venta</h2><p>La orden, sus abonos y el cobro inicial quedarán vinculados al titular.</p></div><button type="button" className="icon-button" aria-label="Cerrar" onClick={() => setSaleOpen(false)}>×</button></header><form onSubmit={submitSale}><div className="drawer-body"><div className="form-grid"><label className="field field--full"><span>Titular *</span><select autoFocus value={saleDraft.contactId} onChange={(event) => setSaleDraft((current) => ({ ...current, contactId: event.target.value }))}><option value="">Selecciona un abonado</option>{contactOptions.map((contact) => <option key={contact.id} value={contact.id}>{contact.name}</option>)}</select><small>Si es una persona nueva, créala primero desde Cartera o Prospectos; aparecerá aquí inmediatamente.</small></label><label className="field"><span>Tipo *</span><select value={saleDraft.kind} onChange={(event) => setSaleDraft((current) => ({ ...current, kind: event.target.value }))}><option value="new">Abono nuevo</option><option value="renewal">Renovación</option></select></label><label className="field"><span>Ejecutivo *</span><select value={saleDraft.executiveId} onChange={(event) => setSaleDraft((current) => ({ ...current, executiveId: event.target.value }))}><option value="">Selecciona</option>{availableExecutives.map((item) => <option key={item.id} value={item.id}>{item.displayName}</option>)}</select></label><label className="field"><span>Fecha *</span><input type="date" value={saleDraft.soldAt} onChange={(event) => setSaleDraft((current) => ({ ...current, soldAt: event.target.value }))}/></label><label className="field"><span>Zona</span><input value={saleDraft.zone} onChange={(event) => setSaleDraft((current) => ({ ...current, zone: event.target.value }))}/></label><label className="field"><span>Cantidad de abonos *</span><input type="number" min="1" max="20" value={saleDraft.quantity} onChange={(event) => setSaleDraft((current) => ({ ...current, quantity: event.target.value }))}/></label><label className="field"><span>Precio unitario *</span><input type="number" min="0" step="0.01" value={saleDraft.unitPrice} onChange={(event) => setSaleDraft((current) => ({ ...current, unitPrice: event.target.value }))}/></label><label className="field"><span>Cobro inicial</span><input type="number" min="0" step="0.01" value={saleDraft.paymentAmount} onChange={(event) => setSaleDraft((current) => ({ ...current, paymentAmount: event.target.value }))}/><small>Puede ser $0, apartado o liquidación.</small></label><label className="field"><span>Método</span><select value={saleDraft.paymentMethod} onChange={(event) => setSaleDraft((current) => ({ ...current, paymentMethod: event.target.value }))}><option>Transferencia</option><option>Tarjeta</option><option>Efectivo</option><option>Depósito</option><option>Otro</option></select></label><label className="field"><span>Referencia</span><input value={saleDraft.paymentReference} onChange={(event) => setSaleDraft((current) => ({ ...current, paymentReference: event.target.value }))}/></label><label className="field field--full"><span>Notas</span><textarea rows="3" value={saleDraft.notes} onChange={(event) => setSaleDraft((current) => ({ ...current, notes: event.target.value }))}/></label></div>{saleError && <p className="manual-submit-error" role="alert">{saleError}</p>}</div><footer className="drawer-footer"><button type="button" className="button button--secondary" onClick={() => setSaleOpen(false)}>Cancelar</button><button type="submit" className="button button--primary" disabled={savingSale}>{savingSale ? 'Guardando…' : 'Crear venta'}</button></footer></form></aside></div>}
+      {saleOpen && <div className="drawer-backdrop" role="presentation"><aside className="drawer drawer--manual" role="dialog" aria-modal="true" aria-labelledby="sale-title"><header className="drawer-header"><div><span className="eyebrow">Alta guiada</span><h2 id="sale-title">Nueva venta</h2><p>La orden, sus abonos y el cobro inicial quedarán vinculados al titular.</p></div><button type="button" className="icon-button" aria-label="Cerrar" onClick={() => { setSaleOpen(false); onClearSaleClosure() }}>×</button></header><form onSubmit={submitSale}><div className="drawer-body"><div className="form-grid">
+        <label className="field"><span>Número de orden *</span><input autoFocus required maxLength="80" value={saleDraft.externalOrderNumber} onChange={(event) => setSaleDraft((current) => ({ ...current, externalOrderNumber: event.target.value }))} placeholder="Ej. 26000123"/><small>Identificador único de la venta.</small></label>
+        <label className="field"><span>Cierre *</span><select value={saleDraft.closeStage} onChange={(event) => setSaleDraft((current) => ({ ...current, closeStage: event.target.value }))}><option value="reserved">Apartado</option><option value="won">Ganado</option></select></label>
+        <label className="field field--full"><span>Buscar titular</span><input value={contactSearch} onChange={(event) => setContactSearch(event.target.value)} placeholder="Escribe nombre o apellido…"/><small>Filtra el acervo completo de contactos, incluidos prospectos.</small></label>
+        <label className="field field--full"><span>Titular *</span><select value={saleDraft.contactId} onChange={(event) => setSaleDraft((current) => ({ ...current, contactId: event.target.value }))}><option value="">Selecciona una persona</option>{filteredContactOptions.map((contact) => <option key={contact.id} value={contact.id}>{contact.name}</option>)}</select><small>¿No existe? <button type="button" className="text-button" onClick={() => { setSaleOpen(false); onClearSaleClosure(); onCreate('portfolio') }}>Crear contacto nuevo</button></small></label>
+        <label className="field"><span>Tipo *</span><select value={saleDraft.kind} onChange={(event) => setSaleDraft((current) => ({ ...current, kind: event.target.value }))}><option value="new">Abono nuevo</option><option value="renewal">Renovación</option></select></label><label className="field"><span>Ejecutivo *</span><select value={saleDraft.executiveId} onChange={(event) => setSaleDraft((current) => ({ ...current, executiveId: event.target.value }))}><option value="">Selecciona</option>{availableExecutives.map((item) => <option key={item.id} value={item.id}>{item.displayName}</option>)}</select></label><label className="field"><span>Fecha *</span><input type="date" value={saleDraft.soldAt} onChange={(event) => setSaleDraft((current) => ({ ...current, soldAt: event.target.value }))}/></label><label className="field"><span>Zona</span><input value={saleDraft.zone} onChange={(event) => setSaleDraft((current) => ({ ...current, zone: event.target.value }))}/></label><label className="field"><span>Cantidad de abonos *</span><input type="number" min="1" max="20" value={saleDraft.quantity} onChange={(event) => setSaleDraft((current) => ({ ...current, quantity: event.target.value }))}/></label><label className="field"><span>Precio unitario *</span><input type="number" min="0" step="0.01" value={saleDraft.unitPrice} onChange={(event) => setSaleDraft((current) => ({ ...current, unitPrice: event.target.value }))}/></label><label className="field"><span>Cobro inicial</span><input type="number" min="0" step="0.01" value={saleDraft.paymentAmount} onChange={(event) => setSaleDraft((current) => ({ ...current, paymentAmount: event.target.value }))}/><small>Puede ser $0, apartado o liquidación. Saldo: {currency.format(Math.max(0, Number(saleDraft.quantity || 0) * Number(saleDraft.unitPrice || 0) - Number(saleDraft.paymentAmount || 0)))}</small></label><label className="field"><span>Método</span><select value={saleDraft.paymentMethod} onChange={(event) => setSaleDraft((current) => ({ ...current, paymentMethod: event.target.value }))}><option>Transferencia</option><option>Tarjeta</option><option>Efectivo</option><option>Depósito</option><option>Otro</option></select></label><label className="field"><span>Referencia del cobro</span><input value={saleDraft.paymentReference} onChange={(event) => setSaleDraft((current) => ({ ...current, paymentReference: event.target.value }))}/></label><label className="field field--full"><span>Notas</span><textarea rows="3" value={saleDraft.notes} onChange={(event) => setSaleDraft((current) => ({ ...current, notes: event.target.value }))}/></label></div>{saleError && <p className="manual-submit-error" role="alert">{saleError}</p>}</div><footer className="drawer-footer"><button type="button" className="button button--secondary" onClick={() => { setSaleOpen(false); onClearSaleClosure() }}>Cancelar</button><button type="submit" className="button button--primary" disabled={savingSale}>{savingSale ? 'Guardando…' : saleDraft.closeStage === 'won' ? 'Registrar venta ganada' : 'Registrar apartado'}</button></footer></form></aside></div>}
     </div>
   )
 }
@@ -1697,7 +1748,7 @@ function ConfigurationPanel({ content, config, isDemo }) {
   return <div className="configuration-grid"><section className="panel config-list"><div className="panel-heading"><div><span className="panel-kicker">{isDemo ? 'VISTA PREVIA' : 'FASE POSTERIOR'}</span><h2>{isDemo ? 'Elementos ilustrativos' : 'Sin función operativa en esta entrega'}</h2></div></div>{content.map(([name, detail, status]) => <button type="button" disabled key={name} aria-label={`${name}: función no disponible en esta entrega`}><span className="config-icon"><Icon name={config.icon}/></span><span><strong>{name}</strong><small>{detail}</small></span><StatusPill>{status}</StatusPill></button>)}{!content.length && <EmptyState title="Módulo pendiente" body="Esta primera entrega no consulta ni modifica datos para esta sección." />}</section><aside className="panel config-help"><span className="summary-icon summary-icon--blue"><Icon name={config.icon}/></span><h2>Alcance futuro</h2><p>Esta es únicamente una propuesta visual. Antes de activarla se deberán definir sus reglas, endpoints, permisos y eventos de auditoría.</p><ul><li>Sin acciones activas en esta versión</li><li>Sin almacenamiento local en el navegador</li><li>Implementación sujeta a aprobación</li></ul></aside></div>
 }
 
-function ContactDrawer({ drawer, user, onClose, onSave, onDelete, onRestore, onCreateInteraction, onCreateTask, onSaveMembership, pricingCatalog, onQuoteMembershipPricing, executiveOptions = [] }) {
+function ContactDrawer({ drawer, user, onClose, onSave, onDelete, onRestore, onCreateInteraction, onCreateTask, onRequestSaleClosure, onSaveMembership, pricingCatalog, onQuoteMembershipPricing, executiveOptions = [] }) {
   const existing = drawer.contact || {}
   const membership = drawer.membership || currentSeasonMembership(drawer.memberships || [])
   const [confirmDelete, setConfirmDelete] = useState(false)
@@ -1773,6 +1824,15 @@ function ContactDrawer({ drawer, user, onClose, onSave, onDelete, onRestore, onC
     }
     setContactMethodError('')
     const changedFields = Object.keys(form).filter((field) => form[field] !== initialForm[field])
+    if (editing && changedFields.includes('stage') && ['Apartado', 'Ganado'].includes(form.stage)) {
+      const remainingChanges = changedFields.filter((field) => field !== 'stage')
+      if (remainingChanges.length) {
+        setContactMethodError('Guarda primero los demás cambios; después selecciona Apartado o Ganado para completar la venta.')
+        return
+      }
+      onRequestSaleClosure(existing, form.stage)
+      return
+    }
     setSavingContact(true)
     try {
       await onSave({ ...form, changedFields })

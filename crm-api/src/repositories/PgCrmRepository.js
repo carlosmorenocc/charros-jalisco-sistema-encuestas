@@ -192,6 +192,8 @@ function membershipUnitRow(row) {
 function saleRow(row) {
   return {
     id: row.id,
+    externalOrderNumber: row.external_order_number,
+    saleType: row.sale_type,
     contactId: row.contact_id,
     contactName: row.contact_name,
     executiveId: row.executive_id,
@@ -749,9 +751,9 @@ export class PgCrmRepository {
            AND ($${toParameter}::timestamptz IS NULL OR cm.sent_at <= $${toParameter})
        ), sales_metrics AS (
          SELECT
-           count(*) FILTER (WHERE s.status = 'confirmed')::integer AS confirmed_sales,
-           COALESCE(sum(s.total_amount) FILTER (WHERE s.status = 'confirmed'), 0)::numeric AS sales_amount,
-           COALESCE(sum(COALESCE(p.paid_amount,0)) FILTER (WHERE s.status = 'confirmed'), 0)::numeric AS collected_amount
+           count(*) FILTER (WHERE s.status IN ('confirmed','reserved'))::integer AS confirmed_sales,
+           COALESCE(sum(s.total_amount) FILTER (WHERE s.status IN ('confirmed','reserved')), 0)::numeric AS sales_amount,
+           COALESCE(sum(COALESCE(p.paid_amount,0)) FILTER (WHERE s.status IN ('confirmed','reserved')), 0)::numeric AS collected_amount
          FROM sales s JOIN scoped_contacts c ON c.id = s.contact_id
          LEFT JOIN LATERAL (
            SELECT sum(p.amount + COALESCE(a.amount,0)) AS paid_amount
@@ -1852,18 +1854,29 @@ export class PgCrmRepository {
 
   async createSale(data, actor, context) {
     return withTransaction(this.pool, async (client) => {
+      await client.query('SELECT id FROM contacts WHERE id=$1 AND deleted_at IS NULL FOR UPDATE', [data.contactId]);
       const contact = await this.getContact(data.contactId, actor, { client });
       if (!contact) throw notFound('Contacto');
       await this.assertActiveUser(client, data.executiveId, ['executive']);
+      const duplicate = await client.query(
+        `SELECT id FROM sales
+         WHERE season_code=$1 AND upper(external_order_number)=upper($2) AND deleted_at IS NULL
+         LIMIT 1`,
+        [data.seasonCode, data.externalOrderNumber]
+      );
+      if (duplicate.rows[0]) {
+        throw conflict(`La orden ${data.externalOrderNumber} ya está registrada en esta temporada.`);
+      }
       const total = data.items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
       const paid = data.payments.reduce((sum, payment) => sum + payment.amount, 0);
       if (paid > total) throw conflict('Los pagos no pueden superar el total de la venta.');
       const result = await client.query(
         `INSERT INTO sales
-          (contact_id,executive_id,season_code,status,sold_at,currency,total_amount,paid_amount,notes,created_by,updated_by)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$10) RETURNING *`,
-        [data.contactId, data.executiveId, data.seasonCode, data.status,
-          data.soldAt ?? null, data.currency, total, paid, data.notes ?? null, actor.id]
+          (external_order_number,sale_type,contact_id,executive_id,season_code,status,sold_at,currency,total_amount,paid_amount,notes,created_by,updated_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$12) RETURNING *`,
+        [data.externalOrderNumber, data.saleType, data.contactId, data.executiveId,
+          data.seasonCode, data.status, data.soldAt ?? null, data.currency, total, paid,
+          data.notes ?? null, actor.id]
       );
       for (const item of data.items) {
         await client.query(
@@ -1879,10 +1892,60 @@ export class PgCrmRepository {
             payment.reference ?? null, actor.id]
         );
       }
+      const targetSubscriberStatus = data.saleType === 'renewal' ? 'current_subscriber' : 'new_subscriber';
+      if (contact.executiveId !== data.executiveId) {
+        await client.query(
+          'UPDATE contact_assignments SET ended_at=now() WHERE contact_id=$1 AND ended_at IS NULL',
+          [data.contactId]
+        );
+        await client.query(
+          `INSERT INTO contact_assignments (contact_id,executive_id,assigned_by,reason)
+           VALUES ($1,$2,$3,'Asignación al registrar venta')`,
+          [data.contactId, data.executiveId, actor.id]
+        );
+      }
+      await client.query(
+        `UPDATE contacts SET subscriber_status=$2,commercial_stage=$3,executive_id=$4,
+           updated_by=$5 WHERE id=$1`,
+        [data.contactId, targetSubscriberStatus, data.closeStage, data.executiveId, actor.id]
+      );
+      if (data.closeStage === 'won') {
+        const membershipResult = await client.query(
+          `SELECT id FROM memberships
+           WHERE contact_id=$1 AND season_code=$2 AND deleted_at IS NULL
+           ORDER BY created_at DESC LIMIT 1 FOR UPDATE`,
+          [data.contactId, data.seasonCode]
+        );
+        if (membershipResult.rows[0]) {
+          await client.query(
+            `UPDATE memberships SET membership_status='active',renewal_date=COALESCE($2,renewal_date),
+               updated_by=$3 WHERE id=$1`,
+            [membershipResult.rows[0].id, data.soldAt ?? null, actor.id]
+          );
+        } else {
+          const primaryItem = data.items[0];
+          const membership = await client.query(
+            `INSERT INTO memberships
+              (contact_id,season_code,membership_status,seat_count,zone,section,product,start_date,created_by,updated_by)
+             VALUES ($1,$2,'active',$3,$4,'General',$5,$6,$7,$7) RETURNING id`,
+            [data.contactId, data.seasonCode, primaryItem.quantity, primaryItem.zone ?? null,
+              primaryItem.product, data.soldAt ?? new Date(), actor.id]
+          );
+          for (let index = 1; index <= primaryItem.quantity; index += 1) {
+            await client.query(
+              `INSERT INTO membership_units (membership_id,unit_number,zone,product,created_by,updated_by)
+               VALUES ($1,$2,$3,$4,$5,$5)`,
+              [membership.rows[0].id, index, primaryItem.zone ?? null, primaryItem.product, actor.id]
+            );
+          }
+        }
+      }
       const created = saleRow(result.rows[0]);
       await this.audit(client, context, {
         action: 'sale.created', entityType: 'sale', entityId: created.id, after: created,
-        metadata: { itemCount: data.items.length, paymentCount: data.payments.length }
+        metadata: { itemCount: data.items.length, paymentCount: data.payments.length,
+          externalOrderNumber: data.externalOrderNumber, saleType: data.saleType,
+          closeStage: data.closeStage }
       });
       return { ...created, items: data.items, payments: data.payments };
     });
