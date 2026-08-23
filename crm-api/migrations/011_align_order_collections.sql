@@ -1,13 +1,11 @@
 -- El campo RECIBIDO del reporte detallado es la fuente para cobranza. Estas
 -- órdenes existen, pero el corte 00:49 no documenta todavía dinero recibido.
 -- Se conserva el movimiento importado como anulado para mantener trazabilidad.
-UPDATE payments p
-SET voided_at = COALESCE(p.voided_at, now()),
-    void_reason = COALESCE(p.void_reason, 'Conciliación con RECIBIDO · Reporte 2026-08-23 00:49')
-FROM sales s
-WHERE p.sale_id = s.id
-  AND p.voided_at IS NULL
-  AND s.external_ref IN (
+UPDATE payments
+SET voided_at = COALESCE(voided_at, now()),
+    void_reason = COALESCE(void_reason, 'Conciliación con RECIBIDO · Reporte 2026-08-23 00:49')
+WHERE voided_at IS NULL
+  AND reference IN (
     '15391893', '15380359', '15380215', '15380060', '15379738', '15376573',
     '15365366', '15340821', '15243415', '15232256', '15206115', '15177665',
     '15177456', '15168145', '15157532', '15157211', '15157101', '15155902',
@@ -17,4 +15,3 @@ WHERE p.sale_id = s.id
     '14726691', '14726162', '14724753', '14719217', '14688242', '14687820',
     '14650880', '14649235', '14641237', '14629894', '14629818'
   );
-
