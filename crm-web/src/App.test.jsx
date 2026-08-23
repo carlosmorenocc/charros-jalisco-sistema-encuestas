@@ -1,9 +1,16 @@
 import React from 'react'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
-import App, { contactMatchesPatch, LoginScreen, revokeSessionSafely, salesForDashboard, updateContactWithVerification, verifyPersistedContactPatch } from './App'
+import App, { contactMatchesPatch, LoadingScreen, LoginScreen, revokeSessionSafely, salesForDashboard, updateContactWithVerification, verifyPersistedContactPatch } from './App'
 
 describe('CRM web en modo demostración', () => {
+  it('muestra la marca y el mensaje acordado durante la recarga', () => {
+    render(<LoadingScreen />)
+    expect(screen.getByRole('img', { name: 'Charros de Jalisco' })).toHaveAttribute('src', '/charros-logo.jpeg')
+    expect(screen.getByRole('heading', { name: 'Cargando CRM…' })).toBeInTheDocument()
+    expect(screen.getByText('Validando la sesión segura y actualizada.')).toBeInTheDocument()
+  })
+
   it('calcula venta documentada con la misma fuente que Ventas e incluye apartados', () => {
     const sales = [
       { id: 'hugo', soldAt: '2026-08-23T12:00:00.000Z', owner: 'JESÚS GONZÁLEZ', total: 4207, commercialStatus: 'Apartada' },
