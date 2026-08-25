@@ -11,13 +11,14 @@ function moneyFromCents(value) {
 
 function membershipPricingFields(row, prefix = '') {
   const field = (name) => row[`${prefix}${name}`];
+  const discountCode = field('discount_code') ?? null;
   return {
     priceBookVersion: field('price_book_version') ?? null,
     currency: field('currency') ?? null,
     localityCode: field('locality_code') ?? null,
     localityName: field('locality_name') ?? null,
-    discountCode: field('discount_code') ?? null,
-    discountName: field('discount_name') ?? null,
+    discountCode,
+    discountName: discountCode === 'july25' ? '25% de descuento' : field('discount_name') ?? null,
     pricingMode: field('pricing_mode') ?? null,
     listUnitPrice: moneyFromCents(field('list_unit_price')),
     commercialValue: moneyFromCents(field('commercial_value')),

@@ -12,7 +12,7 @@ const discount30 = {
   code: 'discount30', displayName: '30% de descuento', mode: 'percentage', rateBasisPoints: 3000
 };
 const july25 = {
-  code: 'july25', displayName: 'Julio 2026 - precio especial', mode: 'catalog_official',
+  code: 'july25', displayName: '25% de descuento', mode: 'catalog_official',
   rateBasisPoints: null
 };
 

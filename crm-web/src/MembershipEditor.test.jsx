@@ -11,7 +11,7 @@ const membership = {
 
 const pricingCatalog = {
   localities: [{ code: 'vip', displayName: 'Palcos VIP', section: 'VIP' }, { code: 'preferente', displayName: 'Central Preferente', section: 'Preferente' }, { code: 'general', displayName: 'Lateral 1RA', section: 'General' }],
-  discounts: [{ code: 'regular', displayName: 'Sin descuento' }, { code: 'july25', displayName: '25% julio 2026' }],
+  discounts: [{ code: 'regular', displayName: 'Sin descuento' }, { code: 'july25', displayName: '25% de descuento' }],
 }
 
 const quote = vi.fn(async ({ localityCode, discountCode, seatCount }) => ({ localityCode, discountCode, seatCount, listUnitPrice: 7480, commercialValue: 7480 * seatCount, netAmount: 7480 * seatCount, discountAmount: 0, chargedUnits: seatCount, bonusUnits: 0 }))

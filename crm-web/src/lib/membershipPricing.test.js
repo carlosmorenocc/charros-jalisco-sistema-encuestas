@@ -9,7 +9,7 @@ const catalog = {
   ],
   discounts: [
     { code: 'discount30', displayName: '30% histórico', mode: 'percentage', rateBasisPoints: 3000, sortOrder: 1 },
-    { code: 'july25', displayName: '25% julio 2026', mode: 'catalog_official', rateBasisPoints: null, sortOrder: 2 },
+    { code: 'july25', displayName: '25% de descuento', mode: 'catalog_official', rateBasisPoints: null, sortOrder: 2 },
   ],
 }
 
@@ -22,7 +22,7 @@ describe('catálogo de precios de membresía', () => {
 
   it('normaliza la cotización autoritativa 2x1 sin reinterpretar importes', () => {
     expect(normalizeMembershipPricingQuote({ data: {
-      priceBookVersion: 'LMP-2026-27-v1', currency: 'MXN', localityCode: 'general', localityName: 'Lateral 1RA', section: 'General', discountCode: 'july25', discountName: '25% julio 2026', pricingMode: 'two_for_one',
+      priceBookVersion: 'LMP-2026-27-v1', currency: 'MXN', localityCode: 'general', localityName: 'Lateral 1RA', section: 'General', discountCode: 'july25', discountName: '25% de descuento', pricingMode: 'two_for_one',
       listUnitPrice: 7_480, commercialValue: 22_440, netAmount: 14_960, discountAmount: 7_480, effectiveUnitPrice: 4_986.67, chargedUnits: 2, bonusUnits: 1,
     } })).toMatchObject({
       pricingMode: 'two_for_one', listUnitPrice: 7_480, commercialValue: 22_440, netAmount: 14_960, discountAmount: 7_480, chargedUnits: 2, bonusUnits: 1,
