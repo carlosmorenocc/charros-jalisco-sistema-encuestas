@@ -190,26 +190,30 @@ function membershipUnitRow(row) {
 }
 
 function saleRow(row) {
+  const totalAmount = Number(row.effective_total_amount ?? row.total_amount);
   return {
     id: row.id,
-    externalOrderNumber: row.external_order_number,
-    saleType: row.sale_type,
-    contactId: row.contact_id,
+    externalOrderNumber: row.effective_external_order_number ?? row.external_order_number,
+    saleType: row.effective_sale_type ?? row.sale_type,
+    contactId: row.effective_contact_id ?? row.contact_id,
     contactName: row.contact_name,
-    executiveId: row.executive_id,
+    executiveId: row.effective_executive_id ?? row.executive_id,
     executiveName: row.executive_name,
     seasonCode: row.season_code,
-    status: row.status,
-    soldAt: row.sold_at,
+    status: row.effective_status ?? row.status,
+    soldAt: row.effective_sold_at ?? row.sold_at,
     currency: row.currency,
-    totalAmount: Number(row.total_amount),
+    totalAmount,
     paidAmount: Number(row.paid_amount),
-    balanceAmount: Number(row.total_amount) - Number(row.paid_amount),
-    notes: row.notes,
+    balanceAmount: totalAmount - Number(row.paid_amount),
+    notes: row.effective_notes ?? row.notes,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     rowVersion: Number(row.row_version),
-    items: row.items ?? [],
+    items: row.effective_items ?? row.items ?? [],
+    correctionId: row.correction_id ?? null,
+    correctionReason: row.correction_reason ?? null,
+    correctedAt: row.corrected_at ?? null,
     payments: row.payments ?? []
   };
 }
@@ -751,22 +755,22 @@ export class PgCrmRepository {
            AND ($${toParameter}::timestamptz IS NULL OR cm.sent_at <= $${toParameter})
        ), sales_metrics AS (
          SELECT
-           count(*) FILTER (WHERE s.status IN ('confirmed','reserved'))::integer AS confirmed_sales,
-           COALESCE(sum(s.total_amount) FILTER (WHERE s.status IN ('confirmed','reserved')), 0)::numeric AS sales_amount,
-           COALESCE(sum(COALESCE(p.paid_amount,0)) FILTER (WHERE s.status IN ('confirmed','reserved')), 0)::numeric AS collected_amount,
-           count(DISTINCT s.contact_id) FILTER (
-             WHERE s.status IN ('confirmed','reserved') AND s.sale_type='new'
+           count(*) FILTER (WHERE s.effective_status IN ('confirmed','reserved'))::integer AS confirmed_sales,
+           COALESCE(sum(s.effective_total_amount) FILTER (WHERE s.effective_status IN ('confirmed','reserved')), 0)::numeric AS sales_amount,
+           COALESCE(sum(COALESCE(p.paid_amount,0)) FILTER (WHERE s.effective_status IN ('confirmed','reserved')), 0)::numeric AS collected_amount,
+           count(DISTINCT s.effective_contact_id) FILTER (
+             WHERE s.effective_status IN ('confirmed','reserved') AND s.effective_sale_type='new'
            )::integer AS sold_new_subscribers,
-           count(DISTINCT s.contact_id) FILTER (
-             WHERE s.status IN ('confirmed','reserved') AND s.sale_type='renewal'
+           count(DISTINCT s.effective_contact_id) FILTER (
+             WHERE s.effective_status IN ('confirmed','reserved') AND s.effective_sale_type='renewal'
            )::integer AS sold_renewed_subscribers,
            COALESCE(sum(COALESCE(i.seat_count,0)) FILTER (
-             WHERE s.status IN ('confirmed','reserved') AND s.sale_type='new'
+             WHERE s.effective_status IN ('confirmed','reserved') AND s.effective_sale_type='new'
            ),0)::integer AS sold_new_seats,
            COALESCE(sum(COALESCE(i.seat_count,0)) FILTER (
-             WHERE s.status IN ('confirmed','reserved') AND s.sale_type='renewal'
+             WHERE s.effective_status IN ('confirmed','reserved') AND s.effective_sale_type='renewal'
            ),0)::integer AS sold_renewed_seats
-         FROM sales s JOIN scoped_contacts c ON c.id = s.contact_id
+         FROM effective_sales s JOIN scoped_contacts c ON c.id = s.effective_contact_id
          LEFT JOIN LATERAL (
            SELECT sum(p.amount + COALESCE(a.amount,0)) AS paid_amount
            FROM payments p
@@ -776,12 +780,12 @@ export class PgCrmRepository {
            WHERE p.sale_id=s.id AND p.voided_at IS NULL
          ) p ON true
          LEFT JOIN LATERAL (
-           SELECT sum(si.quantity)::integer AS seat_count
-           FROM sale_items si WHERE si.sale_id=s.id
+           SELECT sum((item->>'quantity')::integer)::integer AS seat_count
+           FROM jsonb_array_elements(s.effective_items) item
          ) i ON true
          WHERE s.deleted_at IS NULL
-           AND ($${fromParameter}::timestamptz IS NULL OR s.sold_at >= $${fromParameter})
-           AND ($${toParameter}::timestamptz IS NULL OR s.sold_at <= $${toParameter})
+           AND ($${fromParameter}::timestamptz IS NULL OR s.effective_sold_at >= $${fromParameter})
+           AND ($${toParameter}::timestamptz IS NULL OR s.effective_sold_at <= $${toParameter})
            AND ($${seasonParameter}::text IS NULL OR s.season_code = $${seasonParameter})
        )
        SELECT * FROM contact_metrics, membership_metrics, interaction_metrics, campaign_metrics, sales_metrics`,
@@ -1794,26 +1798,26 @@ export class PgCrmRepository {
     const where = ['s.deleted_at IS NULL'];
     if (actor.role === 'executive') {
       params.push(actor.id);
-      where.push(`s.executive_id = $${params.length}`);
+      where.push(`s.effective_executive_id = $${params.length}`);
     } else if (filters.executiveId) {
       params.push(filters.executiveId);
-      where.push(`s.executive_id = $${params.length}`);
+      where.push(`s.effective_executive_id = $${params.length}`);
     }
     if (filters.season) {
       params.push(filters.season);
       where.push(`s.season_code = $${params.length}`);
     }
-    if (filters.from) { params.push(filters.from); where.push(`s.sold_at >= $${params.length}`); }
-    if (filters.to) { params.push(filters.to); where.push(`s.sold_at <= $${params.length}`); }
+    if (filters.from) { params.push(filters.from); where.push(`s.effective_sold_at >= $${params.length}`); }
+    if (filters.to) { params.push(filters.to); where.push(`s.effective_sold_at <= $${params.length}`); }
     const offset = (filters.page - 1) * filters.pageSize;
     params.push(filters.pageSize, offset);
     const result = await this.pool.query(
       `SELECT s.*, COALESCE(p.paid_amount,0)::numeric AS paid_amount,
               concat(c.first_name,' ',c.last_name) AS contact_name,
               u.display_name AS executive_name,
-              COALESCE(i.items,'[]'::jsonb) AS items,
+              s.effective_items AS items,
               count(*) OVER()::integer AS total_count
-       FROM sales s JOIN contacts c ON c.id=s.contact_id LEFT JOIN app_users u ON u.id=s.executive_id
+       FROM effective_sales s JOIN contacts c ON c.id=s.effective_contact_id LEFT JOIN app_users u ON u.id=s.effective_executive_id
        LEFT JOIN LATERAL (
          SELECT sum(p.amount + COALESCE(a.amount,0)) AS paid_amount
          FROM payments p
@@ -1822,14 +1826,7 @@ export class PgCrmRepository {
          ) a ON true
          WHERE p.sale_id=s.id AND p.voided_at IS NULL
        ) p ON true
-       LEFT JOIN LATERAL (
-         SELECT jsonb_agg(jsonb_build_object(
-           'id',id,'product',product,'zone',zone,'quantity',quantity,
-           'unitPrice',unit_price,'lineTotal',line_total
-         ) ORDER BY id) AS items
-         FROM sale_items WHERE sale_id=s.id
-       ) i ON true
-       WHERE ${where.join(' AND ')} ORDER BY s.sold_at DESC NULLS LAST,s.created_at DESC
+       WHERE ${where.join(' AND ')} ORDER BY s.effective_sold_at DESC NULLS LAST,s.created_at DESC
        LIMIT $${params.length - 1} OFFSET $${params.length}`, params
     );
     return { items: result.rows.map(saleRow), total: Number(result.rows[0]?.total_count ?? 0) };
@@ -1840,13 +1837,13 @@ export class PgCrmRepository {
     const where = ['s.id=$1', 's.deleted_at IS NULL'];
     if (actor.role === 'executive') {
       params.push(actor.id);
-      where.push(`s.executive_id=$${params.length}`);
+      where.push(`s.effective_executive_id=$${params.length}`);
     }
     const result = await client.query(
       `SELECT s.*, COALESCE(p.paid_amount,0)::numeric AS paid_amount,
               concat(c.first_name,' ',c.last_name) AS contact_name,u.display_name AS executive_name,
-              COALESCE(i.items,'[]'::jsonb) AS items,COALESCE(p.payments,'[]'::jsonb) AS payments
-       FROM sales s JOIN contacts c ON c.id=s.contact_id LEFT JOIN app_users u ON u.id=s.executive_id
+              s.effective_items AS items,COALESCE(p.payments,'[]'::jsonb) AS payments
+       FROM effective_sales s JOIN contacts c ON c.id=s.effective_contact_id LEFT JOIN app_users u ON u.id=s.effective_executive_id
        LEFT JOIN LATERAL (
          SELECT sum(p.amount + COALESCE(a.amount,0)) AS paid_amount,
            jsonb_agg(jsonb_build_object('id',p.id,'amount',p.amount + COALESCE(a.amount,0),'method',p.method,
@@ -1857,11 +1854,6 @@ export class PgCrmRepository {
          ) a ON true
          WHERE p.sale_id=s.id AND p.voided_at IS NULL
        ) p ON true
-       LEFT JOIN LATERAL (
-         SELECT jsonb_agg(jsonb_build_object('id',id,'product',product,'zone',zone,
-           'quantity',quantity,'unitPrice',unit_price,'lineTotal',line_total) ORDER BY id) AS items
-         FROM sale_items WHERE sale_id=s.id
-       ) i ON true
        WHERE ${where.join(' AND ')}`,
       params
     );
@@ -1875,8 +1867,8 @@ export class PgCrmRepository {
       if (!contact) throw notFound('Contacto');
       await this.assertActiveUser(client, data.executiveId, ['executive']);
       const duplicate = await client.query(
-        `SELECT id FROM sales
-         WHERE season_code=$1 AND upper(external_order_number)=upper($2) AND deleted_at IS NULL
+        `SELECT id FROM effective_sales
+         WHERE season_code=$1 AND upper(effective_external_order_number)=upper($2) AND deleted_at IS NULL
          LIMIT 1`,
         [data.seasonCode, data.externalOrderNumber]
       );
@@ -1965,6 +1957,49 @@ export class PgCrmRepository {
           closeStage: data.closeStage }
       });
       return { ...created, items: data.items, payments: data.payments };
+    });
+  }
+
+  async correctSale(saleId, data, actor, context) {
+    return withTransaction(this.pool, async (client) => {
+      await client.query('SELECT id FROM sales WHERE id=$1 AND deleted_at IS NULL FOR UPDATE', [saleId]);
+      const before = await this.getSale(saleId, actor, { client });
+      if (!before) throw notFound('Venta');
+      await this.assertActiveUser(client, data.executiveId, ['executive']);
+      const contact = await this.getContact(data.contactId, actor, { client });
+      if (!contact) throw notFound('Contacto');
+      const total = data.items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
+      if (before.paidAmount > total) {
+        throw conflict('La corrección no puede dejar un total menor que los cobros registrados.');
+      }
+      const duplicate = await client.query(
+        `SELECT id FROM effective_sales
+         WHERE season_code=$1 AND upper(effective_external_order_number)=upper($2)
+           AND id<>$3 AND deleted_at IS NULL LIMIT 1`,
+        [data.seasonCode, data.externalOrderNumber, saleId]
+      );
+      if (duplicate.rows[0]) throw conflict(`La orden ${data.externalOrderNumber} ya pertenece a otra venta.`);
+      const correction = await client.query(
+        `INSERT INTO sale_corrections
+          (sale_id,external_order_number,sale_type,contact_id,executive_id,status,sold_at,
+           total_amount,notes,items,reason,created_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11,$12) RETURNING id,created_at`,
+        [saleId, data.externalOrderNumber, data.saleType, data.contactId, data.executiveId,
+          data.status, data.soldAt ?? null, total, data.notes ?? null, JSON.stringify(data.items),
+          data.reason, actor.id]
+      );
+      const targetSubscriberStatus = data.saleType === 'renewal' ? 'current_subscriber' : 'new_subscriber';
+      await client.query(
+        `UPDATE contacts SET subscriber_status=$2,commercial_stage=$3,executive_id=$4,updated_by=$5
+         WHERE id=$1`,
+        [data.contactId, targetSubscriberStatus, data.closeStage, data.executiveId, actor.id]
+      );
+      const after = await this.getSale(saleId, actor, { client });
+      await this.audit(client, context, {
+        action: 'sale.corrected', entityType: 'sale', entityId: saleId, before, after,
+        metadata: { correctionId: correction.rows[0].id, reason: data.reason }
+      });
+      return after;
     });
   }
 

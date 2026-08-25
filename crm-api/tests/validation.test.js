@@ -11,7 +11,8 @@ import {
   validateMembershipSeatAssignment,
   validateSubscriptionQuote,
   validatePayment,
-  validateSale
+  validateSale,
+  validateSaleCorrection
 } from '../src/lib/validation.js';
 
 const UUID = '00000000-0000-4000-8000-000000000001';
@@ -187,6 +188,19 @@ test('venta confirmada exige fecha y los pagos deben ser positivos', () => {
   }), /soldAt/);
   assert.throws(() => validatePayment({ amount: 0, method: 'card' }), /mayor o igual/);
   assert.equal(validatePayment({ amount: 500, method: 'card' }).amount, 500);
+});
+
+test('corrección de venta exige motivo y nunca acepta cobros nuevos', () => {
+  const base = {
+    externalOrderNumber: '26000123', saleType: 'new', closeStage: 'won',
+    contactId: UUID, executiveId: UUID, seasonCode: 'LMP-2026-27',
+    status: 'confirmed', soldAt: '2026-08-25T12:00:00.000Z',
+    items: [{ product: 'Abono', quantity: 1, unitPrice: 1000 }]
+  };
+  assert.throws(() => validateSaleCorrection({ ...base, reason: 'mal' }), /5 caracteres/);
+  const corrected = validateSaleCorrection({ ...base, reason: 'Precio capturado incorrectamente', payments: [{ amount: 100, method: 'card' }] });
+  assert.deepEqual(corrected.payments, []);
+  assert.equal(corrected.reason, 'Precio capturado incorrectamente');
 });
 
 test('segmenta listados de contactos sin aceptar valores libres', () => {

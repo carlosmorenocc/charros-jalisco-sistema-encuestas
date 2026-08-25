@@ -136,6 +136,7 @@ export function createApiClient({
     updateTask: (id, payload, rowVersion) => request(`/tasks/${encodeURIComponent(id)}`, { method: 'PATCH', headers: rowVersion == null ? {} : { 'If-Match': String(rowVersion) }, body: payload }),
     sales: (filters) => request(`/sales${encodeQuery(filters)}`),
     createSale: (payload) => request('/sales', { method: 'POST', body: payload }),
+    correctSale: (id, payload) => request(`/sales/${encodeURIComponent(id)}/corrections`, { method: 'POST', body: payload }),
     addPayment: (id, payload) => request(`/sales/${encodeURIComponent(id)}/payments`, { method: 'POST', body: payload }),
     executives: (filters = { active: true }) => request(`/executives${encodeQuery(filters)}`),
     exportContacts: (filters) => requestBlob(`/exports/contacts.csv${encodeQuery(filters)}`),

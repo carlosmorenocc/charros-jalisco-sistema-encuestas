@@ -176,6 +176,11 @@ export class CrmService {
     return this.repository.createSale(data, actor, context);
   }
 
+  async correctSale(actor, saleId, data, context) {
+    requirePermission(actor, PERMISSIONS.SALES_WRITE);
+    return this.repository.correctSale(saleId, data, actor, context);
+  }
+
   async getSale(actor, id) {
     requirePermission(actor, PERMISSIONS.SALES_READ);
     const sale = await this.repository.getSale(id, actor);

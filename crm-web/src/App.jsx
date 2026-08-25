@@ -703,6 +703,16 @@ function App() {
     setToast('La venta y su cobro inicial quedaron registrados.')
   }
 
+  async function correctSale(sale, payload) {
+    if (authClient.isDemo) throw new Error('Las ventas solo pueden corregirse con datos reales.')
+    await api.correctSale(sale.id, payload)
+    const refreshed = await loadAllSales(api, { season: 'LMP-2026-27' })
+    setSales(refreshed.data.map(fromApiSale))
+    setContactRevision((current) => current + 1)
+    setDashboardRevision((current) => current + 1)
+    setToast('La corrección quedó registrada y los indicadores fueron actualizados.')
+  }
+
   async function openContact(contactOrId, options = {}) {
     const id = typeof contactOrId === 'string' ? contactOrId : contactOrId?.id
     if (!id) return
@@ -991,6 +1001,7 @@ function App() {
     onCompleteTask: completeTask,
     onAddPayment: addSalePayment,
     onCreateSale: createSale,
+    onCorrectSale: correctSale,
     saleClosure,
     onClearSaleClosure: () => setSaleClosure(null),
     onRequestSaleClosure: (contact, stage) => {
@@ -1657,7 +1668,11 @@ function InteractionLog({ interactions }) {
   )
 }
 
-function SalesPage({ sales, contacts, isDemo, user, availableExecutives, pricingCatalog, onAddPayment, onCreateSale, onCreate, saleClosure, onClearSaleClosure }) {
+function initialSaleDraft() {
+  return { externalOrderNumber: '', contactId: '', executiveId: '', kind: 'new', closeStage: 'reserved', localityCode: '', zone: '', promotion2x1: false, quantity: 1, unitPrice: '', soldAt: new Date().toISOString().slice(0, 10), paymentAmount: '', paymentMethod: 'Transferencia', paymentReference: '', notes: '', correctionReason: '' }
+}
+
+function SalesPage({ sales, contacts, isDemo, user, availableExecutives, pricingCatalog, onAddPayment, onCreateSale, onCorrectSale, onCreate, saleClosure, onClearSaleClosure }) {
   const [search, setSearch] = useState('')
   const [payment, setPayment] = useState('Todos los pagos')
   const [owner, setOwner] = useState('Todos los ejecutivos')
@@ -1669,10 +1684,11 @@ function SalesPage({ sales, contacts, isDemo, user, availableExecutives, pricing
   const [paymentError, setPaymentError] = useState('')
   const [savingPayment, setSavingPayment] = useState(false)
   const [saleOpen, setSaleOpen] = useState(false)
+  const [editingSale, setEditingSale] = useState(null)
   const [saleError, setSaleError] = useState('')
   const [savingSale, setSavingSale] = useState(false)
   const [contactSearch, setContactSearch] = useState('')
-  const [saleDraft, setSaleDraft] = useState({ externalOrderNumber: '', contactId: '', executiveId: '', kind: 'new', closeStage: 'reserved', localityCode: '', zone: '', promotion2x1: false, quantity: 1, unitPrice: '', soldAt: new Date().toISOString().slice(0, 10), paymentAmount: '', paymentMethod: 'Transferencia', paymentReference: '', notes: '' })
+  const [saleDraft, setSaleDraft] = useState(initialSaleDraft)
   const saleLocalities = pricingCatalog?.localities || []
   const selectedLocality = saleLocalities.find((item) => item.code === saleDraft.localityCode)
   const promotionEligible = selectedLocality?.july25Mode === 'two_for_one'
@@ -1683,6 +1699,7 @@ function SalesPage({ sales, contacts, isDemo, user, availableExecutives, pricing
   const filteredContactOptions = contactOptions.filter((contact) => !contactSearch.trim() || contact.name.toLowerCase().includes(contactSearch.trim().toLowerCase()))
   useEffect(() => {
     if (!saleClosure?.contact?.id) return
+    setEditingSale(null)
     setSaleDraft((current) => ({ ...current,
       contactId: saleClosure.contact.id,
       executiveId: saleClosure.contact.executiveId || current.executiveId,
@@ -1716,6 +1733,38 @@ function SalesPage({ sales, contacts, isDemo, user, availableExecutives, pricing
   const draftUnitPrice = Number(saleDraft.unitPrice || 0)
   const draftChargedUnits = saleDraft.promotion2x1 && promotionEligible ? Math.ceil(draftQuantity / 2) : draftQuantity
   const draftDocumentedTotal = draftChargedUnits * draftUnitPrice
+  function closeSaleDrawer() {
+    setSaleOpen(false)
+    setEditingSale(null)
+    onClearSaleClosure()
+  }
+  function openSaleCorrection(sale) {
+    const items = Array.isArray(sale.items) ? sale.items : []
+    const chargedItem = items.find((item) => Number(item.unitPrice || 0) > 0) || items[0] || {}
+    const rawZone = chargedItem.zone || String(sale.zone || '').replace(/\s*·\s*Promoción 2x1$/i, '')
+    const locality = saleLocalities.find((item) => item.displayName === rawZone)
+      || saleLocalities.find((item) => rawZone.toLowerCase().includes(item.displayName.toLowerCase()))
+    const promotion2x1 = items.some((item) => String(item.product || '').toUpperCase().includes('2X1')) || sale.promotion === 'Promoción 2x1'
+    setEditingSale(sale)
+    setContactSearch(sale.contact || '')
+    setSaleDraft({
+      externalOrderNumber: sale.externalOrderNumber || '',
+      contactId: sale.contactId || '',
+      executiveId: sale.executiveId || '',
+      kind: sale.saleType || (sale.kind === 'Renovación' ? 'renewal' : 'new'),
+      closeStage: sale.status === 'reserved' || sale.commercialStatus === 'Apartada' ? 'reserved' : 'won',
+      localityCode: locality?.code || '',
+      zone: locality?.displayName || rawZone || '',
+      promotion2x1,
+      quantity: items.reduce((sum, item) => sum + Number(item.quantity || 0), 0) || sale.seats || 1,
+      unitPrice: Number(chargedItem.unitPrice ?? locality?.listUnitPrice ?? 0),
+      soldAt: sale.soldAt ? new Date(sale.soldAt).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10),
+      paymentAmount: '', paymentMethod: 'Transferencia', paymentReference: '',
+      notes: sale.notes || '', correctionReason: '',
+    })
+    setSaleError('')
+    setSaleOpen(true)
+  }
   async function submitPayment(event) {
     event.preventDefault()
     const amount = Number(paymentDraft.amount)
@@ -1737,24 +1786,34 @@ function SalesPage({ sales, contacts, isDemo, user, availableExecutives, pricing
     const promotion2x1 = Boolean(saleDraft.promotion2x1 && promotionEligible)
     const items = buildSaleItems({ kind: saleDraft.kind, zone: saleDraft.zone, quantity, unitPrice, promotion2x1 })
     const totalAmount = items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0)
-    if (!saleDraft.externalOrderNumber.trim() || !saleDraft.contactId || !saleDraft.executiveId || !saleDraft.localityCode || !Number.isInteger(quantity) || quantity < 1 || !Number.isFinite(unitPrice) || unitPrice < 0 || paymentAmount < 0 || paymentAmount > totalAmount) {
+    if (!saleDraft.externalOrderNumber.trim() || !saleDraft.contactId || !saleDraft.executiveId || !saleDraft.localityCode || !Number.isInteger(quantity) || quantity < 1 || !Number.isFinite(unitPrice) || unitPrice < 0 || (!editingSale && (paymentAmount < 0 || paymentAmount > totalAmount))) {
       setSaleError('Completa número de orden, titular, ejecutivo, zona, cantidad y precio; el cobro inicial no puede superar el total.')
+      return
+    }
+    if (editingSale && saleDraft.correctionReason.trim().length < 5) {
+      setSaleError('Describe el motivo de la corrección con al menos 5 caracteres.')
+      return
+    }
+    if (editingSale && Number(editingSale.paid || 0) > totalAmount) {
+      setSaleError(`El total corregido no puede ser menor a lo ya cobrado (${currency.format(editingSale.paid)}).`)
       return
     }
     setSavingSale(true); setSaleError('')
     try {
-      await onCreateSale({ externalOrderNumber: saleDraft.externalOrderNumber.trim(), saleType: saleDraft.kind, closeStage: saleDraft.closeStage, contactId: saleDraft.contactId, executiveId: saleDraft.executiveId, seasonCode: 'LMP-2026-27', status: saleDraft.closeStage === 'won' ? 'confirmed' : 'reserved', soldAt: new Date(`${saleDraft.soldAt}T12:00:00`).toISOString(), currency: 'MXN', notes: [promotion2x1 ? 'Promoción 2x1 Lateral 1ra–3ra aplicada automáticamente.' : '', saleDraft.notes].filter(Boolean).join(' ') || undefined, items, payments: paymentAmount > 0 ? [{ amount: paymentAmount, method: saleDraft.paymentMethod, paidAt: new Date(`${saleDraft.soldAt}T12:00:00`).toISOString(), reference: saleDraft.paymentReference || undefined }] : [] })
-      setSaleOpen(false)
+      const payload = { externalOrderNumber: saleDraft.externalOrderNumber.trim(), saleType: saleDraft.kind, closeStage: saleDraft.closeStage, contactId: saleDraft.contactId, executiveId: saleDraft.executiveId, seasonCode: 'LMP-2026-27', status: saleDraft.closeStage === 'won' ? 'confirmed' : 'reserved', soldAt: new Date(`${saleDraft.soldAt}T12:00:00`).toISOString(), currency: 'MXN', notes: [promotion2x1 ? 'Promoción 2x1 Lateral 1ra–3ra aplicada automáticamente.' : '', saleDraft.notes].filter(Boolean).join(' ') || undefined, items }
+      if (editingSale) await onCorrectSale(editingSale, { ...payload, reason: saleDraft.correctionReason.trim() })
+      else await onCreateSale({ ...payload, payments: paymentAmount > 0 ? [{ amount: paymentAmount, method: saleDraft.paymentMethod, paidAt: new Date(`${saleDraft.soldAt}T12:00:00`).toISOString(), reference: saleDraft.paymentReference || undefined }] : [] })
+      closeSaleDrawer()
     } catch (error) { setSaleError(error.message || 'No fue posible crear la venta.') }
     finally { setSavingSale(false) }
   }
   return (
     <div className="page-wrap">
-      <PageHeader eyebrow="Control comercial" title="Ventas" description="Movimientos, pagos y abonos vinculados al contacto responsable." actions={hasPermission(user, PERMISSIONS.SALES_WRITE) && <button type="button" className="button button--primary" onClick={() => { setSaleOpen(true); setSaleError('') }}>Nueva venta</button>} />
+      <PageHeader eyebrow="Control comercial" title="Ventas" description="Movimientos, pagos y abonos vinculados al contacto responsable." actions={hasPermission(user, PERMISSIONS.SALES_WRITE) && <button type="button" className="button button--primary" onClick={() => { setEditingSale(null); setSaleDraft(initialSaleDraft()); setContactSearch(''); setSaleOpen(true); setSaleError('') }}>Nueva venta</button>} />
       <section className="sales-metrics"><div><span>Venta en corte cargado</span><strong>{currency.format(total)}</strong><small>Temporada LMP 2026–2027</small></div><div><span>Cobrado en el corte</span><strong>{currency.format(paid)}</strong><small>{collectedPercentage}% del total cargado</small></div><div><span>Saldo en el corte</span><strong>{currency.format(Math.max(0, total - paid))}</strong><small>{partialCount} movimientos parciales</small></div><div><span>Abonos asociados</span><strong>{seats}</strong><small>{filteredSales.length} movimientos cargados</small></div></section>
-      <section className="panel list-panel"><div className="toolbar"><label className="search-field"><span className="sr-only">Buscar venta</span><Icon name="search" size={18}/><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar orden, contacto o zona…"/></label><div className="toolbar-filters"><select aria-label="Estatus de pago" value={payment} onChange={(event) => setPayment(event.target.value)}><option>Todos los pagos</option><option>Pendiente</option><option>Parcial</option><option>Pagado</option></select><select aria-label="Ejecutivo" value={owner} onChange={(event) => setOwner(event.target.value)}><option>Todos los ejecutivos</option>{owners.map((value) => <option key={value}>{value}</option>)}</select><select aria-label="Tipo de movimiento" value={kind} onChange={(event) => setKind(event.target.value)}><option>Todos los movimientos</option>{kinds.map((value) => <option key={value}>{value}</option>)}</select><label className="compact-date"><span>Desde</span><input type="date" value={from} onChange={(event) => setFrom(event.target.value)}/></label><label className="compact-date"><span>Hasta</span><input type="date" value={to} onChange={(event) => setTo(event.target.value)}/></label></div></div><div className="table-scroll"><table className="data-table"><thead><tr><th>Número de orden</th><th>Fecha</th><th>Contacto</th><th>Zona</th><th>Abonos</th><th>Total</th><th>Cobrado</th><th>Ejecutivo</th><th>Pago</th><th>Estado comercial</th>{hasPermission(user, PERMISSIONS.SALES_WRITE) && <th>Acción</th>}</tr></thead><tbody>{filteredSales.map((sale) => <tr key={sale.id}><td><strong className="link-value">{sale.externalOrderNumber || sale.id}</strong></td><td>{sale.date}</td><td><strong>{sale.contact}</strong></td><td>{sale.zone}</td><td>{sale.seats}</td><td><strong>{currency.format(sale.total)}</strong></td><td>{currency.format(sale.paid)}</td><td>{sale.owner}</td><td><StatusPill>{sale.status}</StatusPill></td><td>{sale.commercialStatus || '—'}</td>{hasPermission(user, PERMISSIONS.SALES_WRITE) && <td>{sale.paid < sale.total ? <button type="button" className="text-button" onClick={() => { setPaymentSale(sale); setPaymentDraft({ amount: '', method: 'Transferencia', paidAt: new Date().toISOString().slice(0, 10), reference: '' }); setPaymentError('') }}>Registrar cobro</button> : 'Liquidado'}</td>}</tr>)}</tbody></table>{!filteredSales.length && <EmptyState title="Sin movimientos" body="No hay ventas que coincidan con los filtros seleccionados." />}</div><div className="table-footer"><span>{filteredSales.length} de {sales.length} movimientos cargados</span><small>Los indicadores y la tabla responden a los filtros. Los pagos conservan historial de auditoría.</small></div></section>
+      <section className="panel list-panel"><div className="toolbar"><label className="search-field"><span className="sr-only">Buscar venta</span><Icon name="search" size={18}/><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar orden, contacto o zona…"/></label><div className="toolbar-filters"><select aria-label="Estatus de pago" value={payment} onChange={(event) => setPayment(event.target.value)}><option>Todos los pagos</option><option>Pendiente</option><option>Parcial</option><option>Pagado</option></select><select aria-label="Ejecutivo" value={owner} onChange={(event) => setOwner(event.target.value)}><option>Todos los ejecutivos</option>{owners.map((value) => <option key={value}>{value}</option>)}</select><select aria-label="Tipo de movimiento" value={kind} onChange={(event) => setKind(event.target.value)}><option>Todos los movimientos</option>{kinds.map((value) => <option key={value}>{value}</option>)}</select><label className="compact-date"><span>Desde</span><input type="date" value={from} onChange={(event) => setFrom(event.target.value)}/></label><label className="compact-date"><span>Hasta</span><input type="date" value={to} onChange={(event) => setTo(event.target.value)}/></label></div></div><div className="table-scroll"><table className="data-table"><thead><tr><th>Número de orden</th><th>Fecha</th><th>Contacto</th><th>Zona</th><th>Abonos</th><th>Total</th><th>Cobrado</th><th>Ejecutivo</th><th>Pago</th><th>Estado comercial</th>{hasPermission(user, PERMISSIONS.SALES_WRITE) && <th>Acción</th>}</tr></thead><tbody>{filteredSales.map((sale) => <tr key={sale.id}><td><strong className="link-value">{sale.externalOrderNumber || sale.id}</strong></td><td>{sale.date}</td><td><strong>{sale.contact}</strong></td><td>{sale.zone}</td><td>{sale.seats}</td><td><strong>{currency.format(sale.total)}</strong></td><td>{currency.format(sale.paid)}</td><td>{sale.owner}</td><td><StatusPill>{sale.status}</StatusPill></td><td>{sale.commercialStatus || '—'}</td>{hasPermission(user, PERMISSIONS.SALES_WRITE) && <td><div className="sale-row-actions">{sale.paid < sale.total ? <button type="button" className="text-button" onClick={() => { setPaymentSale(sale); setPaymentDraft({ amount: '', method: 'Transferencia', paidAt: new Date().toISOString().slice(0, 10), reference: '' }); setPaymentError('') }}>Registrar cobro</button> : <span>Liquidado</span>}<button type="button" className="text-button" onClick={() => openSaleCorrection(sale)}>Corregir venta</button></div></td>}</tr>)}</tbody></table>{!filteredSales.length && <EmptyState title="Sin movimientos" body="No hay ventas que coincidan con los filtros seleccionados." />}</div><div className="table-footer"><span>{filteredSales.length} de {sales.length} movimientos cargados</span><small>Los indicadores y la tabla responden a los filtros. Las correcciones y los pagos conservan historial de auditoría.</small></div></section>
       {paymentSale && <div className="drawer-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !savingPayment) setPaymentSale(null) }}><aside className="drawer" role="dialog" aria-modal="true" aria-labelledby="payment-title"><header className="drawer-header"><div><span className="eyebrow">Control de cobranza</span><h2 id="payment-title">Registrar cobro</h2><p>{paymentSale.contact} · Saldo {currency.format(Math.max(0, paymentSale.total - paymentSale.paid))}</p></div><button type="button" className="icon-button" aria-label="Cerrar" onClick={() => setPaymentSale(null)}>×</button></header><form onSubmit={submitPayment}><div className="drawer-body"><div className="form-grid"><label className="field"><span>Importe recibido *</span><input autoFocus type="number" min="0.01" step="0.01" value={paymentDraft.amount} onChange={(event) => setPaymentDraft((current) => ({ ...current, amount: event.target.value }))}/></label><label className="field"><span>Método *</span><select value={paymentDraft.method} onChange={(event) => setPaymentDraft((current) => ({ ...current, method: event.target.value }))}><option>Transferencia</option><option>Tarjeta</option><option>Efectivo</option><option>Depósito</option><option>Otro</option></select></label><label className="field"><span>Fecha *</span><input type="date" value={paymentDraft.paidAt} onChange={(event) => setPaymentDraft((current) => ({ ...current, paidAt: event.target.value }))}/></label><label className="field"><span>Referencia</span><input maxLength="160" value={paymentDraft.reference} onChange={(event) => setPaymentDraft((current) => ({ ...current, reference: event.target.value }))}/></label></div>{paymentError && <p className="manual-submit-error" role="alert">{paymentError}</p>}</div><footer className="drawer-footer"><button type="button" className="button button--secondary" onClick={() => setPaymentSale(null)}>Cancelar</button><button type="submit" className="button button--primary" disabled={savingPayment}>{savingPayment ? 'Guardando…' : 'Guardar cobro'}</button></footer></form></aside></div>}
-      {saleOpen && <div className="drawer-backdrop" role="presentation"><aside className="drawer drawer--manual" role="dialog" aria-modal="true" aria-labelledby="sale-title"><header className="drawer-header"><div><span className="eyebrow">Alta guiada</span><h2 id="sale-title">Nueva venta</h2><p>La orden, sus abonos y el cobro inicial quedarán vinculados al titular.</p></div><button type="button" className="icon-button" aria-label="Cerrar" onClick={() => { setSaleOpen(false); onClearSaleClosure() }}>×</button></header><form onSubmit={submitSale}><div className="drawer-body"><div className="form-grid">
+      {saleOpen && <div className="drawer-backdrop" role="presentation"><aside className="drawer drawer--manual" role="dialog" aria-modal="true" aria-labelledby="sale-title"><header className="drawer-header"><div><span className="eyebrow">{editingSale ? 'Corrección auditada' : 'Alta guiada'}</span><h2 id="sale-title">{editingSale ? 'Corregir venta' : 'Nueva venta'}</h2><p>{editingSale ? 'Modifica los datos comerciales. La venta original y sus cobros se conservarán en el historial.' : 'La orden, sus abonos y el cobro inicial quedarán vinculados al titular.'}</p></div><button type="button" className="icon-button" aria-label="Cerrar" onClick={closeSaleDrawer}>×</button></header><form onSubmit={submitSale}><div className="drawer-body"><div className="form-grid">
         <label className="field"><span>Número de orden *</span><input autoFocus required maxLength="80" value={saleDraft.externalOrderNumber} onChange={(event) => setSaleDraft((current) => ({ ...current, externalOrderNumber: event.target.value }))} placeholder="Ej. 26000123"/><small>Identificador único de la venta.</small></label>
         <label className="field"><span>Cierre *</span><select value={saleDraft.closeStage} onChange={(event) => setSaleDraft((current) => ({ ...current, closeStage: event.target.value }))}><option value="reserved">Apartado</option><option value="won">Ganado</option></select></label>
         <label className="field field--full"><span>Buscar titular</span><input value={contactSearch} onChange={(event) => setContactSearch(event.target.value)} placeholder="Escribe nombre o apellido…"/><small>Filtra el acervo completo de contactos, incluidos prospectos.</small></label>
@@ -1766,10 +1825,10 @@ function SalesPage({ sales, contacts, isDemo, user, availableExecutives, pricing
         {promotionEligible && <label className="check-field field--full promotion-option"><input type="checkbox" checked={saleDraft.promotion2x1} onChange={(event) => setSaleDraft((current) => ({ ...current, promotion2x1: event.target.checked }))}/><span><strong>Aplicar promoción 2x1</strong><small>Exclusiva de Lateral 1ra–3ra: se cobra una unidad y se bonifica la siguiente.</small></span></label>}
         <label className="field"><span>Cantidad de abonos *</span><input type="number" min="1" max="20" value={saleDraft.quantity} onChange={(event) => setSaleDraft((current) => ({ ...current, quantity: event.target.value }))}/></label>
         <label className="field"><span>Precio oficial por unidad *</span><input type="number" min="0" step="0.01" readOnly={Boolean(selectedLocality)} value={saleDraft.unitPrice} onChange={(event) => setSaleDraft((current) => ({ ...current, unitPrice: event.target.value }))}/><small>{saleDraft.promotion2x1 && promotionEligible ? `${draftChargedUnits} con cargo · ${Math.max(0, draftQuantity - draftChargedUnits)} bonificados · Total ${currency.format(draftDocumentedTotal)}` : 'Precio oficial del catálogo.'}</small></label>
-        <label className="field"><span>Cobro inicial</span><input type="number" min="0" step="0.01" value={saleDraft.paymentAmount} onChange={(event) => setSaleDraft((current) => ({ ...current, paymentAmount: event.target.value }))}/><small>Puede ser $0, apartado o liquidación. Saldo: {currency.format(Math.max(0, draftDocumentedTotal - Number(saleDraft.paymentAmount || 0)))}</small></label>
-        <label className="field"><span>Método</span><select value={saleDraft.paymentMethod} onChange={(event) => setSaleDraft((current) => ({ ...current, paymentMethod: event.target.value }))}><option>Transferencia</option><option>Tarjeta</option><option>Efectivo</option><option>Depósito</option><option>Otro</option></select></label>
-        <label className="field"><span>Referencia del cobro</span><input value={saleDraft.paymentReference} onChange={(event) => setSaleDraft((current) => ({ ...current, paymentReference: event.target.value }))}/></label>
-        <label className="field field--full"><span>Notas</span><textarea rows="3" value={saleDraft.notes} onChange={(event) => setSaleDraft((current) => ({ ...current, notes: event.target.value }))}/></label></div>{saleError && <p className="manual-submit-error" role="alert">{saleError}</p>}</div><footer className="drawer-footer"><button type="button" className="button button--secondary" onClick={() => { setSaleOpen(false); onClearSaleClosure() }}>Cancelar</button><button type="submit" className="button button--primary" disabled={savingSale}>{savingSale ? 'Guardando…' : saleDraft.closeStage === 'won' ? 'Registrar venta ganada' : 'Registrar apartado'}</button></footer></form></aside></div>}
+        {!editingSale && <><label className="field"><span>Cobro inicial</span><input type="number" min="0" step="0.01" value={saleDraft.paymentAmount} onChange={(event) => setSaleDraft((current) => ({ ...current, paymentAmount: event.target.value }))}/><small>Puede ser $0, apartado o liquidación. Saldo: {currency.format(Math.max(0, draftDocumentedTotal - Number(saleDraft.paymentAmount || 0)))}</small></label><label className="field"><span>Método</span><select value={saleDraft.paymentMethod} onChange={(event) => setSaleDraft((current) => ({ ...current, paymentMethod: event.target.value }))}><option>Transferencia</option><option>Tarjeta</option><option>Efectivo</option><option>Depósito</option><option>Otro</option></select></label><label className="field"><span>Referencia del cobro</span><input value={saleDraft.paymentReference} onChange={(event) => setSaleDraft((current) => ({ ...current, paymentReference: event.target.value }))}/></label></>}
+        <label className="field field--full"><span>Notas</span><textarea rows="3" value={saleDraft.notes} onChange={(event) => setSaleDraft((current) => ({ ...current, notes: event.target.value }))}/></label>
+        {editingSale && <label className="field field--full"><span>Motivo de la corrección *</span><textarea autoFocus required minLength="5" maxLength="500" rows="3" value={saleDraft.correctionReason} onChange={(event) => setSaleDraft((current) => ({ ...current, correctionReason: event.target.value }))} placeholder="Describe qué dato estaba incorrecto y por qué se corrige."/><small>Quedará registrado en la bitácora de auditoría. Los cobros existentes no se modifican.</small></label>}
+        </div>{saleError && <p className="manual-submit-error" role="alert">{saleError}</p>}</div><footer className="drawer-footer"><button type="button" className="button button--secondary" onClick={closeSaleDrawer}>Cancelar</button><button type="submit" className="button button--primary" disabled={savingSale}>{savingSale ? 'Guardando…' : editingSale ? 'Guardar corrección' : saleDraft.closeStage === 'won' ? 'Registrar venta ganada' : 'Registrar apartado'}</button></footer></form></aside></div>}
     </div>
   )
 }
