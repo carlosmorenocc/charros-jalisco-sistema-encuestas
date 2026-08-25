@@ -218,6 +218,28 @@ function saleRow(row) {
   };
 }
 
+function saleItemsFromPricing(data, pricing) {
+  if (!pricing) return data.items;
+  const product = data.saleType === 'renewal' ? 'RENOVACIÓN DE ABONO' : 'ABONO NUEVO';
+  const suffix = ` · DESCUENTO ${pricing.discountName} [${pricing.discountCode}]`;
+  if (pricing.pricingMode === 'two_for_one') {
+    return [
+      { product: `${product}${suffix} · PROMOCIÓN 2X1 (CON CARGO)`, zone: pricing.localityName,
+        quantity: pricing.chargedUnits, unitPrice: moneyFromCents(pricing.netAmount) / pricing.chargedUnits },
+      ...(pricing.bonusUnits ? [{ product: `${product}${suffix} · PROMOCIÓN 2X1 (BONIFICADO)`,
+        zone: pricing.localityName, quantity: pricing.bonusUnits, unitPrice: 0 }] : [])
+    ];
+  }
+  const baseUnitCents = Math.floor(pricing.netAmount / data.pricing.seatCount);
+  const higherPriceUnits = pricing.netAmount % data.pricing.seatCount;
+  return [
+    ...(higherPriceUnits ? [{ product: `${product}${suffix}`, zone: pricing.localityName,
+      quantity: higherPriceUnits, unitPrice: moneyFromCents(baseUnitCents + 1) }] : []),
+    ...(data.pricing.seatCount - higherPriceUnits ? [{ product: `${product}${suffix}`, zone: pricing.localityName,
+      quantity: data.pricing.seatCount - higherPriceUnits, unitPrice: moneyFromCents(baseUnitCents) }] : [])
+  ];
+}
+
 function paymentRow(row) {
   return {
     id: row.id,
@@ -1875,7 +1897,12 @@ export class PgCrmRepository {
       if (duplicate.rows[0]) {
         throw conflict(`La orden ${data.externalOrderNumber} ya está registrada en esta temporada.`);
       }
-      const total = data.items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
+      const pricing = data.pricing ? await this.resolveSubscriptionPricing(client, {
+        seasonCode: data.seasonCode, ...data.pricing
+      }) : null;
+      const saleItems = saleItemsFromPricing(data, pricing);
+      const total = pricing ? moneyFromCents(pricing.netAmount)
+        : saleItems.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
       const paid = data.payments.reduce((sum, payment) => sum + payment.amount, 0);
       if (paid > total) throw conflict('Los pagos no pueden superar el total de la venta.');
       const result = await client.query(
@@ -1886,7 +1913,7 @@ export class PgCrmRepository {
           data.seasonCode, data.status, data.soldAt ?? null, data.currency, total, paid,
           data.notes ?? null, actor.id]
       );
-      for (const item of data.items) {
+      for (const item of saleItems) {
         await client.query(
           `INSERT INTO sale_items (sale_id,product,zone,quantity,unit_price) VALUES ($1,$2,$3,$4,$5)`,
           [result.rows[0].id, item.product, item.zone ?? null, item.quantity, item.unitPrice]
@@ -1931,8 +1958,8 @@ export class PgCrmRepository {
             [membershipResult.rows[0].id, data.soldAt ?? null, actor.id]
           );
         } else {
-          const primaryItem = data.items[0];
-          const membershipSeatCount = data.items.reduce((sum, item) => sum + item.quantity, 0);
+          const primaryItem = saleItems[0];
+          const membershipSeatCount = saleItems.reduce((sum, item) => sum + item.quantity, 0);
           const membership = await client.query(
             `INSERT INTO memberships
               (contact_id,season_code,membership_status,seat_count,zone,section,product,start_date,created_by,updated_by)
@@ -1952,11 +1979,11 @@ export class PgCrmRepository {
       const created = saleRow(result.rows[0]);
       await this.audit(client, context, {
         action: 'sale.created', entityType: 'sale', entityId: created.id, after: created,
-        metadata: { itemCount: data.items.length, paymentCount: data.payments.length,
+        metadata: { itemCount: saleItems.length, paymentCount: data.payments.length,
           externalOrderNumber: data.externalOrderNumber, saleType: data.saleType,
           closeStage: data.closeStage }
       });
-      return { ...created, items: data.items, payments: data.payments };
+      return { ...created, items: saleItems, payments: data.payments };
     });
   }
 
@@ -1968,7 +1995,12 @@ export class PgCrmRepository {
       await this.assertActiveUser(client, data.executiveId, ['executive']);
       const contact = await this.getContact(data.contactId, actor, { client });
       if (!contact) throw notFound('Contacto');
-      const total = data.items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
+      const pricing = data.pricing ? await this.resolveSubscriptionPricing(client, {
+        seasonCode: data.seasonCode, ...data.pricing
+      }) : null;
+      const saleItems = saleItemsFromPricing(data, pricing);
+      const total = pricing ? moneyFromCents(pricing.netAmount)
+        : saleItems.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
       if (before.paidAmount > total) {
         throw conflict('La corrección no puede dejar un total menor que los cobros registrados.');
       }
@@ -1985,7 +2017,7 @@ export class PgCrmRepository {
            total_amount,notes,items,reason,created_by)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11,$12) RETURNING id,created_at`,
         [saleId, data.externalOrderNumber, data.saleType, data.contactId, data.executiveId,
-          data.status, data.soldAt ?? null, total, data.notes ?? null, JSON.stringify(data.items),
+          data.status, data.soldAt ?? null, total, data.notes ?? null, JSON.stringify(saleItems),
           data.reason, actor.id]
       );
       const targetSubscriberStatus = data.saleType === 'renewal' ? 'current_subscriber' : 'new_subscriber';

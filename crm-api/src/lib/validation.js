@@ -474,6 +474,7 @@ export function validateSale(input) {
       quantity: integer(item.quantity, `items[${index}].quantity`, { min: 1, max: 1000, required: true }),
       unitPrice: decimal(item.unitPrice, `items[${index}].unitPrice`, { min: 0, required: true })
     })),
+    pricing: input.pricing == null ? null : validateSubscriptionQuote(input.pricing),
     payments: (Array.isArray(input.payments) ? input.payments : []).map((payment, index) => ({
       amount: decimal(payment.amount, `payments[${index}].amount`, { min: 0.01, required: true }),
       method: cleanString(payment.method, { required: true, max: 80, field: `payments[${index}].method` }),
