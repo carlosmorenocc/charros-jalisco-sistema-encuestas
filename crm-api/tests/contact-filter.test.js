@@ -122,15 +122,15 @@ test('aplica temporada en ventas y dashboard con parámetros SQL', async () => {
   const summary = await subject.dashboardSummary({ actor, filters });
 
   assert.match(calls[0].sql, /s\.season_code = \$1/);
-  assert.match(calls[0].sql, /COALESCE\(i\.items,'\[\]'::jsonb\) AS items/);
+  assert.match(calls[0].sql, /s\.effective_items AS items/);
   assert.equal(calls[0].params[0], 'LMP-2026-27');
   assert.match(calls[1].sql, /m\.season_code = \$3/);
   assert.match(calls[1].sql, /s\.season_code = \$3/);
   assert.equal(calls[1].params.at(-1), 'LMP-2026-27');
   assert.match(calls[1].sql, /membership_status IN \('active','renewing'\)/);
-  assert.match(calls[1].sql, /s\.sale_type='new'/);
-  assert.match(calls[1].sql, /s\.status IN \('confirmed','reserved'\)/);
-  assert.match(calls[1].sql, /sum\(si\.quantity\)/);
+  assert.match(calls[1].sql, /s\.effective_sale_type='new'/);
+  assert.match(calls[1].sql, /s\.effective_status IN \('confirmed','reserved'\)/);
+  assert.match(calls[1].sql, /jsonb_array_elements\(s\.effective_items\)/);
   assert.equal(summary.pricedMemberships, 2);
   assert.equal(summary.pricedSeats, 3);
   assert.equal(summary.membershipCommercialValue, 44920);

@@ -10,6 +10,7 @@ import {
   validateMembershipSeatAssignment,
   validateSubscriptionQuote,
   validateSale,
+  validateSaleCorrection,
   validatePayment,
   validateTask,
   validateUuid
@@ -220,6 +221,15 @@ export function createApiRouter({ service, config }) {
 
   router.post('/sales', asyncHandler(async (req, res) => {
     data(res, await service.createSale(req.actor, validateSale(req.body), req.auditContext), 201);
+  }));
+
+  router.post('/sales/:id/corrections', asyncHandler(async (req, res) => {
+    data(res, await service.correctSale(
+      req.actor,
+      validateUuid(req.params.id),
+      validateSaleCorrection(req.body),
+      req.auditContext
+    ), 201);
   }));
 
   router.post('/sales/:id/payments', asyncHandler(async (req, res) => {
