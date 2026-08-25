@@ -116,7 +116,7 @@ export function createApiClient({
     logout: () => request('/auth/logout', { method: 'POST', trackActivity: false }),
     dashboard: (filters) => request(`/dashboard/summary${encodeQuery(filters)}`),
     contacts: (filters) => request(`/contacts${encodeQuery(filters)}`),
-    contact: (id) => request(`/contacts/${encodeURIComponent(id)}`),
+    contact: (id, filters) => request(`/contacts/${encodeURIComponent(id)}${encodeQuery(filters)}`),
     createContact: (payload) => request('/contacts', { method: 'POST', body: payload }),
     createManualRegistration: (payload, idempotencyKey) => request('/manual-registrations', { method: 'POST', headers: { 'Idempotency-Key': idempotencyKey }, body: payload }),
     updateContact: (id, payload, rowVersion) => request(`/contacts/${encodeURIComponent(id)}`, { method: 'PATCH', headers: rowVersion == null ? {} : { 'If-Match': String(rowVersion) }, body: payload }),

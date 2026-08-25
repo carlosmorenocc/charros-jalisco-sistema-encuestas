@@ -33,6 +33,15 @@ describe('apiClient', () => {
     expect(JSON.parse(options.body)).toEqual({ firstName: 'Ana' })
   })
 
+  it('solicita explícitamente el detalle de un contacto eliminado para restaurarlo', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(jsonResponse({ data: { id: 'deleted-1', deletedAt: '2026-08-25T00:00:00Z' } }))
+    const api = createApiClient({ baseUrl: '/api/v1', getCsrfToken: () => 'csrf', fetchImpl })
+
+    await api.contact('deleted/1', { includeDeleted: true })
+
+    expect(fetchImpl.mock.calls[0][0]).toBe('/api/v1/contacts/deleted%2F1?includeDeleted=true')
+  })
+
   it('permite login sin CSRF y trata la primera sesión ausente como signed-out normal', async () => {
     const onUnauthorized = vi.fn()
     const fetchImpl = vi.fn()
