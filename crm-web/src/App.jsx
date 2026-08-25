@@ -723,6 +723,7 @@ function App() {
   async function openContact(contactOrId, options = {}) {
     const id = typeof contactOrId === 'string' ? contactOrId : contactOrId?.id
     if (!id) return
+    const includeDeleted = options.includeDeleted ?? Boolean(typeof contactOrId === 'object' && contactOrId?.deletedAt)
     const requestId = latestDrawerRequest.current + 1
     latestDrawerRequest.current = requestId
     try {
@@ -732,7 +733,10 @@ function App() {
         detailedContact = typeof contactOrId === 'object' ? contactOrId : contacts.find((item) => item.id === id)
         memberships = detailedContact?.memberships || (detailedContact?.currentMembership ? [detailedContact.currentMembership] : [])
       } else {
-        const [contactResponse, membershipsResponse] = await Promise.all([api.contact(id), api.memberships(id)])
+        const [contactResponse, membershipsResponse] = await Promise.all([
+          api.contact(id, includeDeleted ? { includeDeleted: true } : undefined),
+          includeDeleted ? Promise.resolve({ data: [] }) : api.memberships(id),
+        ])
         detailedContact = contactResponse.data
         memberships = Array.isArray(membershipsResponse.data) ? membershipsResponse.data : membershipsResponse.data?.items || []
       }

@@ -38,6 +38,11 @@ export class CrmService {
 
   async getContact(actor, id, options = {}) {
     requirePermission(actor, PERMISSIONS.CONTACT_READ);
+    if (options.includeDeleted
+      && !hasPermission(actor, PERMISSIONS.CONTACT_RESTORE)
+      && !hasPermission(actor, PERMISSIONS.CONTACT_DELETE)) {
+      throw forbidden('No puedes consultar contactos eliminados.');
+    }
     const contact = await this.repository.getContact(id, actor, options);
     if (!contact) throw notFound('Contacto');
     return contact;

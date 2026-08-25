@@ -20,6 +20,22 @@ test('Ejecutivo no edita contacto de otro ejecutivo aunque el repositorio lo dev
   );
 });
 
+test('solo perfiles con restauración pueden abrir el detalle de un eliminado', async () => {
+  const calls = [];
+  const repository = {
+    async getContact(id, actor, options) { calls.push({ id, actor, options }); return { id, deletedAt: new Date() }; }
+  };
+  const service = new CrmService(repository);
+  await assert.rejects(
+    service.getContact(EXECUTIVE_A, 'deleted-contact', { includeDeleted: true }),
+    /No puedes consultar contactos eliminados/
+  );
+  const restoredCandidate = await service.getContact(ADMIN, 'deleted-contact', { includeDeleted: true });
+  assert.equal(restoredCandidate.id, 'deleted-contact');
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].options.includeDeleted, true);
+});
+
 test('Ejecutivo no asigna una tarea a otro usuario', async () => {
   const repository = { async createTask() { throw new Error('must not be called'); } };
   const service = new CrmService(repository);

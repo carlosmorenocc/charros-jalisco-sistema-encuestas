@@ -1,5 +1,6 @@
 import express from 'express';
 import { asyncHandler, paginationMeta, requireRowVersion } from './lib/http.js';
+import { badRequest } from './lib/errors.js';
 import {
   parseListQuery,
   validateContact,
@@ -16,7 +17,6 @@ import {
   validateUuid
 } from './lib/validation.js';
 import { rowsToCsv } from './lib/csv.js';
-import { badRequest } from './lib/errors.js';
 import { effectivePermissions } from './security/permissions.js';
 import { requestBodyHash } from './lib/idempotency.js';
 
@@ -87,7 +87,11 @@ export function createApiRouter({ service, config }) {
   }));
 
   router.get('/contacts/:id', asyncHandler(async (req, res) => {
-    const contact = await service.getContact(req.actor, validateUuid(req.params.id));
+    const includeDeleted = req.query.includeDeleted === 'true';
+    if (req.query.includeDeleted !== undefined && !['true', 'false'].includes(req.query.includeDeleted)) {
+      throw badRequest('includeDeleted debe ser true o false.');
+    }
+    const contact = await service.getContact(req.actor, validateUuid(req.params.id), { includeDeleted });
     res.setHeader('etag', `"${contact.rowVersion}"`);
     data(res, contact);
   }));
