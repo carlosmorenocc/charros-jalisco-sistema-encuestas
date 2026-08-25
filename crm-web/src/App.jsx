@@ -121,14 +121,21 @@ export function salesForDashboard(sales, { executiveName, from, to } = {}) {
   })
 }
 
-export function buildSaleItems({ kind, zone, quantity, unitPrice, promotion2x1 }) {
+export function buildSaleItems({ kind, zone, quantity, unitPrice, promotion2x1, discountCode, discountName, pricingMode, chargedUnits, bonusUnits }) {
   const product = kind === 'renewal' ? 'RENOVACIÓN DE ABONO' : 'ABONO NUEVO'
-  if (!promotion2x1) return [{ product, zone: zone || undefined, quantity, unitPrice }]
-  const chargedUnits = Math.ceil(quantity / 2)
-  const bonusUnits = quantity - chargedUnits
+  const discountSuffix = discountCode ? ` · DESCUENTO ${discountName || discountCode} [${discountCode}]` : ''
+  if (pricingMode === 'two_for_one') {
+    return [
+      { product: `${product}${discountSuffix} · PROMOCIÓN 2X1 (CON CARGO)`, zone, quantity: chargedUnits, unitPrice },
+      ...(bonusUnits ? [{ product: `${product}${discountSuffix} · PROMOCIÓN 2X1 (BONIFICADO)`, zone, quantity: bonusUnits, unitPrice: 0 }] : []),
+    ]
+  }
+  if (!promotion2x1) return [{ product: `${product}${discountSuffix}`, zone: zone || undefined, quantity, unitPrice }]
+  const fallbackChargedUnits = Math.ceil(quantity / 2)
+  const fallbackBonusUnits = quantity - fallbackChargedUnits
   return [
-    { product: `${product} · PROMOCIÓN 2X1 (CON CARGO)`, zone, quantity: chargedUnits, unitPrice },
-    ...(bonusUnits ? [{ product: `${product} · PROMOCIÓN 2X1 (BONIFICADO)`, zone, quantity: bonusUnits, unitPrice: 0 }] : []),
+    { product: `${product} · PROMOCIÓN 2X1 (CON CARGO)`, zone, quantity: fallbackChargedUnits, unitPrice },
+    ...(fallbackBonusUnits ? [{ product: `${product} · PROMOCIÓN 2X1 (BONIFICADO)`, zone, quantity: fallbackBonusUnits, unitPrice: 0 }] : []),
   ]
 }
 
@@ -984,6 +991,7 @@ function App() {
     sales,
     dashboardSummary,
     pricingCatalog: membershipPricingCatalog,
+    onQuoteMembershipPricing: quoteMembershipPricing,
     isDemo: authClient.isDemo,
     availableExecutives,
     campaigns,
@@ -1669,10 +1677,10 @@ function InteractionLog({ interactions }) {
 }
 
 function initialSaleDraft() {
-  return { externalOrderNumber: '', contactId: '', executiveId: '', kind: 'new', closeStage: 'reserved', localityCode: '', zone: '', promotion2x1: false, quantity: 1, unitPrice: '', soldAt: new Date().toISOString().slice(0, 10), paymentAmount: '', paymentMethod: 'Transferencia', paymentReference: '', notes: '', correctionReason: '' }
+  return { externalOrderNumber: '', contactId: '', executiveId: '', kind: 'new', closeStage: 'reserved', localityCode: '', discountCode: '', zone: '', promotion2x1: false, quantity: 1, unitPrice: '', soldAt: new Date().toISOString().slice(0, 10), paymentAmount: '', paymentMethod: 'Transferencia', paymentReference: '', notes: '', correctionReason: '' }
 }
 
-function SalesPage({ sales, contacts, isDemo, user, availableExecutives, pricingCatalog, onAddPayment, onCreateSale, onCorrectSale, onCreate, saleClosure, onClearSaleClosure }) {
+function SalesPage({ sales, contacts, isDemo, user, availableExecutives, pricingCatalog, onQuoteMembershipPricing, onAddPayment, onCreateSale, onCorrectSale, onCreate, saleClosure, onClearSaleClosure }) {
   const [search, setSearch] = useState('')
   const [payment, setPayment] = useState('Todos los pagos')
   const [owner, setOwner] = useState('Todos los ejecutivos')
@@ -1689,9 +1697,12 @@ function SalesPage({ sales, contacts, isDemo, user, availableExecutives, pricing
   const [savingSale, setSavingSale] = useState(false)
   const [contactSearch, setContactSearch] = useState('')
   const [saleDraft, setSaleDraft] = useState(initialSaleDraft)
+  const [saleQuote, setSaleQuote] = useState(null)
+  const [saleQuoteState, setSaleQuoteState] = useState('idle')
+  const [saleQuoteError, setSaleQuoteError] = useState('')
+  const saleQuoteRequest = useRef(0)
   const saleLocalities = pricingCatalog?.localities || []
-  const selectedLocality = saleLocalities.find((item) => item.code === saleDraft.localityCode)
-  const promotionEligible = selectedLocality?.july25Mode === 'two_for_one'
+  const saleDiscounts = pricingCatalog?.discounts || []
   const contactOptions = [...new Map([
     ...contacts.map((contact) => [contact.id, { id: contact.id, name: contact.name }]),
     ...sales.filter((sale) => sale.contactId).map((sale) => [sale.contactId, { id: sale.contactId, name: sale.contact }]),
@@ -1731,8 +1742,33 @@ function SalesPage({ sales, contacts, isDemo, user, availableExecutives, pricing
   const collectedPercentage = total > 0 ? Math.round((paid / total) * 100) : 0
   const draftQuantity = Number(saleDraft.quantity || 0)
   const draftUnitPrice = Number(saleDraft.unitPrice || 0)
-  const draftChargedUnits = saleDraft.promotion2x1 && promotionEligible ? Math.ceil(draftQuantity / 2) : draftQuantity
-  const draftDocumentedTotal = draftChargedUnits * draftUnitPrice
+  const draftChargedUnits = saleQuote?.chargedUnits ?? draftQuantity
+  const draftDocumentedTotal = saleQuote?.netAmount ?? (draftChargedUnits * draftUnitPrice)
+  useEffect(() => {
+    saleQuoteRequest.current += 1
+    const requestId = saleQuoteRequest.current
+    setSaleQuote(null)
+    setSaleQuoteError('')
+    if (!saleDraft.localityCode || !saleDraft.discountCode || !Number.isInteger(draftQuantity) || draftQuantity < 1 || !onQuoteMembershipPricing) {
+      setSaleQuoteState('idle')
+      return undefined
+    }
+    setSaleQuoteState('loading')
+    const timeout = window.setTimeout(async () => {
+      try {
+        const quote = await onQuoteMembershipPricing({ localityCode: saleDraft.localityCode, discountCode: saleDraft.discountCode, seatCount: draftQuantity })
+        if (requestId !== saleQuoteRequest.current) return
+        setSaleQuote(quote)
+        setSaleDraft((current) => ({ ...current, unitPrice: quote.pricingMode === 'two_for_one' ? quote.netAmount / quote.chargedUnits : quote.netAmount / draftQuantity, promotion2x1: quote.pricingMode === 'two_for_one' }))
+        setSaleQuoteState('ready')
+      } catch (error) {
+        if (requestId !== saleQuoteRequest.current) return
+        setSaleQuoteState('error')
+        setSaleQuoteError(error?.message || 'No fue posible calcular el descuento.')
+      }
+    }, 250)
+    return () => window.clearTimeout(timeout)
+  }, [saleDraft.localityCode, saleDraft.discountCode, draftQuantity, onQuoteMembershipPricing])
   function closeSaleDrawer() {
     setSaleOpen(false)
     setEditingSale(null)
@@ -1745,6 +1781,10 @@ function SalesPage({ sales, contacts, isDemo, user, availableExecutives, pricing
     const locality = saleLocalities.find((item) => item.displayName === rawZone)
       || saleLocalities.find((item) => rawZone.toLowerCase().includes(item.displayName.toLowerCase()))
     const promotion2x1 = items.some((item) => String(item.product || '').toUpperCase().includes('2X1')) || sale.promotion === 'Promoción 2x1'
+    const recordedDiscountCode = String(chargedItem.product || '').match(/DESCUENTO .* \[([^\]]+)\]/i)?.[1]
+    const discountCode = saleDiscounts.some((item) => item.code === recordedDiscountCode)
+      ? recordedDiscountCode
+      : promotion2x1 && saleDiscounts.some((item) => item.code === 'july25') ? 'july25' : 'regular'
     setEditingSale(sale)
     setContactSearch(sale.contact || '')
     setSaleDraft({
@@ -1754,6 +1794,7 @@ function SalesPage({ sales, contacts, isDemo, user, availableExecutives, pricing
       kind: sale.saleType || (sale.kind === 'Renovación' ? 'renewal' : 'new'),
       closeStage: sale.status === 'reserved' || sale.commercialStatus === 'Apartada' ? 'reserved' : 'won',
       localityCode: locality?.code || '',
+      discountCode,
       zone: locality?.displayName || rawZone || '',
       promotion2x1,
       quantity: items.reduce((sum, item) => sum + Number(item.quantity || 0), 0) || sale.seats || 1,
@@ -1783,11 +1824,11 @@ function SalesPage({ sales, contacts, isDemo, user, availableExecutives, pricing
   async function submitSale(event) {
     event.preventDefault()
     const quantity = Number(saleDraft.quantity); const unitPrice = Number(saleDraft.unitPrice); const paymentAmount = Number(saleDraft.paymentAmount || 0)
-    const promotion2x1 = Boolean(saleDraft.promotion2x1 && promotionEligible)
-    const items = buildSaleItems({ kind: saleDraft.kind, zone: saleDraft.zone, quantity, unitPrice, promotion2x1 })
+    const promotion2x1 = saleQuote?.pricingMode === 'two_for_one'
+    const items = buildSaleItems({ kind: saleDraft.kind, zone: saleDraft.zone, quantity, unitPrice, promotion2x1, discountCode: saleQuote?.discountCode, discountName: saleQuote?.discountName, pricingMode: saleQuote?.pricingMode, chargedUnits: saleQuote?.chargedUnits, bonusUnits: saleQuote?.bonusUnits })
     const totalAmount = items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0)
-    if (!saleDraft.externalOrderNumber.trim() || !saleDraft.contactId || !saleDraft.executiveId || !saleDraft.localityCode || !Number.isInteger(quantity) || quantity < 1 || !Number.isFinite(unitPrice) || unitPrice < 0 || (!editingSale && (paymentAmount < 0 || paymentAmount > totalAmount))) {
-      setSaleError('Completa número de orden, titular, ejecutivo, zona, cantidad y precio; el cobro inicial no puede superar el total.')
+    if (!saleDraft.externalOrderNumber.trim() || !saleDraft.contactId || !saleDraft.executiveId || !saleDraft.localityCode || !saleDraft.discountCode || saleQuoteState !== 'ready' || !saleQuote || !Number.isInteger(quantity) || quantity < 1 || !Number.isFinite(unitPrice) || unitPrice < 0 || (!editingSale && (paymentAmount < 0 || paymentAmount > totalAmount))) {
+      setSaleError('Completa número de orden, titular, ejecutivo, zona, descuento y cantidad; espera a que termine la cotización antes de guardar.')
       return
     }
     if (editingSale && saleDraft.correctionReason.trim().length < 5) {
@@ -1800,7 +1841,7 @@ function SalesPage({ sales, contacts, isDemo, user, availableExecutives, pricing
     }
     setSavingSale(true); setSaleError('')
     try {
-      const payload = { externalOrderNumber: saleDraft.externalOrderNumber.trim(), saleType: saleDraft.kind, closeStage: saleDraft.closeStage, contactId: saleDraft.contactId, executiveId: saleDraft.executiveId, seasonCode: 'LMP-2026-27', status: saleDraft.closeStage === 'won' ? 'confirmed' : 'reserved', soldAt: new Date(`${saleDraft.soldAt}T12:00:00`).toISOString(), currency: 'MXN', notes: [promotion2x1 ? 'Promoción 2x1 Lateral 1ra–3ra aplicada automáticamente.' : '', saleDraft.notes].filter(Boolean).join(' ') || undefined, items }
+      const payload = { externalOrderNumber: saleDraft.externalOrderNumber.trim(), saleType: saleDraft.kind, closeStage: saleDraft.closeStage, contactId: saleDraft.contactId, executiveId: saleDraft.executiveId, seasonCode: 'LMP-2026-27', status: saleDraft.closeStage === 'won' ? 'confirmed' : 'reserved', soldAt: new Date(`${saleDraft.soldAt}T12:00:00`).toISOString(), currency: 'MXN', notes: [promotion2x1 ? 'Promoción 2x1 aplicada automáticamente desde el catálogo oficial.' : '', saleDraft.notes].filter(Boolean).join(' ') || undefined, items, pricing: { localityCode: saleDraft.localityCode, discountCode: saleDraft.discountCode, seatCount: quantity } }
       if (editingSale) await onCorrectSale(editingSale, { ...payload, reason: saleDraft.correctionReason.trim() })
       else await onCreateSale({ ...payload, payments: paymentAmount > 0 ? [{ amount: paymentAmount, method: saleDraft.paymentMethod, paidAt: new Date(`${saleDraft.soldAt}T12:00:00`).toISOString(), reference: saleDraft.paymentReference || undefined }] : [] })
       closeSaleDrawer()
@@ -1821,10 +1862,10 @@ function SalesPage({ sales, contacts, isDemo, user, availableExecutives, pricing
         <label className="field"><span>Tipo *</span><select value={saleDraft.kind} onChange={(event) => setSaleDraft((current) => ({ ...current, kind: event.target.value }))}><option value="new">Abono nuevo</option><option value="renewal">Renovación</option></select></label>
         <label className="field"><span>Ejecutivo *</span><select value={saleDraft.executiveId} onChange={(event) => setSaleDraft((current) => ({ ...current, executiveId: event.target.value }))}><option value="">Selecciona</option>{availableExecutives.map((item) => <option key={item.id} value={item.id}>{item.displayName}</option>)}</select></label>
         <label className="field"><span>Fecha *</span><input type="date" value={saleDraft.soldAt} onChange={(event) => setSaleDraft((current) => ({ ...current, soldAt: event.target.value }))}/></label>
-        <label className="field"><span>Zona *</span><select value={saleDraft.localityCode} onChange={(event) => { const locality = saleLocalities.find((item) => item.code === event.target.value); setSaleDraft((current) => ({ ...current, localityCode: event.target.value, zone: locality?.displayName || '', unitPrice: locality?.listUnitPrice ?? '', promotion2x1: false })) }}><option value="">Selecciona una zona</option>{saleLocalities.map((item) => <option key={item.code} value={item.code}>{item.displayName}</option>)}</select></label>
-        {promotionEligible && <label className="check-field field--full promotion-option"><input type="checkbox" checked={saleDraft.promotion2x1} onChange={(event) => setSaleDraft((current) => ({ ...current, promotion2x1: event.target.checked }))}/><span><strong>Aplicar promoción 2x1</strong><small>Exclusiva de Lateral 1ra–3ra: se cobra una unidad y se bonifica la siguiente.</small></span></label>}
+        <label className="field"><span>Zona *</span><select value={saleDraft.localityCode} onChange={(event) => { const locality = saleLocalities.find((item) => item.code === event.target.value); setSaleDraft((current) => ({ ...current, localityCode: event.target.value, zone: locality?.displayName || '', unitPrice: '', promotion2x1: false })) }}><option value="">Selecciona una zona</option>{saleLocalities.map((item) => <option key={item.code} value={item.code}>{item.displayName}</option>)}</select></label>
+        <label className="field"><span>Descuento o campaña *</span><select value={saleDraft.discountCode} onChange={(event) => setSaleDraft((current) => ({ ...current, discountCode: event.target.value }))}><option value="">Selecciona conscientemente</option>{saleDiscounts.map((item) => <option key={item.code} value={item.code}>{item.displayName}</option>)}</select><small>Usa las mismas reglas oficiales del abono del contacto.</small></label>
         <label className="field"><span>Cantidad de abonos *</span><input type="number" min="1" max="20" value={saleDraft.quantity} onChange={(event) => setSaleDraft((current) => ({ ...current, quantity: event.target.value }))}/></label>
-        <label className="field"><span>Precio oficial por unidad *</span><input type="number" min="0" step="0.01" readOnly={Boolean(selectedLocality)} value={saleDraft.unitPrice} onChange={(event) => setSaleDraft((current) => ({ ...current, unitPrice: event.target.value }))}/><small>{saleDraft.promotion2x1 && promotionEligible ? `${draftChargedUnits} con cargo · ${Math.max(0, draftQuantity - draftChargedUnits)} bonificados · Total ${currency.format(draftDocumentedTotal)}` : 'Precio oficial del catálogo.'}</small></label>
+        <label className="field"><span>Precio con descuento por unidad *</span><input type="number" min="0" step="0.01" readOnly value={saleDraft.unitPrice}/><small>{saleQuoteState === 'loading' ? 'Calculando con el catálogo…' : saleQuoteState === 'error' ? saleQuoteError : saleQuote ? `${saleQuote.discountName} · Lista ${currency.format(saleQuote.commercialValue)} · Descuento ${currency.format(saleQuote.discountAmount)} · Total ${currency.format(draftDocumentedTotal)}${saleQuote.pricingMode === 'two_for_one' ? ` · ${saleQuote.chargedUnits} con cargo + ${saleQuote.bonusUnits} bonificados` : ''}` : 'Selecciona zona, descuento y cantidad.'}</small></label>
         {!editingSale && <><label className="field"><span>Cobro inicial</span><input type="number" min="0" step="0.01" value={saleDraft.paymentAmount} onChange={(event) => setSaleDraft((current) => ({ ...current, paymentAmount: event.target.value }))}/><small>Puede ser $0, apartado o liquidación. Saldo: {currency.format(Math.max(0, draftDocumentedTotal - Number(saleDraft.paymentAmount || 0)))}</small></label><label className="field"><span>Método</span><select value={saleDraft.paymentMethod} onChange={(event) => setSaleDraft((current) => ({ ...current, paymentMethod: event.target.value }))}><option>Transferencia</option><option>Tarjeta</option><option>Efectivo</option><option>Depósito</option><option>Otro</option></select></label><label className="field"><span>Referencia del cobro</span><input value={saleDraft.paymentReference} onChange={(event) => setSaleDraft((current) => ({ ...current, paymentReference: event.target.value }))}/></label></>}
         <label className="field field--full"><span>Notas</span><textarea rows="3" value={saleDraft.notes} onChange={(event) => setSaleDraft((current) => ({ ...current, notes: event.target.value }))}/></label>
         {editingSale && <label className="field field--full"><span>Motivo de la corrección *</span><textarea autoFocus required minLength="5" maxLength="500" rows="3" value={saleDraft.correctionReason} onChange={(event) => setSaleDraft((current) => ({ ...current, correctionReason: event.target.value }))} placeholder="Describe qué dato estaba incorrecto y por qué se corrige."/><small>Quedará registrado en la bitácora de auditoría. Los cobros existentes no se modifican.</small></label>}
