@@ -36,7 +36,7 @@ export const demoMembershipPricingCatalog = {
   discounts: [
     { code: 'regular', displayName: 'Sin descuento', mode: 'regular', rateBasisPoints: 0, sortOrder: 1 },
     { code: 'discount30', displayName: '30% histórico', mode: 'percentage', rateBasisPoints: 3000, sortOrder: 2 },
-    { code: 'july25', displayName: '25% julio 2026', mode: 'catalog_official', rateBasisPoints: null, sortOrder: 3 },
+    { code: 'july25', displayName: '25% de descuento', mode: 'catalog_official', rateBasisPoints: null, sortOrder: 3 },
     { code: 'discount20', displayName: '20% próximo', mode: 'percentage', rateBasisPoints: 2000, sortOrder: 4 },
   ],
 }
