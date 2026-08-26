@@ -108,6 +108,22 @@ function selectedPeriodLabel(period, fromDate, toDate, now = new Date()) {
   return 'seleccionado'
 }
 
+export function buildTimelineDates(fromDate, toDate, maxFrames = 72) {
+  if (!fromDate || !toDate || fromDate > toDate) return []
+  const start = new Date(`${fromDate}T12:00:00`)
+  const end = new Date(`${toDate}T12:00:00`)
+  const days = Math.round((end.getTime() - start.getTime()) / 86_400_000)
+  const step = Math.max(1, Math.ceil((days + 1) / Math.max(2, maxFrames)))
+  const values = []
+  for (let offset = 0; offset <= days; offset += step) {
+    const cursor = new Date(start)
+    cursor.setDate(start.getDate() + offset)
+    values.push(localInputDate(cursor))
+  }
+  if (values.at(-1) !== toDate) values.push(toDate)
+  return values
+}
+
 export function salesForDashboard(sales, { executiveName, from, to } = {}) {
   const fromTime = from ? new Date(from).getTime() : null
   const toTime = to ? new Date(to).getTime() : null
@@ -169,6 +185,9 @@ function Icon({ name, size = 18, strokeWidth = 1.8 }) {
     bell: <><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></>,
     arrow: <><path d="M5 12h14"/><path d="m13 6 6 6-6 6"/></>,
     refresh: <><path d="M20 11a8 8 0 1 0-2.3 5.7L20 14"/><path d="M20 7v4h-4"/></>,
+    play: <path d="m8 5 11 7-11 7Z"/>,
+    pause: <><path d="M9 5v14"/><path d="M15 5v14"/></>,
+    stop: <rect x="6" y="6" width="12" height="12" rx="1"/>,
     clock: <><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></>,
     logout: <><path d="M10 17l5-5-5-5M15 12H3M21 19V5a2 2 0 0 0-2-2h-6"/></>,
   }
@@ -1190,6 +1209,28 @@ function GlobalFilters({ executiveOptions = [], filters, onChange, disabled = fa
   )
 }
 
+function TimelinePlayer({ dates, cursorDate, playing, speed, disabled, onCursorChange, onPlayPause, onStop, onSpeedChange }) {
+  if (dates.length < 2) return null
+  const cursorIndex = Math.max(0, dates.indexOf(cursorDate || dates.at(-1)))
+  const visibleDate = dates[cursorIndex] || dates.at(-1)
+  return (
+    <section className="timeline-player" aria-label="Reproducción histórica acumulativa">
+      <div className="timeline-heading">
+        <div><span>LÍNEA EN EL TIEMPO</span><strong>Crecimiento acumulativo de la cartera</strong></div>
+        <output aria-live="polite">Corte al {new Intl.DateTimeFormat('es-MX', { day: 'numeric', month: 'long', year: 'numeric' }).format(new Date(`${visibleDate}T12:00:00`))}</output>
+      </div>
+      <div className="timeline-controls">
+        <button type="button" className="timeline-button timeline-button--primary" disabled={disabled} onClick={onPlayPause}><Icon name={playing ? 'pause' : 'play'} size={16}/>{playing ? 'Pausar' : 'Reproducir'}</button>
+        <button type="button" className="timeline-button" disabled={disabled || (!cursorDate && !playing)} onClick={onStop}><Icon name="stop" size={15}/>Detener</button>
+        <input aria-label="Fecha de reproducción" type="range" min="0" max={dates.length - 1} step="1" value={cursorIndex} disabled={disabled || playing} onChange={(event) => onCursorChange(dates[Number(event.target.value)])}/>
+        <label><span>Velocidad</span><select value={speed} disabled={disabled} onChange={(event) => onSpeedChange(Number(event.target.value))}><option value="0.5">0.5×</option><option value="1">1×</option><option value="2">2×</option></select></label>
+      </div>
+      <div className="timeline-scale"><span>{dates[0]}</span><span>{dates.at(-1)}</span></div>
+      <small>La reproducción acumula movimientos desde el inicio del rango y conserva la temporada y el ejecutivo seleccionados.</small>
+    </section>
+  )
+}
+
 function MetricCard({ label, value, detail, trend, icon, tone = 'blue' }) {
   return (
     <article className="metric-card">
@@ -1218,10 +1259,15 @@ function DashboardPage({ contacts, tasks, followupCounts, sales, dashboardSummar
   const [pdfState, setPdfState] = useState({ status: 'idle', message: '' })
   const [subscriberMetricMode, setSubscriberMetricMode] = useState('new')
   const [seatMetricMode, setSeatMetricMode] = useState('new')
+  const [timelineCursorDate, setTimelineCursorDate] = useState('')
+  const [timelinePlaying, setTimelinePlaying] = useState(false)
+  const [timelineSpeed, setTimelineSpeed] = useState(1)
   contacts = contacts.filter((contact) => !contact.deletedAt)
   const selectedExecutiveName = availableExecutives.find((item) => item.id === reportFilters.executiveId)?.displayName
   const demoContactsInScope = isDemo && selectedExecutiveName ? contacts.filter((contact) => contact.executive === selectedExecutiveName) : contacts
-  const selectedBounds = periodBounds(reportFilters.period, reportFilters.fromDate, reportFilters.toDate)
+  const timelineDates = useMemo(() => buildTimelineDates(reportFilters.fromDate, reportFilters.toDate), [reportFilters.fromDate, reportFilters.toDate])
+  const effectiveToDate = timelineCursorDate || reportFilters.toDate
+  const selectedBounds = periodBounds(reportFilters.period, reportFilters.fromDate, effectiveToDate)
   const dashboardSalesInScope = salesForDashboard(sales, {
     executiveName: selectedExecutiveName,
     from: selectedBounds.from,
@@ -1280,19 +1326,24 @@ function DashboardPage({ contacts, tasks, followupCounts, sales, dashboardSummar
     notContacted: demoContactsInScope.filter((contact) => ['Sin contactar', 'Por contactar'].includes(contact.stage)).length,
     unassigned: demoContactsInScope.filter((contact) => contact.executive === 'SIN ASIGNAR').length,
     confirmedSales: dashboardSalesInScope.length,
+    periodActiveSubscribers: new Set(dashboardSalesInScope.map((sale) => sale.contact)).size,
+    periodActiveSeats: dashboardSalesInScope.reduce((sum, sale) => sum + Number(sale.seats || 0), 0),
     salesAmount: dashboardSalesInScope.reduce((sum, sale) => sum + Number(sale.total || 0), 0),
     collectedAmount: dashboardSalesInScope.reduce((sum, sale) => sum + Number(sale.paid || 0), 0),
   } : (dashboardSummary || {})
+  const temporalScope = reportFilters.period !== 'all' || Boolean(reportFilters.fromDate || effectiveToDate)
+  const displayedCurrentSubscribers = temporalScope ? Number(summary.periodActiveSubscribers || 0) : Number(summary.currentSubscribers || 0)
+  const displayedActiveSeats = temporalScope ? Number(summary.periodActiveSeats || 0) : Number(summary.activeSeats || 0)
   const salesTotal = dashboardSalesInScope.reduce((sum, sale) => sum + Number(sale.total || 0), 0)
   const totalContacts = Math.max(1, Number(summary.totalContacts || contacts.length || 1))
   const funnelRows = [
     ['Contactos en alcance', Number(summary.totalContacts || 0), 100, 'blue'],
-    ['Abonados actuales', Number(summary.currentSubscribers || 0), Number(summary.currentSubscribers || 0) / totalContacts * 100, 'green'],
+    ['Abonados actuales', displayedCurrentSubscribers, displayedCurrentSubscribers / totalContacts * 100, 'green'],
     ['Por renovar', Number(summary.renewing || 0), Number(summary.renewing || 0) / totalContacts * 100, 'gold'],
     ['Abonados nuevos', Number(summary.newSubscribers || 0), Number(summary.newSubscribers || 0) / totalContacts * 100, 'violet'],
     ['Prospectos', Number(summary.prospects || 0), Number(summary.prospects || 0) / totalContacts * 100, 'gold'],
   ]
-  const segmentIsPeriod = reportFilters.period !== 'all' || Boolean(reportFilters.fromDate || reportFilters.toDate)
+  const segmentIsPeriod = temporalScope
   const displayedSegments = segmentIsPeriod ? (summary.periodMembershipSegments || {}) : (summary.membershipSegments || {})
   const segmentRows = [
     ['Compromisos', Number(displayedSegments.Compromisos || 0), '#a33b46'],
@@ -1301,7 +1352,7 @@ function DashboardPage({ contacts, tasks, followupCounts, sales, dashboardSummar
     ['General', Number(displayedSegments.General || 0), '#2c9b70'],
   ]
   const segmentTotal = segmentRows.reduce((sum, [, value]) => sum + value, 0)
-  const newSubscriberPeriodLabel = selectedPeriodLabel(reportFilters.period, reportFilters.fromDate, reportFilters.toDate)
+  const newSubscriberPeriodLabel = selectedPeriodLabel(reportFilters.period, reportFilters.fromDate, effectiveToDate)
   const subscriberMetricOptions = [
     { id: 'new', label: 'Nuevos', value: summary.newSubscribers },
     { id: 'renewed', label: 'Renovados', value: summary.renewedSubscribers },
@@ -1324,7 +1375,7 @@ function DashboardPage({ contacts, tasks, followupCounts, sales, dashboardSummar
     completed: tasks.filter((task) => task.status === 'Completada').length,
     overdue: tasks.filter((task) => task.status === 'Vencida').length,
   }
-  const filterKey = `${reportFilters.season}|${reportFilters.period}|${reportFilters.fromDate}|${reportFilters.toDate}|${reportFilters.executiveId}`
+  const filterKey = `${reportFilters.season}|${reportFilters.period}|${reportFilters.fromDate}|${effectiveToDate}|${reportFilters.executiveId}`
   const reportIsReady = Boolean(dashboardSummary) && (isDemo || loadedFilterKey === filterKey)
   const executiveName = availableExecutives.find((item) => item.id === reportFilters.executiveId)?.displayName || 'Todos los ejecutivos'
   useEffect(() => {
@@ -1335,11 +1386,41 @@ function DashboardPage({ contacts, tasks, followupCounts, sales, dashboardSummar
     }
     let active = true
     setLoadedFilterKey('')
-    onLoadDashboard({ season: reportFilters.season, executiveId: reportFilters.executiveId || undefined, ...periodBounds(reportFilters.period, reportFilters.fromDate, reportFilters.toDate) })
+    onLoadDashboard({ season: reportFilters.season, executiveId: reportFilters.executiveId || undefined, ...periodBounds(reportFilters.period, reportFilters.fromDate, effectiveToDate) })
       .then((applied) => { if (active && applied !== false) setLoadedFilterKey(filterKey) })
       .catch((error) => { if (active) onNotify(error.message || 'No fue posible actualizar el reporte.') })
     return () => { active = false }
-  }, [dashboardRevision, filterKey, isDemo, onLoadDashboard, onNotify, reportFilters.executiveId, reportFilters.fromDate, reportFilters.period, reportFilters.season, reportFilters.toDate])
+  }, [dashboardRevision, effectiveToDate, filterKey, isDemo, onLoadDashboard, onNotify, reportFilters.executiveId, reportFilters.fromDate, reportFilters.period, reportFilters.season])
+
+  useEffect(() => {
+    setTimelinePlaying(false)
+    setTimelineCursorDate('')
+  }, [reportFilters.fromDate, reportFilters.toDate, reportFilters.executiveId, reportFilters.season])
+
+  useEffect(() => {
+    if (!timelinePlaying || !reportIsReady || timelineDates.length < 2) return undefined
+    const currentIndex = Math.max(0, timelineDates.indexOf(timelineCursorDate || timelineDates[0]))
+    if (currentIndex >= timelineDates.length - 1) {
+      setTimelinePlaying(false)
+      return undefined
+    }
+    const timer = window.setTimeout(() => setTimelineCursorDate(timelineDates[currentIndex + 1]), Math.round(900 / timelineSpeed))
+    return () => window.clearTimeout(timer)
+  }, [reportIsReady, timelineCursorDate, timelineDates, timelinePlaying, timelineSpeed])
+
+  function toggleTimeline() {
+    if (timelinePlaying) {
+      setTimelinePlaying(false)
+      return
+    }
+    if (!timelineCursorDate || timelineCursorDate === timelineDates.at(-1)) setTimelineCursorDate(timelineDates[0])
+    setTimelinePlaying(true)
+  }
+
+  function stopTimeline() {
+    setTimelinePlaying(false)
+    setTimelineCursorDate('')
+  }
 
   async function downloadDashboardPdf() {
     if (!reportIsReady || pdfState.status === 'generating') return
@@ -1394,10 +1475,11 @@ function DashboardPage({ contacts, tasks, followupCounts, sales, dashboardSummar
     <div className="page-wrap">
       <PageHeader eyebrow="Vista ejecutiva" title="Reporte Dirección" description={<>Seguimiento de venta y renovación de abonados <strong className="charros-name">Charros de Jalisco</strong></>} actions={reportActions} />
       <GlobalFilters executiveOptions={availableExecutives} filters={reportFilters} onChange={setReportFilters} />
+      <TimelinePlayer dates={timelineDates} cursorDate={timelineCursorDate} playing={timelinePlaying} speed={timelineSpeed} disabled={!reportIsReady} onCursorChange={setTimelineCursorDate} onPlayPause={toggleTimeline} onStop={stopTimeline} onSpeedChange={setTimelineSpeed} />
 
       <section className="metrics-grid" aria-label="Indicadores principales">
-        <MetricCard label="Abonados actuales" value={integer.format(summary.currentSubscribers || 0)} detail="Titulares Identificados" icon="people" />
-        <MetricCard label="Abonos Activos" value={integer.format(summary.activeSeats || 0)} detail="Butacas Individuales" icon="layers" tone="violet" />
+        <MetricCard label="Abonados actuales" value={integer.format(displayedCurrentSubscribers)} detail={temporalScope ? 'Titulares dentro del periodo' : 'Titulares Identificados'} icon="people" />
+        <MetricCard label="Abonos Activos" value={integer.format(displayedActiveSeats)} detail={temporalScope ? 'Butacas acumuladas en el periodo' : 'Butacas Individuales'} icon="layers" tone="violet" />
         <MetricCard label="Por renovar" value={integer.format(summary.renewing || 0)} detail="Personas por renovar sus abonos" icon="refresh" tone="gold" />
         <SegmentedMetricCard label="Titulares" options={subscriberMetricOptions} selected={subscriberMetricMode} onSelect={setSubscriberMetricMode} detail={`Periodo: ${newSubscriberPeriodLabel}`} icon="chart" tone="green" />
         <SegmentedMetricCard label="Abonos" options={seatMetricOptions} selected={seatMetricMode} onSelect={setSeatMetricMode} detail={`Butacas individuales · Periodo: ${newSubscriberPeriodLabel}`} icon="layers" tone="violet" />

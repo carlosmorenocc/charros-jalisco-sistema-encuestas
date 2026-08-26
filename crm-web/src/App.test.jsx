@@ -1,9 +1,17 @@
 import React from 'react'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
-import App, { buildSaleItems, contactMatchesPatch, LoadingScreen, LoginScreen, revokeSessionSafely, salesForDashboard, updateContactWithVerification, verifyPersistedContactPatch } from './App'
+import App, { buildSaleItems, buildTimelineDates, contactMatchesPatch, LoadingScreen, LoginScreen, revokeSessionSafely, salesForDashboard, updateContactWithVerification, verifyPersistedContactPatch } from './App'
 
 describe('CRM web en modo demostración', () => {
+  it('construye una línea temporal completa y limita rangos largos', () => {
+    expect(buildTimelineDates('2026-08-01', '2026-08-03')).toEqual(['2026-08-01', '2026-08-02', '2026-08-03'])
+    const yearly = buildTimelineDates('2026-01-01', '2026-12-31')
+    expect(yearly[0]).toBe('2026-01-01')
+    expect(yearly.at(-1)).toBe('2026-12-31')
+    expect(yearly.length).toBeLessThanOrEqual(73)
+  })
+
   it('calcula 2x1 con precio oficial, unidades con cargo y bonificadas', () => {
     expect(buildSaleItems({ kind: 'new', zone: 'Lateral 1a-3a', quantity: 3, unitPrice: 7480, promotion2x1: true })).toEqual([
       { product: 'ABONO NUEVO · PROMOCIÓN 2X1 (CON CARGO)', zone: 'Lateral 1a-3a', quantity: 2, unitPrice: 7480 },
