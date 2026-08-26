@@ -2247,7 +2247,7 @@ export class PgCrmRepository {
            WHEN 'crm.assignment.esmeralda@charrosjalisco.com' THEN 'ESMERALDA RUVALCABA'
            WHEN 'crm.assignment.jesus@charrosjalisco.com' THEN 'JESÚS GONZÁLEZ'
            WHEN 'crm.assignment.rosana@charrosjalisco.com' THEN 'ROSAANA'
-           WHEN 'crm.assignment.carlos@charrosjalisco.com' THEN 'CARLOS'
+           WHEN 'crm.assignment.carlos@charrosjalisco.com' THEN 'EN LINEA'
            WHEN 'crm.assignment.pascual@charrosjalisco.com' THEN 'PASCUAL'
            WHEN 'crm.assignment.cesar@charrosjalisco.com' THEN 'CESAR'
            ELSE display_name END
