@@ -793,6 +793,12 @@ export class PgCrmRepository {
            COALESCE(sum(COALESCE(i.seat_count,0)) FILTER (
              WHERE s.effective_status IN ('confirmed','reserved') AND s.effective_sale_type='renewal'
            ),0)::integer AS sold_renewed_seats,
+           count(DISTINCT s.effective_contact_id) FILTER (
+             WHERE s.effective_status IN ('confirmed','reserved')
+           )::integer AS period_active_subscribers,
+           COALESCE(sum(COALESCE(i.seat_count,0)) FILTER (
+             WHERE s.effective_status IN ('confirmed','reserved')
+           ),0)::integer AS period_active_seats,
            COALESCE(sum(COALESCE(i.segment_commitments,0)) FILTER (
              WHERE s.effective_status IN ('confirmed','reserved')
            ),0)::integer AS period_segment_commitments,
@@ -856,6 +862,8 @@ export class PgCrmRepository {
       totalContacts: Number(row.total_contacts),
       currentSubscribers: Number(row.current_subscribers),
       activeSeats: Number(row.active_seats),
+      periodActiveSubscribers: Number(row.period_active_subscribers ?? 0),
+      periodActiveSeats: Number(row.period_active_seats ?? 0),
       pricedMemberships: Number(row.priced_memberships ?? 0),
       pricedSeats: Number(row.priced_seats ?? 0),
       membershipCommercialValue: moneyFromCents(row.membership_commercial_value ?? 0),

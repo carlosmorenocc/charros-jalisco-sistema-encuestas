@@ -129,6 +129,8 @@ test('aplica temporada en ventas y dashboard con parámetros SQL', async () => {
   assert.equal(calls[1].params.at(-1), 'LMP-2026-27');
   assert.match(calls[1].sql, /membership_status IN \('active','renewing'\)/);
   assert.match(calls[1].sql, /s\.effective_sale_type='new'/);
+  assert.match(calls[1].sql, /period_active_subscribers/);
+  assert.match(calls[1].sql, /period_active_seats/);
   assert.match(calls[1].sql, /s\.effective_status IN \('confirmed','reserved'\)/);
   assert.match(calls[1].sql, /jsonb_array_elements\(s\.effective_items\)/);
   assert.match(calls[1].sql, /period_segment_vip/);
