@@ -461,7 +461,7 @@ function App() {
           overdue: Number(overdueResponse.meta?.total || 0),
         })
         setSales((Array.isArray(salesData) ? salesData : salesData?.items || []).map(fromApiSale))
-        setAvailableExecutives((Array.isArray(executiveData) ? executiveData : executiveData?.items || []).map((item) => ({ id: item.id, displayName: item.displayName || item.name })))
+        setAvailableExecutives((Array.isArray(executiveData) ? executiveData : executiveData?.items || []).map((item) => ({ id: item.id, displayName: String(item.displayName || item.name || '').toLocaleUpperCase('es-MX') })))
         const unassignedData = Array.isArray(unassignedResponse.data) ? unassignedResponse.data : unassignedResponse.data?.items || []
         setUnassignedContacts(unassignedData.map(fromApiContact))
         setUnassignedTotal(Number(unassignedResponse.meta?.total || 0))

@@ -101,7 +101,7 @@ export function fromApiContact(contact) {
     lastContact: displayDate(contact.lastHumanContactAt, 'Sin contacto humano'),
     nextTask: displayDate(contact.nextTaskAt || contact.nextFollowUpAt, 'Sin tarea'),
     channel: channelLabels[contact.lastHumanContactChannel] || '—',
-    executive: contact.executiveName || 'Sin asignar',
+    executive: contact.executiveName?.toLocaleUpperCase('es-MX') || 'Sin asignar',
     note: contact.summaryNotes || '',
     consent: consentLabels[contact.consentStatus] || 'No consta',
     businessSourceLabel: businessSourceLabels[contact.businessSource || contact.acquisitionSource] || 'No consta',
@@ -233,7 +233,7 @@ export function fromApiSale(sale) {
     seats,
     total,
     paid,
-    owner: sale.executiveName || 'Sin asignar',
+    owner: sale.executiveName?.toLocaleUpperCase('es-MX') || 'Sin asignar',
     status: paymentStatus,
     commercialStatus,
   }
