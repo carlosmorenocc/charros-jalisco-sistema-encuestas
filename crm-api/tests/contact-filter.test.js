@@ -131,11 +131,16 @@ test('aplica temporada en ventas y dashboard con parámetros SQL', async () => {
   assert.match(calls[1].sql, /s\.effective_sale_type='new'/);
   assert.match(calls[1].sql, /s\.effective_status IN \('confirmed','reserved'\)/);
   assert.match(calls[1].sql, /jsonb_array_elements\(s\.effective_items\)/);
+  assert.match(calls[1].sql, /period_segment_vip/);
+  assert.match(calls[1].sql, /LIKE '%planta baja%'/);
   assert.equal(summary.pricedMemberships, 2);
   assert.equal(summary.pricedSeats, 3);
   assert.equal(summary.membershipCommercialValue, 44920);
   assert.equal(summary.membershipNetAmount, 37480);
   assert.equal(summary.membershipDiscountAmount, 7440);
+  assert.deepEqual(summary.periodMembershipSegments, {
+    Compromisos: 0, VIP: 0, Preferente: 0, General: 0
+  });
 });
 
 test('Dirección suma el total documentado de apartados y separa el cobro recibido', async () => {

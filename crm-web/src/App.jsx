@@ -1292,11 +1292,13 @@ function DashboardPage({ contacts, tasks, followupCounts, sales, dashboardSummar
     ['Abonados nuevos', Number(summary.newSubscribers || 0), Number(summary.newSubscribers || 0) / totalContacts * 100, 'violet'],
     ['Prospectos', Number(summary.prospects || 0), Number(summary.prospects || 0) / totalContacts * 100, 'gold'],
   ]
+  const segmentIsPeriod = reportFilters.period !== 'all' || Boolean(reportFilters.fromDate || reportFilters.toDate)
+  const displayedSegments = segmentIsPeriod ? (summary.periodMembershipSegments || {}) : (summary.membershipSegments || {})
   const segmentRows = [
-    ['Compromisos', Number(summary.membershipSegments?.Compromisos || 0), '#a33b46'],
-    ['VIP', Number(summary.membershipSegments?.VIP || 0), '#d5a228'],
-    ['Preferente', Number(summary.membershipSegments?.Preferente || 0), '#2a73b7'],
-    ['General', Number(summary.membershipSegments?.General || 0), '#2c9b70'],
+    ['Compromisos', Number(displayedSegments.Compromisos || 0), '#a33b46'],
+    ['VIP', Number(displayedSegments.VIP || 0), '#d5a228'],
+    ['Preferente', Number(displayedSegments.Preferente || 0), '#2a73b7'],
+    ['General', Number(displayedSegments.General || 0), '#2c9b70'],
   ]
   const segmentTotal = segmentRows.reduce((sum, [, value]) => sum + value, 0)
   const newSubscriberPeriodLabel = selectedPeriodLabel(reportFilters.period, reportFilters.fromDate, reportFilters.toDate)
@@ -1361,7 +1363,7 @@ function DashboardPage({ contacts, tasks, followupCounts, sales, dashboardSummar
           renewedSubscribers: summary.renewedSubscribers,
           renewedSeats: summary.renewedSeats,
           prospects: summary.prospects,
-          membershipSegments: summary.membershipSegments,
+          membershipSegments: displayedSegments,
           salesAmount: salesTotal,
           humanInteractions: summary.humanInteractions,
           campaignMessages: summary.campaignMessages,
@@ -1413,8 +1415,8 @@ function DashboardPage({ contacts, tasks, followupCounts, sales, dashboardSummar
         </article>
 
         <article className="panel panel--wide">
-          <div className="panel-heading"><div><span className="panel-kicker">SEGMENTACIÓN DE LA CARTERA</span><h2>Abonos por segmento</h2></div><span className="small-chip">{integer.format(segmentTotal)} abonos</span></div>
-          <div className="donut-layout"><div className="donut segment-donut" style={{background: segmentGradient}}><div><strong>{integer.format(segmentTotal)}</strong><span>abonos activos</span></div></div><div className="donut-legend">{segmentRows.map(([label, value, color]) => <div key={label}><i className="legend-dot" style={{background: color}}/><span>{label}</span><strong>{integer.format(value)}</strong></div>)}</div></div>
+          <div className="panel-heading"><div><span className="panel-kicker">{segmentIsPeriod ? 'SEGMENTACIÓN DEL PERIODO' : 'SEGMENTACIÓN DE LA CARTERA'}</span><h2>Abonos por segmento</h2></div><span className="small-chip">{integer.format(segmentTotal)} abonos</span></div>
+          <div className="donut-layout"><div className="donut segment-donut" style={{background: segmentGradient}}><div><strong>{integer.format(segmentTotal)}</strong><span>{segmentIsPeriod ? 'abonos del periodo' : 'abonos activos'}</span></div></div><div className="donut-legend">{segmentRows.map(([label, value, color]) => <div key={label}><i className="legend-dot" style={{background: color}}/><span>{label}</span><strong>{integer.format(value)}</strong></div>)}</div></div>
         </article>
 
         <article className="panel operation-card">
