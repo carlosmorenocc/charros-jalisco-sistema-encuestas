@@ -1332,8 +1332,8 @@ function DashboardPage({ contacts, tasks, followupCounts, sales, dashboardSummar
     collectedAmount: dashboardSalesInScope.reduce((sum, sale) => sum + Number(sale.paid || 0), 0),
   } : (dashboardSummary || {})
   const temporalScope = reportFilters.period !== 'all' || Boolean(reportFilters.fromDate || effectiveToDate)
-  const displayedCurrentSubscribers = temporalScope ? Number(summary.periodActiveSubscribers || 0) : Number(summary.currentSubscribers || 0)
-  const displayedActiveSeats = temporalScope ? Number(summary.periodActiveSeats || 0) : Number(summary.activeSeats || 0)
+  const displayedCurrentSubscribers = temporalScope ? Number(summary.periodActiveSubscribers ?? summary.currentSubscribers ?? 0) : Number(summary.currentSubscribers || 0)
+  const displayedActiveSeats = temporalScope ? Number(summary.periodActiveSeats ?? summary.activeSeats ?? 0) : Number(summary.activeSeats || 0)
   const salesTotal = dashboardSalesInScope.reduce((sum, sale) => sum + Number(sale.total || 0), 0)
   const totalContacts = Math.max(1, Number(summary.totalContacts || contacts.length || 1))
   const funnelRows = [
