@@ -9,7 +9,7 @@ describe('CRM web en modo demostración', () => {
     const yearly = buildTimelineDates('2026-01-01', '2026-12-31')
     expect(yearly[0]).toBe('2026-01-01')
     expect(yearly.at(-1)).toBe('2026-12-31')
-    expect(yearly.length).toBeLessThanOrEqual(73)
+    expect(yearly.length).toBeLessThanOrEqual(37)
   })
 
   it('calcula 2x1 con precio oficial, unidades con cargo y bonificadas', () => {

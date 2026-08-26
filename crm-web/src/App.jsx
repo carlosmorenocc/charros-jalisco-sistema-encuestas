@@ -108,7 +108,7 @@ function selectedPeriodLabel(period, fromDate, toDate, now = new Date()) {
   return 'seleccionado'
 }
 
-export function buildTimelineDates(fromDate, toDate, maxFrames = 72) {
+export function buildTimelineDates(fromDate, toDate, maxFrames = 36) {
   if (!fromDate || !toDate || fromDate > toDate) return []
   const start = new Date(`${fromDate}T12:00:00`)
   const end = new Date(`${toDate}T12:00:00`)
@@ -1196,11 +1196,11 @@ function PageHeader({ eyebrow, title, description, actions }) {
   )
 }
 
-function GlobalFilters({ executiveOptions = [], filters, onChange, disabled = false }) {
+function GlobalFilters({ executiveOptions = [], filters, onChange, disabled = false, timelineAvailable = false, timelineOpen = false, onToggleTimeline }) {
   return (
     <div className="global-filters" aria-label="Filtros del reporte">
       <label><span>Temporada</span><select disabled={disabled} value={filters.season} onChange={(event) => onChange({ ...filters, season: event.target.value })}><option value="LMP-2026-27">LMP 2026-2027</option></select></label>
-      <label><span>Periodo</span><select disabled={disabled} value={filters.period} onChange={(event) => onChange({ ...filters, period: event.target.value, fromDate: '', toDate: '' })}><option value="today">Hoy</option><option value="week">Semanal</option><option value="month">Mensual</option><option value="all">Todo el tiempo</option>{filters.period === 'custom' && <option value="custom">Rango de fechas</option>}</select></label>
+      <label><span>Periodo</span><div className="period-filter-control"><select disabled={disabled} value={filters.period} onChange={(event) => onChange({ ...filters, period: event.target.value, fromDate: '', toDate: '' })}><option value="today">Hoy</option><option value="week">Semanal</option><option value="month">Mensual</option><option value="all">Todo el tiempo</option>{filters.period === 'custom' && <option value="custom">Rango de fechas</option>}</select><button type="button" className={timelineOpen ? 'timeline-toggle active' : 'timeline-toggle'} disabled={disabled || !timelineAvailable} aria-expanded={timelineOpen} aria-label={timelineOpen ? 'Ocultar serie de tiempo' : 'Mostrar serie de tiempo'} title={timelineAvailable ? 'Serie de tiempo' : 'Selecciona Desde y Hasta'} onClick={onToggleTimeline}><Icon name={timelineOpen ? 'close' : 'play'} size={14}/><span>Serie</span></button></div></label>
       <label><span>Desde</span><input disabled={disabled} type="date" value={filters.fromDate} max={filters.toDate || undefined} onChange={(event) => onChange({ ...filters, period: 'custom', fromDate: event.target.value })}/></label>
       <label><span>Hasta</span><input disabled={disabled} type="date" value={filters.toDate} min={filters.fromDate || undefined} onChange={(event) => onChange({ ...filters, period: 'custom', toDate: event.target.value })}/></label>
       <label><span>Ejecutivo</span><select disabled={disabled} value={filters.executiveId} onChange={(event) => onChange({ ...filters, executiveId: event.target.value })}><option value="">Todos</option>{executiveOptions.map((item) => <option key={item.id} value={item.id}>{item.displayName}</option>)}</select></label>
@@ -1262,6 +1262,7 @@ function DashboardPage({ contacts, tasks, followupCounts, sales, dashboardSummar
   const [timelineCursorDate, setTimelineCursorDate] = useState('')
   const [timelinePlaying, setTimelinePlaying] = useState(false)
   const [timelineSpeed, setTimelineSpeed] = useState(1)
+  const [timelineOpen, setTimelineOpen] = useState(false)
   contacts = contacts.filter((contact) => !contact.deletedAt)
   const selectedExecutiveName = availableExecutives.find((item) => item.id === reportFilters.executiveId)?.displayName
   const demoContactsInScope = isDemo && selectedExecutiveName ? contacts.filter((contact) => contact.executive === selectedExecutiveName) : contacts
@@ -1398,13 +1399,17 @@ function DashboardPage({ contacts, tasks, followupCounts, sales, dashboardSummar
   }, [reportFilters.fromDate, reportFilters.toDate, reportFilters.executiveId, reportFilters.season])
 
   useEffect(() => {
+    if (timelineDates.length < 2) setTimelineOpen(false)
+  }, [timelineDates])
+
+  useEffect(() => {
     if (!timelinePlaying || !reportIsReady || timelineDates.length < 2) return undefined
     const currentIndex = Math.max(0, timelineDates.indexOf(timelineCursorDate || timelineDates[0]))
     if (currentIndex >= timelineDates.length - 1) {
       setTimelinePlaying(false)
       return undefined
     }
-    const timer = window.setTimeout(() => setTimelineCursorDate(timelineDates[currentIndex + 1]), Math.round(900 / timelineSpeed))
+    const timer = window.setTimeout(() => setTimelineCursorDate(timelineDates[currentIndex + 1]), Math.round(1200 / timelineSpeed))
     return () => window.clearTimeout(timer)
   }, [reportIsReady, timelineCursorDate, timelineDates, timelinePlaying, timelineSpeed])
 
@@ -1420,6 +1425,11 @@ function DashboardPage({ contacts, tasks, followupCounts, sales, dashboardSummar
   function stopTimeline() {
     setTimelinePlaying(false)
     setTimelineCursorDate('')
+  }
+
+  function toggleTimelinePanel() {
+    if (timelineOpen) stopTimeline()
+    setTimelineOpen((current) => !current)
   }
 
   async function downloadDashboardPdf() {
@@ -1474,8 +1484,8 @@ function DashboardPage({ contacts, tasks, followupCounts, sales, dashboardSummar
   return (
     <div className="page-wrap">
       <PageHeader eyebrow="Vista ejecutiva" title="Reporte Dirección" description={<>Seguimiento de venta y renovación de abonados <strong className="charros-name">Charros de Jalisco</strong></>} actions={reportActions} />
-      <GlobalFilters executiveOptions={availableExecutives} filters={reportFilters} onChange={setReportFilters} />
-      <TimelinePlayer dates={timelineDates} cursorDate={timelineCursorDate} playing={timelinePlaying} speed={timelineSpeed} disabled={!reportIsReady} onCursorChange={setTimelineCursorDate} onPlayPause={toggleTimeline} onStop={stopTimeline} onSpeedChange={setTimelineSpeed} />
+      <GlobalFilters executiveOptions={availableExecutives} filters={reportFilters} onChange={setReportFilters} timelineAvailable={timelineDates.length > 1} timelineOpen={timelineOpen} onToggleTimeline={toggleTimelinePanel} />
+      {timelineOpen && <TimelinePlayer dates={timelineDates} cursorDate={timelineCursorDate} playing={timelinePlaying} speed={timelineSpeed} disabled={!reportIsReady} onCursorChange={setTimelineCursorDate} onPlayPause={toggleTimeline} onStop={stopTimeline} onSpeedChange={setTimelineSpeed} />}
 
       <section className="metrics-grid" aria-label="Indicadores principales">
         <MetricCard label="Abonados actuales" value={integer.format(displayedCurrentSubscribers)} detail={temporalScope ? 'Titulares dentro del periodo' : 'Titulares Identificados'} icon="people" />
