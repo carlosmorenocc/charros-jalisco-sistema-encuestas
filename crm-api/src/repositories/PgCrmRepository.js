@@ -2114,7 +2114,7 @@ export class PgCrmRepository {
     );
     return result.rows.map((row) => ({
       id: row.id,
-      displayName: row.display_name,
+      displayName: row.display_name.toLocaleUpperCase('es-MX'),
       active: row.active
     }));
   }
@@ -2239,12 +2239,15 @@ export class PgCrmRepository {
            WHEN 'crm.assignment.esmeralda@charrosjalisco.com' THEN 'ESMERALDA RUVALCABA'
            WHEN 'crm.assignment.jesus@charrosjalisco.com' THEN 'JESÚS GONZÁLEZ'
            WHEN 'crm.assignment.rosana@charrosjalisco.com' THEN 'ROSAANA'
+           WHEN 'crm.assignment.carlos@charrosjalisco.com' THEN 'CARLOS'
+           WHEN 'crm.assignment.pascual@charrosjalisco.com' THEN 'PASCUAL'
+           WHEN 'crm.assignment.cesar@charrosjalisco.com' THEN 'CESAR'
            ELSE display_name END
-         WHERE email IN ('crm.assignment.esmeralda@charrosjalisco.com','crm.assignment.jesus@charrosjalisco.com','crm.assignment.rosana@charrosjalisco.com')`
+         WHERE email IN ('crm.assignment.esmeralda@charrosjalisco.com','crm.assignment.jesus@charrosjalisco.com','crm.assignment.rosana@charrosjalisco.com','crm.assignment.carlos@charrosjalisco.com','crm.assignment.pascual@charrosjalisco.com','crm.assignment.cesar@charrosjalisco.com')`
       );
       const users = await client.query(
         `SELECT id,split_part(email,'@',1) AS code FROM app_users
-         WHERE email IN ('crm.assignment.esmeralda@charrosjalisco.com','crm.assignment.jesus@charrosjalisco.com','crm.assignment.rosana@charrosjalisco.com')
+         WHERE email IN ('crm.assignment.esmeralda@charrosjalisco.com','crm.assignment.jesus@charrosjalisco.com','crm.assignment.rosana@charrosjalisco.com','crm.assignment.carlos@charrosjalisco.com','crm.assignment.pascual@charrosjalisco.com','crm.assignment.cesar@charrosjalisco.com')
            AND deleted_at IS NULL`
       );
       const executiveIds = Object.fromEntries(users.rows.map((row) => [row.code.replace('crm.assignment.', ''), row.id]));

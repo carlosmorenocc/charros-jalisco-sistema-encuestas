@@ -36,11 +36,15 @@ function fixture() {
 }
 
 test('normaliza únicamente el corte operativo aprobado y conserva sus invariantes', () => {
-  const result = normalizeOperationalDataset(fixture());
+  const input = fixture();
+  input.demoSales[0].owner = 'Carlos';
+  const result = normalizeOperationalDataset(input);
   assert.deepEqual(result.metrics, { contacts: 326, memberships: 166, units: 494, sales: 172 });
   assert.equal(result.contacts.filter((contact) => contact.isCommitmentOnly).length, 3);
   assert.equal(result.memberships[0].section, 'VIP');
   assert.ok(result.contacts.slice(246).every((contact) => contact.externalRef && !contact.email && !contact.phone));
+  assert.equal(result.sales[0].executiveCode, 'carlos');
+  assert.equal(result.sales[1].executiveCode, 'carlos');
 });
 
 test('rechaza archivos parciales antes de abrir una transacción', () => {

@@ -32,6 +32,9 @@ function executiveCode(value) {
   if (normalized.includes('ESMERALDA')) return 'esmeralda';
   if (normalized.includes('JESUS')) return 'jesus';
   if (normalized.includes('ROSA')) return 'rosana';
+  if (normalized.includes('CARLOS') || normalized.includes('VENTA EN LINEA')) return 'carlos';
+  if (normalized.includes('PASCUAL')) return 'pascual';
+  if (normalized.includes('CESAR')) return 'cesar';
   return null;
 }
 
