@@ -140,7 +140,7 @@ X-CSRF-Token: <csrfToken>
 
 No existen rutas `/api/v1/users` ni mutaciones de usuarios/permisos.
 
-Los perfiles Esmeralda, Jesús, Rosana, Carlos, Pascual y Cesar existen únicamente
+Los perfiles Esmeralda, Jesús, Rosana, EN LINEA, Pascual y Cesar existen únicamente
 para asignación de cartera. No tienen credencial local y no pueden iniciar sesión.
 
 La edición de butacas exige una unidad secuencial por cada abono, identificadores
