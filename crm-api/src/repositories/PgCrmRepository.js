@@ -855,7 +855,9 @@ export class PgCrmRepository {
     return {
       totalContacts: Number(row.total_contacts),
       currentSubscribers: Number(row.current_subscribers),
-      activeSeats: Number(row.active_seats),
+      // Dirección uses the same documented orders as Ventas. Membership capture
+      // remains operational detail and must not change the commercial seat total.
+      activeSeats: Number(row.sold_new_seats ?? 0) + Number(row.sold_renewed_seats ?? 0),
       pricedMemberships: Number(row.priced_memberships ?? 0),
       pricedSeats: Number(row.priced_seats ?? 0),
       membershipCommercialValue: moneyFromCents(row.membership_commercial_value ?? 0),
@@ -868,10 +870,10 @@ export class PgCrmRepository {
       renewedSeats: Number(row.sold_renewed_seats ?? row.renewed_seats ?? 0),
       prospects: Number(row.prospects),
       membershipSegments: {
-        Compromisos: Number(row.segment_commitments ?? 0),
-        VIP: Number(row.segment_vip ?? 0),
-        Preferente: Number(row.segment_preferente ?? 0),
-        General: Number(row.segment_general ?? 0)
+        Compromisos: Number(row.period_segment_commitments ?? 0),
+        VIP: Number(row.period_segment_vip ?? 0),
+        Preferente: Number(row.period_segment_preferente ?? 0),
+        General: Number(row.period_segment_general ?? 0)
       },
       periodMembershipSegments: {
         Compromisos: Number(row.period_segment_commitments ?? 0),
