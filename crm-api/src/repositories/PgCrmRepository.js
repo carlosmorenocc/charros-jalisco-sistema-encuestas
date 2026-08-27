@@ -1564,15 +1564,6 @@ export class PgCrmRepository {
       await this.lockMembershipSeats(client, data.seasonCode, data.section, data.units);
       const contact = await this.getContact(contactId, actor, { client });
       if (!contact) throw notFound('Contacto');
-      const duplicate = await client.query(
-        `SELECT id FROM memberships
-         WHERE contact_id=$1 AND season_code=$2 AND deleted_at IS NULL
-         ORDER BY created_at DESC,id LIMIT 1`,
-        [contactId, data.seasonCode]
-      );
-      if (duplicate.rows[0]) {
-        throw conflict('El contacto ya tiene un abono registrado para esta temporada.');
-      }
       await this.assertMembershipSeatsAvailable(client, {
         seasonCode: data.seasonCode,
         section: data.section,
@@ -1997,35 +1988,24 @@ export class PgCrmRepository {
         [data.contactId, targetSubscriberStatus, data.closeStage, data.executiveId, actor.id]
       );
       if (data.closeStage === 'won') {
-        const membershipResult = await client.query(
-          `SELECT id FROM memberships
-           WHERE contact_id=$1 AND season_code=$2 AND deleted_at IS NULL
-           ORDER BY created_at DESC LIMIT 1 FOR UPDATE`,
-          [data.contactId, data.seasonCode]
+        // Each order gets its own membership so additional purchases increase active
+        // seats instead of merely reactivating the contact's previous membership.
+        const primaryItem = saleItems[0];
+        const membershipSeatCount = saleItems.reduce((sum, item) => sum + item.quantity, 0);
+        const membershipProduct = `${primaryItem.product} · ORDEN ${data.externalOrderNumber}`;
+        const membership = await client.query(
+          `INSERT INTO memberships
+            (contact_id,season_code,membership_status,seat_count,zone,section,product,start_date,created_by,updated_by)
+           VALUES ($1,$2,'active',$3,$4,'General',$5,$6,$7,$7) RETURNING id`,
+          [data.contactId, data.seasonCode, membershipSeatCount, primaryItem.zone ?? null,
+            membershipProduct, data.soldAt ?? new Date(), actor.id]
         );
-        if (membershipResult.rows[0]) {
+        for (let index = 1; index <= membershipSeatCount; index += 1) {
           await client.query(
-            `UPDATE memberships SET membership_status='active',renewal_date=COALESCE($2,renewal_date),
-               updated_by=$3 WHERE id=$1`,
-            [membershipResult.rows[0].id, data.soldAt ?? null, actor.id]
+            `INSERT INTO membership_units (membership_id,unit_number,zone,product,created_by,updated_by)
+             VALUES ($1,$2,$3,$4,$5,$5)`,
+            [membership.rows[0].id, index, primaryItem.zone ?? null, membershipProduct, actor.id]
           );
-        } else {
-          const primaryItem = saleItems[0];
-          const membershipSeatCount = saleItems.reduce((sum, item) => sum + item.quantity, 0);
-          const membership = await client.query(
-            `INSERT INTO memberships
-              (contact_id,season_code,membership_status,seat_count,zone,section,product,start_date,created_by,updated_by)
-             VALUES ($1,$2,'active',$3,$4,'General',$5,$6,$7,$7) RETURNING id`,
-            [data.contactId, data.seasonCode, membershipSeatCount, primaryItem.zone ?? null,
-              primaryItem.product, data.soldAt ?? new Date(), actor.id]
-          );
-          for (let index = 1; index <= membershipSeatCount; index += 1) {
-            await client.query(
-              `INSERT INTO membership_units (membership_id,unit_number,zone,product,created_by,updated_by)
-               VALUES ($1,$2,$3,$4,$5,$5)`,
-              [membership.rows[0].id, index, primaryItem.zone ?? null, primaryItem.product, actor.id]
-            );
-          }
         }
       }
       const created = saleRow(result.rows[0]);

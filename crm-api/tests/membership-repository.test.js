@@ -302,23 +302,21 @@ test('fallo tardío de auditoría revierte parent y unidades', async () => {
   assert.equal(pool.commands.at(-1).sql, 'ROLLBACK');
 });
 
-test('POST bloquea contact-season y rechaza una segunda membresía antes de insertar', async () => {
+test('POST permite registrar otra orden de abonos en la misma temporada', async () => {
   const pool = new MembershipPool();
   const repository = new PgCrmRepository(pool);
-  await assert.rejects(
-    repository.createMembership(IDS.contact, {
-      seasonCode: 'LMP-2026-27', membershipStatus: 'active', section: 'VIP',
-      seatCount: 1, startDate: '2026-08-22',
-      units: [{ unitNumber: 1, seatIdentifier: 'A-1' }]
-    }, actor, context),
-    (error) => error.status === 409 && /ya tiene un abono/.test(error.message)
-  );
+  const created = await repository.createMembership(IDS.contact, {
+    seasonCode: 'LMP-2026-27', membershipStatus: 'active', section: 'VIP',
+    localityCode: 'vip', discountCode: 'regular', seatCount: 1, startDate: '2026-08-22',
+    units: [{ unitNumber: 1, seatIdentifier: 'A-2' }]
+  }, actor, context);
+  assert.equal(created.seatCount, 1);
   assert.ok(pool.commands.some((command) =>
     command.params[0] === `membership-season:${IDS.contact}:LMP-2026-27`));
   assert.ok(pool.commands.some((command) =>
-    command.params[0] === 'membership-seat:LMP-2026-27:VIP:a-1'));
-  assert.equal(pool.commands.some((command) => command.sql.startsWith('INSERT INTO memberships')), false);
-  assert.equal(pool.commands.at(-1).sql, 'ROLLBACK');
+    command.params[0] === 'membership-seat:LMP-2026-27:VIP:a-2'));
+  assert.ok(pool.commands.some((command) => command.sql.startsWith('INSERT INTO memberships')));
+  assert.equal(pool.commands.at(-1).sql, 'COMMIT');
 });
 
 test('POST crea section separada de zone y rechaza butacas ocupadas sin PII', async () => {

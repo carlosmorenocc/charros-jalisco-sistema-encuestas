@@ -788,11 +788,14 @@ function App() {
         refreshedMemberships = (Array.isArray(membershipsResponse.data) ? membershipsResponse.data : membershipsResponse.data?.items || []).map(fromApiMembership).filter(Boolean)
         refreshedContact = { ...fromApiContact(contactResponse.data), currentMembership: currentSeasonMembership(refreshedMemberships) }
       }
-      const refreshedMembership = refreshedContact.currentMembership || currentSeasonMembership(refreshedMemberships)
-      setContacts((current) => current.map((item) => item.id === contact.id ? { ...item, ...refreshedContact, currentMembership: refreshedMembership } : item))
+      const contactCurrentMembership = refreshedContact.currentMembership || currentSeasonMembership(refreshedMemberships)
+      const refreshedMembership = membership
+        ? refreshedMemberships.find((item) => item.id === membership.id) || membership
+        : refreshedMemberships[0] || null
+      setContacts((current) => current.map((item) => item.id === contact.id ? { ...item, ...refreshedContact, currentMembership: contactCurrentMembership } : item))
       setDrawer((current) => current?.contact?.id === contact.id ? {
         ...current,
-        contact: { ...current.contact, ...refreshedContact, currentMembership: refreshedMembership },
+        contact: { ...current.contact, ...refreshedContact, currentMembership: contactCurrentMembership },
         memberships: refreshedMemberships,
         membership: refreshedMembership,
         focusMembership: false,
@@ -1904,7 +1907,12 @@ function ConfigurationPanel({ content, config, isDemo }) {
 
 function ContactDrawer({ drawer, user, onClose, onSave, onDelete, onRestore, onCreateInteraction, onCreateTask, onRequestSaleClosure, onSaveMembership, pricingCatalog, onQuoteMembershipPricing, executiveOptions = [] }) {
   const existing = drawer.contact || {}
-  const membership = drawer.membership || currentSeasonMembership(drawer.memberships || [])
+  const memberships = (drawer.memberships || []).filter((item) => item.seasonCode === 'LMP-2026-27')
+  const initialMembership = drawer.membership || currentSeasonMembership(memberships)
+  const [selectedMembershipId, setSelectedMembershipId] = useState(initialMembership?.id || 'new')
+  const membership = selectedMembershipId === 'new'
+    ? null
+    : memberships.find((item) => item.id === selectedMembershipId) || initialMembership || null
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [deleteReason, setDeleteReason] = useState('')
   const [contactMethodError, setContactMethodError] = useState('')
@@ -1958,6 +1966,13 @@ function ContactDrawer({ drawer, user, onClose, onSave, onDelete, onRestore, onC
   useEffect(() => {
     if (!drawer.focusMembership) headingRef.current?.focus()
   }, [drawer.focusMembership])
+
+  useEffect(() => {
+    const available = memberships.some((item) => item.id === selectedMembershipId)
+    if (selectedMembershipId !== 'new' && !available) {
+      setSelectedMembershipId(initialMembership?.id || 'new')
+    }
+  }, [initialMembership?.id, memberships, selectedMembershipId])
 
   useEffect(() => {
     function handleKeyDown(event) { if (event.key === 'Escape' && !savingContact && !membershipSaving && !actionSaving) onClose() }
@@ -2064,7 +2079,11 @@ function ContactDrawer({ drawer, user, onClose, onSave, onDelete, onRestore, onC
                 <label className="field field--full"><span>Consentimiento de contacto</span><select disabled={editing && !mayChangeConsent} value={form.consent} onChange={(event) => update('consent', event.target.value)}><option>Sí</option><option>No</option><option>No consta</option></select><small>{editing && !mayChangeConsent ? 'Solo Supervisor o Administrador puede modificar este dato.' : 'La fecha y la fuente del cambio se registran en el servidor.'}</small></label>
               </div>
             </fieldset>
-            {editing && membershipStatusForContact(existing) && <MembershipEditor membership={membership} pricingCatalog={pricingCatalog} onQuote={onQuoteMembershipPricing} canEdit={mayManageMembership} focusOnMount={drawer.focusMembership} onSave={(draft) => onSaveMembership(existing, membership, draft)} onSavingChange={setMembershipSaving}/>}
+            {editing && membershipStatusForContact(existing) && <section className="membership-orders" aria-labelledby="membership-orders-title">
+              <div className="membership-orders-heading"><div><span className="eyebrow">Órdenes asociadas</span><h3 id="membership-orders-title">Abonos del contacto</h3></div>{mayManageMembership && <button type="button" className="button button--secondary" disabled={membershipSaving || selectedMembershipId === 'new'} onClick={() => setSelectedMembershipId('new')}><Icon name="plus" size={16}/>Agregar otra orden</button>}</div>
+              {memberships.length > 0 && <label className="field"><span>Orden de abonos</span><select disabled={membershipSaving} value={selectedMembershipId} onChange={(event) => setSelectedMembershipId(event.target.value)}>{selectedMembershipId === 'new' && <option value="new">Nueva orden</option>}{memberships.map((item, index) => <option key={item.id} value={item.id}>Orden {memberships.length - index} · {item.seatCount} {item.seatCount === 1 ? 'abono' : 'abonos'} · {item.localityName || item.membershipSection || 'Sin localidad'}</option>)}</select><small>{memberships.length} {memberships.length === 1 ? 'orden registrada' : 'órdenes registradas'} para la temporada actual.</small></label>}
+              <MembershipEditor key={membership?.id || 'new'} membership={membership} pricingCatalog={pricingCatalog} onQuote={onQuoteMembershipPricing} canEdit={mayManageMembership} focusOnMount={drawer.focusMembership || selectedMembershipId === 'new'} onSave={async (draft) => { const saved = await onSaveMembership(existing, membership, draft); setSelectedMembershipId(saved?.id || membership?.id || 'new') }} onSavingChange={setMembershipSaving}/>
+            </section>}
             <fieldset disabled={!mayEdit}>
               <legend>Seguimiento</legend>
               <label className="field"><span>Observación resumida</span><textarea rows="4" maxLength="500" value={form.note} onChange={(event) => update('note', event.target.value)} placeholder="Anota contexto útil para la siguiente gestión."/><small>{form.note.length}/500 caracteres</small></label>
