@@ -153,6 +153,8 @@ test('Dirección suma el total documentado de apartados y separa el cobro recibi
         new_subscribers: 0, renewed_subscribers: 0, new_seats: 0, renewed_seats: 0,
         sold_new_subscribers: 1, sold_renewed_subscribers: 0,
         sold_new_seats: 1, sold_renewed_seats: 0,
+        period_segment_commitments: 0, period_segment_vip: 1,
+        period_segment_preferente: 0, period_segment_general: 0,
         not_contacted: 0, unassigned: 0, overdue_follow_ups: 0,
         active_seats: 0, human_interactions: 0, campaign_messages: 0,
         confirmed_sales: 1, sales_amount: 4207, collected_amount: 1500
@@ -170,6 +172,10 @@ test('Dirección suma el total documentado de apartados y separa el cobro recibi
 
   assert.equal(summary.newSubscribers, 1);
   assert.equal(summary.newSeats, 1);
+  assert.equal(summary.activeSeats, 1);
+  assert.deepEqual(summary.membershipSegments, {
+    Compromisos: 0, VIP: 1, Preferente: 0, General: 0
+  });
   assert.equal(summary.salesAmount, 4207);
   assert.equal(summary.collectedAmount, 1500);
 });
