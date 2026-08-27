@@ -535,6 +535,11 @@ select:focus, input:focus, textarea:focus { outline: 0; border-color: var(--blue
 .manual-membership-summary { padding: 9px 11px; margin-bottom: 13px; color: #4c5d73; background: #f7f9fb; border-left: 3px solid var(--gold-500); font-size: 9px; }
 .jersey-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; max-height: 265px; padding: 13px; margin-top: 14px; overflow-y: auto; background: #f8fafc; border: 1px solid var(--line); border-radius: 9px; }
 .membership-editor { padding: 15px; margin: -2px 0 22px; background: #f8fafc; border: 1px solid #dce4ed; border-radius: 10px; }
+.membership-orders { margin: 0 0 22px; }
+.membership-orders .membership-editor { margin-top: 12px; margin-bottom: 0; }
+.membership-orders-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.membership-orders-heading h3 { margin: 2px 0 0; font-size: 14px; }
+.membership-orders-heading .button { flex: 0 0 auto; }
 .membership-editor h3 { padding-bottom: 9px; margin: 0 0 13px; color: #25334a; border-bottom: 1px solid var(--line); font-size: 11px; font-weight: 800; }
 .membership-fields { margin-bottom: 13px; }
 .membership-quote { min-height: 20px; margin: 0 0 13px; color: #6f7d91; font-size: 8.5px; }
@@ -715,6 +720,8 @@ select:focus, input:focus, textarea:focus { outline: 0; border-color: var(--blue
   .membership-seat-grid { grid-template-columns: 1fr; max-height: none; }
   .membership-editor-footer { align-items: stretch; flex-direction: column; }
   .membership-editor-footer .button { width: 100%; }
+  .membership-orders-heading { align-items: stretch; flex-direction: column; }
+  .membership-orders-heading .button { width: 100%; }
   .drawer-footer { align-items: stretch; flex-direction: column-reverse; padding: 11px 16px; }
   .drawer-footer > div { width: 100%; }
   .drawer-footer > div .button { flex: 1; }

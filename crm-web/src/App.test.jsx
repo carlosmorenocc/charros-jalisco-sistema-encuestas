@@ -85,6 +85,20 @@ describe('CRM web en modo demostración', () => {
     expect(screen.getByDisplayValue('P-A-99')).toBeInTheDocument()
   })
 
+  it('permite iniciar una orden adicional sin reemplazar los abonos existentes', async () => {
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: /Cartera y Renovaciones/i }))
+    fireEvent.click(screen.getByRole('button', { name: 'Editar abonos de Mariana López' }))
+
+    expect(await screen.findByText('1 orden registrada para la temporada actual.')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Agregar otra orden' }))
+
+    expect(screen.getByLabelText(/Orden de abonos/)).toHaveValue('new')
+    expect(screen.getByLabelText(/Sección/)).toHaveValue('')
+    expect(screen.getByRole('button', { name: 'Agregar abonos' })).toBeDisabled()
+    expect(screen.getByText('1 orden registrada para la temporada actual.')).toBeInTheDocument()
+  })
+
   it('confirma una edición normal de contacto con el mensaje acordado', async () => {
     render(<App />)
     fireEvent.click(await screen.findByRole('button', { name: /Cartera y Renovaciones/i }))
