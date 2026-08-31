@@ -18,7 +18,7 @@ WHERE sale.deleted_at IS NULL
 UPDATE memberships membership
 SET membership_status = 'cancelled',
     updated_at = now(),
-    row_version = row_version + 1
+    row_version = membership.row_version + 1
 FROM contacts contact
 WHERE contact.id = membership.contact_id
   AND membership.deleted_at IS NULL
