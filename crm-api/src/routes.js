@@ -12,6 +12,7 @@ import {
   validateSubscriptionQuote,
   validateSale,
   validateSaleCorrection,
+  validateSaleCancellation,
   validatePayment,
   validateTask,
   validateUuid
@@ -234,6 +235,15 @@ export function createApiRouter({ service, config }) {
       validateSaleCorrection(req.body),
       req.auditContext
     ), 201);
+  }));
+
+  router.post('/sales/:id/cancel', asyncHandler(async (req, res) => {
+    data(res, await service.cancelSale(
+      req.actor,
+      validateUuid(req.params.id),
+      validateSaleCancellation(req.body),
+      req.auditContext
+    ));
   }));
 
   router.post('/sales/:id/payments', asyncHandler(async (req, res) => {

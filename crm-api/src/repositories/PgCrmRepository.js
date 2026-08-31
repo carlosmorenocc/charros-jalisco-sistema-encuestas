@@ -2087,6 +2087,40 @@ export class PgCrmRepository {
     });
   }
 
+  async cancelSale(saleId, data, actor, context) {
+    return withTransaction(this.pool, async (client) => {
+      await client.query('SELECT id FROM sales WHERE id=$1 AND deleted_at IS NULL FOR UPDATE', [saleId]);
+      const before = await this.getSale(saleId, actor, { client });
+      if (!before) throw notFound('Venta');
+      if (['cancelled', 'refunded'].includes(before.status)) {
+        throw conflict('La venta ya está anulada o reembolsada.');
+      }
+      const correction = await client.query(
+        `INSERT INTO sale_corrections
+          (sale_id,external_order_number,sale_type,contact_id,executive_id,status,sold_at,
+           total_amount,notes,items,reason,created_by)
+         VALUES ($1,$2,$3,$4,$5,'cancelled',$6,$7,$8,$9::jsonb,$10,$11)
+         RETURNING id`,
+        [saleId, before.externalOrderNumber, before.saleType, before.contactId,
+          before.executiveId, before.soldAt, before.totalAmount, before.notes,
+          JSON.stringify(before.items), data.reason, actor.id]
+      );
+      await client.query(
+        `UPDATE memberships
+         SET membership_status='cancelled',updated_by=$2,updated_at=now(),row_version=row_version+1
+         WHERE contact_id=$1 AND deleted_at IS NULL
+           AND product LIKE $3`,
+        [before.contactId, actor.id, `%· ORDEN ${before.externalOrderNumber}`]
+      );
+      const after = await this.getSale(saleId, actor, { client });
+      await this.audit(client, context, {
+        action: 'sale.cancelled', entityType: 'sale', entityId: saleId, before, after,
+        metadata: { correctionId: correction.rows[0].id, reason: data.reason }
+      });
+      return after;
+    });
+  }
+
   async listExecutives({ active = true } = {}) {
     const result = await this.pool.query(
       `SELECT id,display_name,active FROM app_users

@@ -12,10 +12,18 @@ import {
   validateSubscriptionQuote,
   validatePayment,
   validateSale,
-  validateSaleCorrection
+  validateSaleCorrection,
+  validateSaleCancellation
 } from '../src/lib/validation.js';
 
 const UUID = '00000000-0000-4000-8000-000000000001';
+
+test('anulación de venta exige un motivo auditable', () => {
+  assert.throws(() => validateSaleCancellation({ reason: 'dup' }), /5 caracteres/);
+  assert.deepEqual(validateSaleCancellation({ reason: ' Registro duplicado ' }), {
+    reason: 'Registro duplicado'
+  });
+});
 
 test('normaliza un contacto válido y exige un medio de contacto', () => {
   const contact = validateContact({

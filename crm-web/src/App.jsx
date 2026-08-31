@@ -739,6 +739,16 @@ function App() {
     setToast('La corrección quedó registrada y los indicadores fueron actualizados.')
   }
 
+  async function cancelSale(sale, reason) {
+    if (authClient.isDemo) throw new Error('Las ventas solo pueden anularse con datos reales.')
+    await api.cancelSale(sale.id, reason)
+    const refreshed = await loadAllSales(api, { season: 'LMP-2026-27' })
+    setSales(refreshed.data.map(fromApiSale))
+    setContactRevision((current) => current + 1)
+    setDashboardRevision((current) => current + 1)
+    setToast(`La orden ${sale.externalOrderNumber || sale.id} quedó anulada y los indicadores fueron actualizados.`)
+  }
+
   async function openContact(contactOrId, options = {}) {
     const id = typeof contactOrId === 'string' ? contactOrId : contactOrId?.id
     if (!id) return
@@ -1036,6 +1046,7 @@ function App() {
     onAddPayment: addSalePayment,
     onCreateSale: createSale,
     onCorrectSale: correctSale,
+    onCancelSale: cancelSale,
     saleClosure,
     onClearSaleClosure: () => setSaleClosure(null),
     onRequestSaleClosure: (contact, stage) => {
@@ -1781,7 +1792,7 @@ function initialSaleDraft() {
   return { externalOrderNumber: '', contactId: '', executiveId: '', kind: 'new', closeStage: 'reserved', localityCode: '', discountCode: '', zone: '', promotion2x1: false, quantity: 1, unitPrice: '', soldAt: new Date().toISOString().slice(0, 10), paymentAmount: '', paymentMethod: 'Transferencia', paymentReference: '', notes: '', correctionReason: '' }
 }
 
-function SalesPage({ sales, contacts, isDemo, user, availableExecutives, pricingCatalog, onQuoteMembershipPricing, onAddPayment, onCreateSale, onCorrectSale, onCreate, saleClosure, onClearSaleClosure }) {
+function SalesPage({ sales, contacts, isDemo, user, availableExecutives, pricingCatalog, onQuoteMembershipPricing, onAddPayment, onCreateSale, onCorrectSale, onCancelSale, onCreate, saleClosure, onClearSaleClosure }) {
   const [search, setSearch] = useState('')
   const [payment, setPayment] = useState('Todos los pagos')
   const [owner, setOwner] = useState('Todos los ejecutivos')
@@ -1796,6 +1807,10 @@ function SalesPage({ sales, contacts, isDemo, user, availableExecutives, pricing
   const [editingSale, setEditingSale] = useState(null)
   const [saleError, setSaleError] = useState('')
   const [savingSale, setSavingSale] = useState(false)
+  const [cancellingSale, setCancellingSale] = useState(null)
+  const [cancellationReason, setCancellationReason] = useState('')
+  const [cancellationError, setCancellationError] = useState('')
+  const [savingCancellation, setSavingCancellation] = useState(false)
   const [contactSearch, setContactSearch] = useState('')
   const [saleDraft, setSaleDraft] = useState(initialSaleDraft)
   const [saleQuote, setSaleQuote] = useState(null)
@@ -1836,10 +1851,11 @@ function SalesPage({ sales, contacts, isDemo, user, availableExecutives, pricing
       && (!from || (Number.isFinite(occurredAt) && occurredAt >= new Date(`${from}T00:00:00`).getTime()))
       && (!to || (Number.isFinite(occurredAt) && occurredAt <= new Date(`${to}T23:59:59.999`).getTime()))
   })
-  const total = filteredSales.reduce((sum, sale) => sum + Number(sale.total || 0), 0)
-  const paid = filteredSales.reduce((sum, sale) => sum + Number(sale.paid || 0), 0)
-  const seats = filteredSales.reduce((sum, sale) => sum + Number(sale.seats || 0), 0)
-  const partialCount = filteredSales.filter((sale) => sale.status === 'Parcial').length
+  const metricSales = filteredSales.filter((sale) => !['Cancelada', 'Reembolsada'].includes(sale.commercialStatus))
+  const total = metricSales.reduce((sum, sale) => sum + Number(sale.total || 0), 0)
+  const paid = metricSales.reduce((sum, sale) => sum + Number(sale.paid || 0), 0)
+  const seats = metricSales.reduce((sum, sale) => sum + Number(sale.seats || 0), 0)
+  const partialCount = metricSales.filter((sale) => sale.status === 'Parcial').length
   const collectedPercentage = total > 0 ? Math.round((paid / total) * 100) : 0
   const draftQuantity = Number(saleDraft.quantity || 0)
   const draftUnitPrice = Number(saleDraft.unitPrice || 0)
@@ -1949,11 +1965,27 @@ function SalesPage({ sales, contacts, isDemo, user, availableExecutives, pricing
     } catch (error) { setSaleError(error.message || 'No fue posible crear la venta.') }
     finally { setSavingSale(false) }
   }
+  async function submitCancellation(event) {
+    event.preventDefault()
+    const reason = cancellationReason.trim()
+    if (reason.length < 5) {
+      setCancellationError('Describe el motivo de la anulación con al menos 5 caracteres.')
+      return
+    }
+    setSavingCancellation(true); setCancellationError('')
+    try {
+      await onCancelSale(cancellingSale, reason)
+      setCancellingSale(null); setCancellationReason('')
+    } catch (error) {
+      setCancellationError(error.message || 'No fue posible anular la venta.')
+    } finally { setSavingCancellation(false) }
+  }
   return (
     <div className="page-wrap">
       <PageHeader eyebrow="Control comercial" title="Ventas" description="Movimientos, pagos y abonos vinculados al contacto responsable." actions={hasPermission(user, PERMISSIONS.SALES_WRITE) && <button type="button" className="button button--primary" onClick={() => { setEditingSale(null); setSaleDraft(initialSaleDraft()); setContactSearch(''); setSaleOpen(true); setSaleError('') }}>Nueva venta</button>} />
       <section className="sales-metrics"><div><span>Venta en corte cargado</span><strong>{currency.format(total)}</strong><small>Temporada LMP 2026–2027</small></div><div><span>Cobrado en el corte</span><strong>{currency.format(paid)}</strong><small>{collectedPercentage}% del total cargado</small></div><div><span>Saldo en el corte</span><strong>{currency.format(Math.max(0, total - paid))}</strong><small>{partialCount} movimientos parciales</small></div><div><span>Abonos asociados</span><strong>{seats}</strong><small>{filteredSales.length} movimientos cargados</small></div></section>
-      <section className="panel list-panel"><div className="toolbar"><label className="search-field"><span className="sr-only">Buscar venta</span><Icon name="search" size={18}/><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar orden, contacto o zona…"/></label><div className="toolbar-filters"><select aria-label="Estatus de pago" value={payment} onChange={(event) => setPayment(event.target.value)}><option>Todos los pagos</option><option>Pendiente</option><option>Parcial</option><option>Pagado</option></select><select aria-label="Ejecutivo" value={owner} onChange={(event) => setOwner(event.target.value)}><option>Todos los ejecutivos</option>{owners.map((value) => <option key={value}>{value}</option>)}</select><select aria-label="Tipo de movimiento" value={kind} onChange={(event) => setKind(event.target.value)}><option>Todos los movimientos</option>{kinds.map((value) => <option key={value}>{value}</option>)}</select><label className="compact-date"><span>Desde</span><input type="date" value={from} onChange={(event) => setFrom(event.target.value)}/></label><label className="compact-date"><span>Hasta</span><input type="date" value={to} onChange={(event) => setTo(event.target.value)}/></label></div></div><div className="table-scroll"><table className="data-table"><thead><tr><th>Número de orden</th><th>Fecha</th><th>Contacto</th><th>Zona</th><th>Abonos</th><th>Total</th><th>Cobrado</th><th>Ejecutivo</th><th>Pago</th><th>Estado comercial</th>{hasPermission(user, PERMISSIONS.SALES_WRITE) && <th>Acción</th>}</tr></thead><tbody>{filteredSales.map((sale) => <tr key={sale.id}><td><strong className="link-value">{sale.externalOrderNumber || sale.id}</strong></td><td>{sale.date}</td><td><strong>{sale.contact}</strong></td><td>{sale.zone}</td><td>{sale.seats}</td><td><strong>{currency.format(sale.total)}</strong></td><td>{currency.format(sale.paid)}</td><td>{sale.owner}</td><td><StatusPill>{sale.status}</StatusPill></td><td>{sale.commercialStatus || '—'}</td>{hasPermission(user, PERMISSIONS.SALES_WRITE) && <td><div className="sale-row-actions">{sale.paid < sale.total ? <button type="button" className="text-button" onClick={() => { setPaymentSale(sale); setPaymentDraft({ amount: '', method: 'Transferencia', paidAt: new Date().toISOString().slice(0, 10), reference: '' }); setPaymentError('') }}>Registrar cobro</button> : <span>Liquidado</span>}<button type="button" className="text-button" onClick={() => openSaleCorrection(sale)}>Corregir venta</button></div></td>}</tr>)}</tbody></table>{!filteredSales.length && <EmptyState title="Sin movimientos" body="No hay ventas que coincidan con los filtros seleccionados." />}</div><div className="table-footer"><span>{filteredSales.length} de {sales.length} movimientos cargados</span><small>Los indicadores y la tabla responden a los filtros. Las correcciones y los pagos conservan historial de auditoría.</small></div></section>
+      <section className="panel list-panel"><div className="toolbar"><label className="search-field"><span className="sr-only">Buscar venta</span><Icon name="search" size={18}/><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar orden, contacto o zona…"/></label><div className="toolbar-filters"><select aria-label="Estatus de pago" value={payment} onChange={(event) => setPayment(event.target.value)}><option>Todos los pagos</option><option>Pendiente</option><option>Parcial</option><option>Pagado</option></select><select aria-label="Ejecutivo" value={owner} onChange={(event) => setOwner(event.target.value)}><option>Todos los ejecutivos</option>{owners.map((value) => <option key={value}>{value}</option>)}</select><select aria-label="Tipo de movimiento" value={kind} onChange={(event) => setKind(event.target.value)}><option>Todos los movimientos</option>{kinds.map((value) => <option key={value}>{value}</option>)}</select><label className="compact-date"><span>Desde</span><input type="date" value={from} onChange={(event) => setFrom(event.target.value)}/></label><label className="compact-date"><span>Hasta</span><input type="date" value={to} onChange={(event) => setTo(event.target.value)}/></label></div></div><div className="table-scroll"><table className="data-table"><thead><tr><th>Número de orden</th><th>Fecha</th><th>Contacto</th><th>Zona</th><th>Abonos</th><th>Total</th><th>Cobrado</th><th>Ejecutivo</th><th>Pago</th><th>Estado comercial</th>{hasPermission(user, PERMISSIONS.SALES_WRITE) && <th>Acción</th>}</tr></thead><tbody>{filteredSales.map((sale) => <tr key={sale.id}><td><strong className="link-value">{sale.externalOrderNumber || sale.id}</strong></td><td>{sale.date}</td><td><strong>{sale.contact}</strong></td><td>{sale.zone}</td><td>{sale.seats}</td><td><strong>{currency.format(sale.total)}</strong></td><td>{currency.format(sale.paid)}</td><td>{sale.owner}</td><td><StatusPill>{sale.status}</StatusPill></td><td>{sale.commercialStatus || '—'}</td>{hasPermission(user, PERMISSIONS.SALES_WRITE) && <td><div className="sale-row-actions">{!['Cancelada', 'Reembolsada'].includes(sale.commercialStatus) && (sale.paid < sale.total ? <button type="button" className="text-button" onClick={() => { setPaymentSale(sale); setPaymentDraft({ amount: '', method: 'Transferencia', paidAt: new Date().toISOString().slice(0, 10), reference: '' }); setPaymentError('') }}>Registrar cobro</button> : <span>Liquidado</span>)}{!['Cancelada', 'Reembolsada'].includes(sale.commercialStatus) && <><button type="button" className="text-button" onClick={() => openSaleCorrection(sale)}>Corregir venta</button><button type="button" className="text-button text-button--danger" onClick={() => { setCancellingSale(sale); setCancellationReason(''); setCancellationError('') }}>Anular venta</button></>}</div></td>}</tr>)}</tbody></table>{!filteredSales.length && <EmptyState title="Sin movimientos" body="No hay ventas que coincidan con los filtros seleccionados." />}</div><div className="table-footer"><span>{filteredSales.length} de {sales.length} movimientos cargados</span><small>Los indicadores y la tabla responden a los filtros. Las anulaciones, correcciones y pagos conservan historial de auditoría.</small></div></section>
+      {cancellingSale && <div className="drawer-backdrop" role="presentation"><aside className="drawer" role="dialog" aria-modal="true" aria-labelledby="cancel-sale-title"><header className="drawer-header"><div><span className="eyebrow">Anulación auditada</span><h2 id="cancel-sale-title">Anular orden {cancellingSale.externalOrderNumber || cancellingSale.id}</h2><p>Dejará de contar en Ventas, Abonos activos y Segmentación. El historial original permanecerá disponible para auditoría.</p></div><button type="button" className="icon-button" aria-label="Cerrar" disabled={savingCancellation} onClick={() => setCancellingSale(null)}>×</button></header><form onSubmit={submitCancellation}><div className="drawer-body"><label className="field"><span>Motivo de la anulación *</span><textarea autoFocus required minLength="5" maxLength="500" rows="4" value={cancellationReason} onChange={(event) => setCancellationReason(event.target.value)} placeholder="Ej. Registro duplicado del mismo cliente."/></label>{cancellationError && <p className="manual-submit-error" role="alert">{cancellationError}</p>}</div><footer className="drawer-footer"><button type="button" className="button button--secondary" disabled={savingCancellation} onClick={() => setCancellingSale(null)}>Conservar venta</button><button type="submit" className="button button--danger" disabled={savingCancellation}>{savingCancellation ? 'Anulando…' : 'Confirmar anulación'}</button></footer></form></aside></div>}
       {paymentSale && <div className="drawer-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !savingPayment) setPaymentSale(null) }}><aside className="drawer" role="dialog" aria-modal="true" aria-labelledby="payment-title"><header className="drawer-header"><div><span className="eyebrow">Control de cobranza</span><h2 id="payment-title">Registrar cobro</h2><p>{paymentSale.contact} · Saldo {currency.format(Math.max(0, paymentSale.total - paymentSale.paid))}</p></div><button type="button" className="icon-button" aria-label="Cerrar" onClick={() => setPaymentSale(null)}>×</button></header><form onSubmit={submitPayment}><div className="drawer-body"><div className="form-grid"><label className="field"><span>Importe recibido *</span><input autoFocus type="number" min="0.01" step="0.01" value={paymentDraft.amount} onChange={(event) => setPaymentDraft((current) => ({ ...current, amount: event.target.value }))}/></label><label className="field"><span>Método *</span><select value={paymentDraft.method} onChange={(event) => setPaymentDraft((current) => ({ ...current, method: event.target.value }))}><option>Transferencia</option><option>Tarjeta</option><option>Efectivo</option><option>Depósito</option><option>Otro</option></select></label><label className="field"><span>Fecha *</span><input type="date" value={paymentDraft.paidAt} onChange={(event) => setPaymentDraft((current) => ({ ...current, paidAt: event.target.value }))}/></label><label className="field"><span>Referencia</span><input maxLength="160" value={paymentDraft.reference} onChange={(event) => setPaymentDraft((current) => ({ ...current, reference: event.target.value }))}/></label></div>{paymentError && <p className="manual-submit-error" role="alert">{paymentError}</p>}</div><footer className="drawer-footer"><button type="button" className="button button--secondary" onClick={() => setPaymentSale(null)}>Cancelar</button><button type="submit" className="button button--primary" disabled={savingPayment}>{savingPayment ? 'Guardando…' : 'Guardar cobro'}</button></footer></form></aside></div>}
       {saleOpen && <div className="drawer-backdrop" role="presentation"><aside className="drawer drawer--manual" role="dialog" aria-modal="true" aria-labelledby="sale-title"><header className="drawer-header"><div><span className="eyebrow">{editingSale ? 'Corrección auditada' : 'Alta guiada'}</span><h2 id="sale-title">{editingSale ? 'Corregir venta' : 'Nueva venta'}</h2><p>{editingSale ? 'Modifica los datos comerciales. La venta original y sus cobros se conservarán en el historial.' : 'La orden, sus abonos y el cobro inicial quedarán vinculados al titular.'}</p></div><button type="button" className="icon-button" aria-label="Cerrar" onClick={closeSaleDrawer}>×</button></header><form onSubmit={submitSale}><div className="drawer-body"><div className="form-grid">
         <label className="field"><span>Número de orden *</span><input autoFocus required maxLength="80" value={saleDraft.externalOrderNumber} onChange={(event) => setSaleDraft((current) => ({ ...current, externalOrderNumber: event.target.value }))} placeholder="Ej. 26000123"/><small>Identificador único de la venta.</small></label>
