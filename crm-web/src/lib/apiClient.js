@@ -137,6 +137,7 @@ export function createApiClient({
     sales: (filters) => request(`/sales${encodeQuery(filters)}`),
     createSale: (payload) => request('/sales', { method: 'POST', body: payload }),
     correctSale: (id, payload) => request(`/sales/${encodeURIComponent(id)}/corrections`, { method: 'POST', body: payload }),
+    cancelSale: (id, reason) => request(`/sales/${encodeURIComponent(id)}/cancel`, { method: 'POST', body: { reason } }),
     addPayment: (id, payload) => request(`/sales/${encodeURIComponent(id)}/payments`, { method: 'POST', body: payload }),
     executives: (filters = { active: true }) => request(`/executives${encodeQuery(filters)}`),
     exportContacts: (filters) => requestBlob(`/exports/contacts.csv${encodeQuery(filters)}`),

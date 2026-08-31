@@ -499,6 +499,13 @@ export function validateSaleCorrection(input) {
   return { ...sale, payments: [], reason };
 }
 
+export function validateSaleCancellation(input) {
+  if (!isObject(input)) throw badRequest('El cuerpo de la anulación debe ser un objeto.');
+  const reason = cleanString(input.reason, { required: true, max: 500, field: 'reason' });
+  if (reason.length < 5) throw badRequest('reason debe tener al menos 5 caracteres.');
+  return { reason };
+}
+
 export function validatePayment(input) {
   if (!isObject(input)) throw badRequest('El cuerpo del pago debe ser un objeto.');
   return {

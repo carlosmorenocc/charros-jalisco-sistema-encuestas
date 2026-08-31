@@ -120,6 +120,18 @@ describe('apiClient', () => {
     expect(JSON.parse(fetchImpl.mock.calls[1][1].body)).toEqual(updatePayload)
   })
 
+  it('anula una venta con motivo y CSRF', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(jsonResponse({ data: { status: 'cancelled' } }))
+    const api = createApiClient({ baseUrl: '/api/v1', getCsrfToken: () => 'csrf', fetchImpl })
+
+    await api.cancelSale('sale/15420812', 'Registro duplicado')
+
+    expect(fetchImpl.mock.calls[0][0]).toBe('/api/v1/sales/sale%2F15420812/cancel')
+    expect(fetchImpl.mock.calls[0][1].method).toBe('POST')
+    expect(fetchImpl.mock.calls[0][1].headers.get('X-CSRF-Token')).toBe('csrf')
+    expect(JSON.parse(fetchImpl.mock.calls[0][1].body)).toEqual({ reason: 'Registro duplicado' })
+  })
+
   it('consulta el catálogo y una cotización autoritativa con query codificado', async () => {
     const fetchImpl = vi.fn().mockResolvedValue(jsonResponse({ data: {} }))
     const api = createApiClient({ baseUrl: '/api/v1', getCsrfToken: () => 'csrf', fetchImpl })
