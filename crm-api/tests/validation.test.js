@@ -198,6 +198,29 @@ test('venta confirmada exige fecha y los pagos deben ser positivos', () => {
   assert.equal(validatePayment({ amount: 500, method: 'card' }).amount, 500);
 });
 
+test('distribución multititular conserva exactamente la cantidad de la orden', () => {
+  const secondary = '00000000-0000-4000-8000-000000000002';
+  const base = {
+    externalOrderNumber: '26000124', saleType: 'new', closeStage: 'reserved',
+    contactId: UUID, executiveId: UUID, seasonCode: 'LMP-2026-27', status: 'reserved',
+    soldAt: '2026-09-02T12:00:00.000Z',
+    items: [{ product: 'Abono', quantity: 4, unitPrice: 1000 }]
+  };
+  const value = validateSale({ ...base, holderAssignments: [
+    { contactId: UUID, quantity: 3, isPrimary: true },
+    { contactId: secondary, quantity: 1, isPrimary: false }
+  ] });
+  assert.equal(value.holderAssignments.reduce((sum, holder) => sum + holder.quantity, 0), 4);
+  assert.throws(() => validateSale({ ...base, holderAssignments: [
+    { contactId: UUID, quantity: 2, isPrimary: true },
+    { contactId: secondary, quantity: 1, isPrimary: false }
+  ] }), /sumar exactamente/);
+  assert.throws(() => validateSale({ ...base, holderAssignments: [
+    { contactId: UUID, quantity: 3, isPrimary: false },
+    { contactId: secondary, quantity: 1, isPrimary: true }
+  ] }), /titular principal/);
+});
+
 test('corrección de venta exige motivo y nunca acepta cobros nuevos', () => {
   const base = {
     externalOrderNumber: '26000123', saleType: 'new', closeStage: 'won',

@@ -704,8 +704,13 @@ function App() {
     }
     setContactRevision((current) => current + 1)
     setDashboardRevision((current) => current + 1)
+    const resumeSale = Boolean(drawer?.resumeSale && result?.contact)
     setDrawer(null)
-    setToast(result?.replayed ? 'El alta ya se había procesado; la cartera se actualizó sin duplicar.' : 'El registro se creó correctamente y la cartera fue actualizada.')
+    if (resumeSale) {
+      setSaleClosure({ contact: fromApiContact(result.contact), stage: 'Apartado' })
+      navigate('sales')
+    }
+    setToast(resumeSale ? 'Contacto creado. Completa ahora el número de orden y los datos de la venta.' : result?.replayed ? 'El alta ya se había procesado; la cartera se actualizó sin duplicar.' : 'El registro se creó correctamente y la cartera fue actualizada.')
     return result
   }
 
@@ -1048,7 +1053,7 @@ function App() {
     configurationFixtures,
     user,
     onEdit: openContact,
-    onCreate: (kind = 'portfolio') => setDrawer({ mode: 'create', kind }),
+    onCreate: (kind = 'portfolio', options = {}) => setDrawer({ mode: 'create', kind, ...options }),
     onNotify: setToast,
     onExport: exportContacts,
     onLoadContacts: loadContacts,
@@ -1822,7 +1827,7 @@ function InteractionLog({ interactions }) {
 }
 
 function initialSaleDraft() {
-  return { externalOrderNumber: '', contactId: '', executiveId: '', kind: 'new', closeStage: 'reserved', localityCode: '', discountCode: '', zone: '', promotion2x1: false, quantity: 1, unitPrice: '', soldAt: new Date().toISOString().slice(0, 10), paymentAmount: '', paymentMethod: 'Transferencia', paymentReference: '', notes: '', correctionReason: '' }
+  return { externalOrderNumber: '', contactId: '', executiveId: '', kind: 'new', closeStage: 'reserved', localityCode: '', discountCode: '', zone: '', promotion2x1: false, quantity: 1, unitPrice: '', soldAt: new Date().toISOString().slice(0, 10), paymentAmount: '', paymentMethod: 'Transferencia', paymentReference: '', notes: '', correctionReason: '', additionalHolders: [] }
 }
 
 function SalesPage({ sales, contacts, isDemo, user, availableExecutives, pricingCatalog, onQuoteMembershipPricing, onAddPayment, onCreateSale, onCorrectSale, onCancelSale, onCreate, saleClosure, onClearSaleClosure }) {
@@ -1855,6 +1860,7 @@ function SalesPage({ sales, contacts, isDemo, user, availableExecutives, pricing
   const contactOptions = [...new Map([
     ...contacts.map((contact) => [contact.id, { id: contact.id, name: contact.name }]),
     ...sales.filter((sale) => sale.contactId).map((sale) => [sale.contactId, { id: sale.contactId, name: sale.contact }]),
+    ...sales.flatMap((sale) => (sale.holderAssignments || []).map((holder) => [holder.contactId, { id: holder.contactId, name: holder.contactName || 'Titular asociado' }])),
   ]).values()].sort((a, b) => a.name.localeCompare(b.name, 'es'))
   const filteredContactOptions = contactOptions.filter((contact) => !contactSearch.trim() || contact.name.toLowerCase().includes(contactSearch.trim().toLowerCase()))
   useEffect(() => {
@@ -1952,6 +1958,7 @@ function SalesPage({ sales, contacts, isDemo, user, availableExecutives, pricing
       soldAt: sale.soldAt ? new Date(sale.soldAt).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10),
       paymentAmount: '', paymentMethod: 'Transferencia', paymentReference: '',
       notes: sale.notes || '', correctionReason: '',
+      additionalHolders: (sale.holderAssignments || []).filter((holder) => !holder.isPrimary).map((holder) => ({ contactId: holder.contactId, quantity: Number(holder.quantity) })),
     })
     setSaleError('')
     setSaleOpen(true)
@@ -1977,7 +1984,11 @@ function SalesPage({ sales, contacts, isDemo, user, availableExecutives, pricing
     const promotion2x1 = saleQuote?.pricingMode === 'two_for_one'
     const items = buildSaleItems({ kind: saleDraft.kind, zone: saleDraft.zone, quantity, unitPrice, promotion2x1, discountCode: saleQuote?.discountCode, discountName: saleQuote?.discountName, pricingMode: saleQuote?.pricingMode, chargedUnits: saleQuote?.chargedUnits, bonusUnits: saleQuote?.bonusUnits })
     const totalAmount = items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0)
-    if (!saleDraft.externalOrderNumber.trim() || !saleDraft.contactId || !saleDraft.executiveId || !saleDraft.localityCode || !saleDraft.discountCode || saleQuoteState !== 'ready' || !saleQuote || !Number.isInteger(quantity) || quantity < 1 || !Number.isFinite(unitPrice) || unitPrice < 0 || (!editingSale && (paymentAmount < 0 || paymentAmount > totalAmount))) {
+    const additionalHolderQuantity = saleDraft.additionalHolders.reduce((sum, holder) => sum + Number(holder.quantity || 0), 0)
+    const holderIds = [saleDraft.contactId, ...saleDraft.additionalHolders.map((holder) => holder.contactId)]
+    const invalidHolderDistribution = saleDraft.additionalHolders.some((holder) => !holder.contactId || !Number.isInteger(Number(holder.quantity)) || Number(holder.quantity) < 1)
+      || new Set(holderIds).size !== holderIds.length || additionalHolderQuantity >= quantity
+    if (!saleDraft.externalOrderNumber.trim() || !saleDraft.contactId || !saleDraft.executiveId || !saleDraft.localityCode || !saleDraft.discountCode || saleQuoteState !== 'ready' || !saleQuote || !Number.isInteger(quantity) || quantity < 1 || !Number.isFinite(unitPrice) || unitPrice < 0 || invalidHolderDistribution || (!editingSale && (paymentAmount < 0 || paymentAmount > totalAmount))) {
       setSaleError('Completa número de orden, titular, ejecutivo, zona, descuento y cantidad; espera a que termine la cotización antes de guardar.')
       return
     }
@@ -1991,7 +2002,8 @@ function SalesPage({ sales, contacts, isDemo, user, availableExecutives, pricing
     }
     setSavingSale(true); setSaleError('')
     try {
-      const payload = { externalOrderNumber: saleDraft.externalOrderNumber.trim(), saleType: saleDraft.kind, closeStage: saleDraft.closeStage, contactId: saleDraft.contactId, executiveId: saleDraft.executiveId, seasonCode: 'LMP-2026-27', status: saleDraft.closeStage === 'won' ? 'confirmed' : 'reserved', soldAt: new Date(`${saleDraft.soldAt}T12:00:00`).toISOString(), currency: 'MXN', notes: [promotion2x1 ? 'Promoción 2x1 aplicada automáticamente desde el catálogo oficial.' : '', saleDraft.notes].filter(Boolean).join(' ') || undefined, items, pricing: { localityCode: saleDraft.localityCode, discountCode: saleDraft.discountCode, seatCount: quantity } }
+      const holderAssignments = [{ contactId: saleDraft.contactId, quantity: quantity - additionalHolderQuantity, isPrimary: true }, ...saleDraft.additionalHolders.map((holder) => ({ contactId: holder.contactId, quantity: Number(holder.quantity), isPrimary: false }))]
+      const payload = { externalOrderNumber: saleDraft.externalOrderNumber.trim(), saleType: saleDraft.kind, closeStage: saleDraft.closeStage, contactId: saleDraft.contactId, executiveId: saleDraft.executiveId, seasonCode: 'LMP-2026-27', status: saleDraft.closeStage === 'won' ? 'confirmed' : 'reserved', soldAt: new Date(`${saleDraft.soldAt}T12:00:00`).toISOString(), currency: 'MXN', notes: [promotion2x1 ? 'Promoción 2x1 aplicada automáticamente desde el catálogo oficial.' : '', saleDraft.notes].filter(Boolean).join(' ') || undefined, items, pricing: { localityCode: saleDraft.localityCode, discountCode: saleDraft.discountCode, seatCount: quantity }, holderAssignments }
       if (editingSale) await onCorrectSale(editingSale, { ...payload, reason: saleDraft.correctionReason.trim() })
       else await onCreateSale({ ...payload, payments: paymentAmount > 0 ? [{ amount: paymentAmount, method: saleDraft.paymentMethod, paidAt: new Date(`${saleDraft.soldAt}T12:00:00`).toISOString(), reference: saleDraft.paymentReference || undefined }] : [] })
       closeSaleDrawer()
@@ -2025,7 +2037,8 @@ function SalesPage({ sales, contacts, isDemo, user, availableExecutives, pricing
         <label className="field"><span>Número de orden *</span><input autoFocus required maxLength="80" value={saleDraft.externalOrderNumber} onChange={(event) => setSaleDraft((current) => ({ ...current, externalOrderNumber: event.target.value }))} placeholder="Ej. 26000123"/><small>Identificador único de la venta.</small></label>
         <label className="field"><span>Cierre *</span><select value={saleDraft.closeStage} onChange={(event) => setSaleDraft((current) => ({ ...current, closeStage: event.target.value }))}><option value="reserved">Apartado</option><option value="won">Ganado</option></select></label>
         <label className="field field--full"><span>Buscar titular</span><input value={contactSearch} onChange={(event) => setContactSearch(event.target.value)} placeholder="Escribe nombre o apellido…"/><small>Filtra el acervo completo de contactos, incluidos prospectos.</small></label>
-        <label className="field field--full"><span>Titular *</span><select value={saleDraft.contactId} onChange={(event) => setSaleDraft((current) => ({ ...current, contactId: event.target.value }))}><option value="">Selecciona una persona</option>{filteredContactOptions.map((contact) => <option key={contact.id} value={contact.id}>{contact.name}</option>)}</select><small>¿No existe? <button type="button" className="text-button" onClick={() => { setSaleOpen(false); onClearSaleClosure(); onCreate('portfolio') }}>Crear contacto nuevo</button></small></label>
+        <label className="field field--full"><span>Titular *</span><select value={saleDraft.contactId} onChange={(event) => setSaleDraft((current) => ({ ...current, contactId: event.target.value }))}><option value="">Selecciona una persona</option>{filteredContactOptions.map((contact) => <option key={contact.id} value={contact.id}>{contact.name}</option>)}</select><small>¿No existe? <button type="button" className="text-button" onClick={() => { setSaleOpen(false); onClearSaleClosure(); onCreate('prospect', { resumeSale: true }) }}>Crear contacto nuevo y continuar la venta</button></small></label>
+        <details className="field field--full holder-distribution"><summary>Distribuir la orden entre varios titulares</summary><p>Opcional. Si no agregas personas, todos los abonos pertenecerán al titular principal.</p><div className="holder-primary"><strong>Titular principal</strong><span>{Math.max(0, Number(saleDraft.quantity || 0) - saleDraft.additionalHolders.reduce((sum, holder) => sum + Number(holder.quantity || 0), 0))} abonos</span></div>{saleDraft.additionalHolders.map((holder, index) => <div className="holder-row" key={`holder-${index}`}><label className="field"><span>Titular adicional *</span><select value={holder.contactId} onChange={(event) => setSaleDraft((current) => ({ ...current, additionalHolders: current.additionalHolders.map((item, itemIndex) => itemIndex === index ? { ...item, contactId: event.target.value } : item) }))}><option value="">Selecciona una persona</option>{contactOptions.filter((contact) => contact.id !== saleDraft.contactId).map((contact) => <option key={contact.id} value={contact.id}>{contact.name}</option>)}</select></label><label className="field"><span>Abonos *</span><input type="number" min="1" max={Math.max(1, Number(saleDraft.quantity || 1) - 1)} value={holder.quantity} onChange={(event) => setSaleDraft((current) => ({ ...current, additionalHolders: current.additionalHolders.map((item, itemIndex) => itemIndex === index ? { ...item, quantity: event.target.value } : item) }))}/></label><button type="button" className="text-button text-button--danger" onClick={() => setSaleDraft((current) => ({ ...current, additionalHolders: current.additionalHolders.filter((_, itemIndex) => itemIndex !== index) }))}>Quitar</button></div>)}<button type="button" className="button button--secondary" disabled={Number(saleDraft.quantity || 0) < 2} onClick={() => setSaleDraft((current) => ({ ...current, additionalHolders: [...current.additionalHolders, { contactId: '', quantity: 1 }] }))}>Agregar titular</button></details>
         <label className="field"><span>Tipo *</span><select value={saleDraft.kind} onChange={(event) => setSaleDraft((current) => ({ ...current, kind: event.target.value }))}><option value="new">Abono nuevo</option><option value="renewal">Renovación</option></select></label>
         <label className="field"><span>Ejecutivo *</span><select value={saleDraft.executiveId} onChange={(event) => setSaleDraft((current) => ({ ...current, executiveId: event.target.value }))}><option value="">Selecciona</option>{availableExecutives.map((item) => <option key={item.id} value={item.id}>{item.displayName}</option>)}</select></label>
         <label className="field"><span>Fecha *</span><input type="date" value={saleDraft.soldAt} onChange={(event) => setSaleDraft((current) => ({ ...current, soldAt: event.target.value }))}/></label>
@@ -2237,10 +2250,11 @@ function ContactDrawer({ drawer, user, onClose, onSave, onDelete, onRestore, onC
                 <label className="field field--full"><span>Consentimiento de contacto</span><select disabled={editing && !mayChangeConsent} value={form.consent} onChange={(event) => update('consent', event.target.value)}><option>Sí</option><option>No</option><option>No consta</option></select><small>{editing && !mayChangeConsent ? 'Solo Supervisor o Administrador puede modificar este dato.' : 'La fecha y la fuente del cambio se registran en el servidor.'}</small></label>
               </div>
             </fieldset>
+            {editing && <section className="associated-sales" aria-labelledby="associated-sales-title"><div className="membership-orders-heading"><div><span className="eyebrow">Fuente comercial</span><h3 id="associated-sales-title">Órdenes asociadas</h3></div></div>{existing.associatedOrders?.length ? <div className="associated-sales-list">{existing.associatedOrders.map((order) => <article key={`${order.saleId}-${order.orderNumber}`}><div><strong>Orden {order.orderNumber}</strong><StatusPill>{order.status === 'reserved' ? 'Apartado' : order.status === 'confirmed' ? 'Ganado' : order.status}</StatusPill></div><span>{order.quantity} {Number(order.quantity) === 1 ? 'abono' : 'abonos'} · {order.segment || order.zone || 'Sin segmento'}{order.isPrimary ? ' · Titular principal' : ''}</span></article>)}</div> : <div className="manual-inline-note"><strong>Sin orden de venta asociada</strong><span>Este contacto no modifica los indicadores de venta hasta registrar una orden.</span></div>}</section>}
             {editing && membershipStatusForContact(existing) && <section className="membership-orders" aria-labelledby="membership-orders-title">
-              <div className="membership-orders-heading"><div><span className="eyebrow">Órdenes asociadas</span><h3 id="membership-orders-title">Abonos del contacto</h3></div>{mayManageMembership && <button type="button" className="button button--secondary" disabled={membershipSaving || selectedMembershipId === 'new'} onClick={() => setSelectedMembershipId('new')}><Icon name="plus" size={16}/>Agregar otra orden</button>}</div>
+              <div className="membership-orders-heading"><div><span className="eyebrow">Detalle operativo</span><h3 id="membership-orders-title">Abonos del contacto</h3></div>{mayManageMembership && <button type="button" className="button button--secondary" disabled={membershipSaving} onClick={() => onRequestSaleClosure(existing, 'Apartado')}><Icon name="plus" size={16}/>Registrar otra orden</button>}</div>
               {memberships.length > 0 && <label className="field"><span>Orden de abonos</span><select disabled={membershipSaving} value={selectedMembershipId} onChange={(event) => setSelectedMembershipId(event.target.value)}>{selectedMembershipId === 'new' && <option value="new">Nueva orden</option>}{memberships.map((item, index) => <option key={item.id} value={item.id}>Orden {memberships.length - index} · {item.seatCount} {item.seatCount === 1 ? 'abono' : 'abonos'} · {item.localityName || item.membershipSection || 'Sin localidad'}</option>)}</select><small>{memberships.length} {memberships.length === 1 ? 'orden registrada' : 'órdenes registradas'} para la temporada actual.</small></label>}
-              <MembershipEditor key={membership?.id || 'new'} membership={membership} pricingCatalog={pricingCatalog} onQuote={onQuoteMembershipPricing} canEdit={mayManageMembership} focusOnMount={drawer.focusMembership || selectedMembershipId === 'new'} onSave={async (draft) => { const saved = await onSaveMembership(existing, membership, draft); setSelectedMembershipId(saved?.id || membership?.id || 'new') }} onSavingChange={setMembershipSaving}/>
+              {membership ? <MembershipEditor key={membership.id} membership={membership} pricingCatalog={pricingCatalog} onQuote={onQuoteMembershipPricing} canEdit={mayManageMembership} focusOnMount={drawer.focusMembership} onSave={async (draft) => { const saved = await onSaveMembership(existing, membership, draft); setSelectedMembershipId(saved?.id || membership.id) }} onSavingChange={setMembershipSaving}/> : <div className="manual-inline-note"><strong>Sin detalle auxiliar</strong><span>Registra o completa la orden desde Ventas; los indicadores no se alimentan desde este apartado.</span></div>}
             </section>}
             <fieldset disabled={!mayEdit}>
               <legend>Seguimiento</legend>
