@@ -2233,6 +2233,69 @@ export class PgCrmRepository {
     return result;
   }
 
+  async exportSubscriberDetail({ actor, filters, context }) {
+    const params = [];
+    const where = [
+      'c.deleted_at IS NULL',
+      "c.subscriber_status IN ('current_subscriber','new_subscriber')"
+    ];
+    if (actor.role === 'executive') {
+      params.push(actor.id);
+      where.push(`c.executive_id=$${params.length}`);
+    } else if (filters.executiveId) {
+      params.push(filters.executiveId);
+      where.push(`c.executive_id=$${params.length}`);
+    }
+    params.push(filters.season ?? 'LMP-2026-27');
+    const seasonParameter = params.length;
+    params.push(this.exportRowLimit);
+    return withTransaction(this.pool, async (client) => {
+      const rows = await client.query(
+        `SELECT c.id AS contact_id,concat(c.first_name,' ',c.last_name) AS name,
+                c.subscriber_status,
+                CASE WHEN c.is_commitment_only=true THEN 'No - Compromiso' ELSE 'Si' END
+                  AS counts_as_identified_holder,
+                u.display_name AS executive_name,
+                CASE WHEN c.is_commitment_only=true
+                       OR lower(COALESCE(m.product,'')) LIKE '%compromiso%'
+                       OR lower(COALESCE(m.zone,''))='zona suites'
+                     THEN 'Compromisos'
+                     ELSE COALESCE(m.section,'Sin abono activo') END AS segment,
+                COALESCE(m.locality_name,m.zone,'') AS locality,
+                COALESCE(m.seat_count,0)::integer AS seat_count,
+                COALESCE(ms.seats,'') AS seats,m.membership_status,
+                COALESCE(os.orders,'') AS orders,os.first_sale_at,os.last_sale_at
+         FROM contacts c
+         LEFT JOIN app_users u ON u.id=c.executive_id
+         LEFT JOIN memberships m ON m.contact_id=c.id AND m.deleted_at IS NULL
+           AND m.membership_status='active' AND m.season_code=$${seasonParameter}
+         LEFT JOIN LATERAL (
+           SELECT string_agg(mu.seat_identifier,' | ' ORDER BY mu.unit_number) AS seats
+           FROM membership_units mu WHERE mu.membership_id=m.id AND mu.deleted_at IS NULL
+         ) ms ON true
+         LEFT JOIN LATERAL (
+           SELECT string_agg(DISTINCT es.effective_external_order_number,' | ') AS orders,
+                  min(es.effective_sold_at) AS first_sale_at,max(es.effective_sold_at) AS last_sale_at
+           FROM effective_sales es
+           WHERE es.effective_contact_id=c.id AND es.deleted_at IS NULL
+             AND es.season_code=$${seasonParameter}
+             AND es.effective_status IN ('confirmed','reserved')
+         ) os ON true
+         WHERE ${where.join(' AND ')}
+         ORDER BY CASE WHEN m.id IS NULL THEN 1 ELSE 0 END,
+                  CASE COALESCE(m.section,'') WHEN 'VIP' THEN 1 WHEN 'Preferente' THEN 2 WHEN 'General' THEN 3 ELSE 4 END,
+                  name,m.created_at
+         LIMIT $${params.length}`,
+        params
+      );
+      await this.audit(client, context, {
+        action: 'data.exported', entityType: 'subscriber_report',
+        metadata: { rowCount: rows.rowCount, season: filters.season ?? 'LMP-2026-27' }
+      });
+      return rows.rows;
+    });
+  }
+
   async recordDashboardPdfExport(actor, event, context) {
     await this.pool.query(
       `INSERT INTO audit_events

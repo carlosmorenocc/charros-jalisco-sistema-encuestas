@@ -141,6 +141,7 @@ export function createApiClient({
     addPayment: (id, payload) => request(`/sales/${encodeURIComponent(id)}/payments`, { method: 'POST', body: payload }),
     executives: (filters = { active: true }) => request(`/executives${encodeQuery(filters)}`),
     exportContacts: (filters) => requestBlob(`/exports/contacts.csv${encodeQuery(filters)}`),
+    exportSubscriberDetail: (filters) => requestBlob(`/exports/subscribers.csv${encodeQuery(filters)}`),
     recordDashboardPdfRequest: (filters) => request('/exports/dashboard-pdf-events', { method: 'POST', body: { filters } }),
   }
 }

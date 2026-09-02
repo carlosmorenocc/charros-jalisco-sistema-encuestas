@@ -298,6 +298,30 @@ export function createApiRouter({ service, config }) {
     res.send(csv);
   }));
 
+  router.get('/exports/subscribers.csv', asyncHandler(async (req, res) => {
+    const filters = parseListQuery(req.query);
+    const rows = await service.exportSubscriberDetail(req.actor, filters, req.auditContext);
+    const csv = rowsToCsv(rows, [
+      { key: 'contact_id', label: 'ID titular CRM' },
+      { key: 'name', label: 'Titular' },
+      { key: 'subscriber_status', label: 'Estatus abonado' },
+      { key: 'counts_as_identified_holder', label: 'Cuenta en Titulares identificados' },
+      { key: 'executive_name', label: 'Ejecutivo' },
+      { key: 'segment', label: 'Segmento' },
+      { key: 'locality', label: 'Localidad' },
+      { key: 'seat_count', label: 'Cantidad de abonos' },
+      { key: 'seats', label: 'Butacas' },
+      { key: 'membership_status', label: 'Estatus membresia' },
+      { key: 'orders', label: 'Ordenes vigentes asociadas' },
+      { key: 'first_sale_at', label: 'Primera venta vigente' },
+      { key: 'last_sale_at', label: 'Ultima venta vigente' }
+    ]);
+    const date = new Date().toISOString().slice(0, 10);
+    res.type('text/csv; charset=utf-8');
+    res.setHeader('content-disposition', `attachment; filename="titulares-abonos-${date}.csv"`);
+    res.send(csv);
+  }));
+
   router.post('/exports/dashboard-pdf-events', asyncHandler(async (req, res) => {
     await service.recordDashboardPdfExport(
       req.actor,

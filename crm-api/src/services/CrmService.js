@@ -216,6 +216,11 @@ export class CrmService {
     return this.repository.exportContacts({ actor, filters, context });
   }
 
+  async exportSubscriberDetail(actor, filters, context) {
+    requirePermission(actor, PERMISSIONS.DATA_EXPORT);
+    return this.repository.exportSubscriberDetail({ actor, filters, context });
+  }
+
   async recordDashboardPdfExport(actor, event, context) {
     requirePermission(actor, PERMISSIONS.DASHBOARD_READ);
     return this.repository.recordDashboardPdfExport(actor, event, context);

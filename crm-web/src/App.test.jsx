@@ -32,7 +32,9 @@ describe('CRM web en modo demostración', () => {
     render(<App />)
     expect(await screen.findByRole('heading', { name: 'Reporte Dirección' })).toBeInTheDocument()
     expect(screen.queryByText(/Modo demostración/i)).not.toBeInTheDocument()
-    expect(await screen.findByRole('button', { name: 'Descargar PDF' })).toBeInTheDocument()
+    expect(await screen.findByText('Descargar')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Reporte ejecutivo PDF/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Detalle de titulares/ })).toBeInTheDocument()
   })
 
   it('integra la operación diaria dentro de Seguimiento', async () => {

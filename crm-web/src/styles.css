@@ -197,6 +197,17 @@ main:focus { outline: 0; }
 .pdf-status { max-width: 220px; color: #657085; font-size: 10px; line-height: 1.35; }
 .pdf-status--success { color: var(--green-700); }
 .pdf-status--error { color: var(--red-700); }
+.report-download-menu { position: relative; }
+.report-download-menu > summary { list-style: none; cursor: pointer; }
+.report-download-menu > summary::-webkit-details-marker { display: none; }
+.report-download-menu[open] > summary { color: var(--blue-800); background: var(--blue-50); border-color: #bfd2e7; }
+.report-download-options { position: absolute; z-index: 40; top: calc(100% + 7px); right: 0; width: 264px; padding: 7px; background: white; border: 1px solid var(--line); border-radius: 11px; box-shadow: var(--shadow-lg); }
+.report-download-options button { display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px; color: #394458; background: transparent; border: 0; border-radius: 7px; text-align: left; }
+.report-download-options button:hover { color: var(--blue-800); background: var(--blue-50); }
+.report-download-options button > svg { color: var(--blue-700); }
+.report-download-options button span { display: flex; flex-direction: column; gap: 3px; }
+.report-download-options button strong { font-size: 12px; }
+.report-download-options button small { color: var(--muted); font-size: 10px; }
 .compact-date { display: grid; gap: 3px; color: var(--muted); font-size: 10px; font-weight: 700; }
 .compact-date input { min-width: 138px; }
 
