@@ -241,6 +241,15 @@ function saleItemsFromPricing(data, pricing) {
   ];
 }
 
+function saleSegment(items, pricing) {
+  if (pricing?.section) return pricing.section;
+  const text = items.map((item) => `${item.product ?? ''} ${item.zone ?? ''}`).join(' ').toLowerCase();
+  if (text.includes('compromiso') || text.includes('zona suites')) return 'Compromisos';
+  if (text.includes('vip') || text.includes('suites')) return 'VIP';
+  if (text.includes('preferente') || text.includes('premier') || text.includes('planta baja')) return 'Preferente';
+  return 'General';
+}
+
 function paymentRow(row) {
   return {
     id: row.id,
@@ -696,7 +705,13 @@ export class PgCrmRepository {
          SELECT
            count(*)::integer AS total_contacts,
            count(*) FILTER (WHERE subscriber_status IN ('current_subscriber','new_subscriber') AND is_commitment_only=false)::integer AS current_subscribers,
-           count(*) FILTER (WHERE subscriber_status = 'renewing')::integer AS renewing,
+           count(*) FILTER (WHERE subscriber_status = 'renewing' AND NOT EXISTS (
+             SELECT 1 FROM sale_holder_assignments rha
+             JOIN effective_sales res ON res.id=rha.sale_id
+             WHERE rha.contact_id=scoped_contacts.id AND rha.deleted_at IS NULL
+               AND res.deleted_at IS NULL AND res.effective_status IN ('confirmed','reserved')
+               AND res.season_code=COALESCE($${seasonParameter}::text,'LMP-2026-27')
+           ))::integer AS renewing,
            count(*) FILTER (WHERE subscriber_status = 'prospect')::integer AS prospects,
            count(*) FILTER (WHERE subscriber_status = 'new_subscriber' AND EXISTS (
              SELECT 1 FROM memberships nm
@@ -847,39 +862,69 @@ export class PgCrmRepository {
            AND ($${fromParameter}::timestamptz IS NULL OR s.effective_sold_at >= $${fromParameter})
            AND ($${toParameter}::timestamptz IS NULL OR s.effective_sold_at <= $${toParameter})
            AND ($${seasonParameter}::text IS NULL OR s.season_code = $${seasonParameter})
+       ), holder_metrics AS (
+         SELECT
+           count(DISTINCT ha.contact_id) FILTER (
+             WHERE es.effective_status IN ('confirmed','reserved') AND ha.segment<>'Compromisos'
+           )::integer AS holder_current_subscribers,
+           count(DISTINCT ha.contact_id) FILTER (
+             WHERE es.effective_status IN ('confirmed','reserved') AND ha.segment<>'Compromisos'
+               AND es.effective_sale_type='new'
+           )::integer AS holder_new_subscribers,
+           count(DISTINCT ha.contact_id) FILTER (
+             WHERE es.effective_status IN ('confirmed','reserved') AND ha.segment<>'Compromisos'
+               AND es.effective_sale_type='renewal'
+           )::integer AS holder_renewed_subscribers,
+           COALESCE(sum(ha.quantity) FILTER (
+             WHERE es.effective_status IN ('confirmed','reserved') AND es.effective_sale_type='new'
+           ),0)::integer AS holder_new_seats,
+           COALESCE(sum(ha.quantity) FILTER (
+             WHERE es.effective_status IN ('confirmed','reserved') AND es.effective_sale_type='renewal'
+           ),0)::integer AS holder_renewed_seats,
+           COALESCE(sum(ha.quantity) FILTER (WHERE es.effective_status IN ('confirmed','reserved') AND ha.segment='Compromisos'),0)::integer AS holder_segment_commitments,
+           COALESCE(sum(ha.quantity) FILTER (WHERE es.effective_status IN ('confirmed','reserved') AND ha.segment='VIP'),0)::integer AS holder_segment_vip,
+           COALESCE(sum(ha.quantity) FILTER (WHERE es.effective_status IN ('confirmed','reserved') AND ha.segment='Preferente'),0)::integer AS holder_segment_preferente,
+           COALESCE(sum(ha.quantity) FILTER (WHERE es.effective_status IN ('confirmed','reserved') AND ha.segment='General'),0)::integer AS holder_segment_general
+         FROM sale_holder_assignments ha
+         JOIN effective_sales es ON es.id=ha.sale_id
+         JOIN scoped_contacts hc ON hc.id=ha.contact_id
+         WHERE ha.deleted_at IS NULL AND es.deleted_at IS NULL
+           AND ($${fromParameter}::timestamptz IS NULL OR es.effective_sold_at >= $${fromParameter})
+           AND ($${toParameter}::timestamptz IS NULL OR es.effective_sold_at <= $${toParameter})
+           AND ($${seasonParameter}::text IS NULL OR es.season_code = $${seasonParameter})
        )
-       SELECT * FROM contact_metrics, membership_metrics, interaction_metrics, campaign_metrics, sales_metrics`,
+       SELECT * FROM contact_metrics, membership_metrics, interaction_metrics, campaign_metrics, sales_metrics, holder_metrics`,
       [...params, filters.from ?? null, filters.to ?? null, filters.season ?? null]
     );
     const row = result.rows[0];
     return {
       totalContacts: Number(row.total_contacts),
-      currentSubscribers: Number(row.current_subscribers),
+      currentSubscribers: Number(row.holder_current_subscribers ?? 0),
       // Dirección uses the same documented orders as Ventas. Membership capture
       // remains operational detail and must not change the commercial seat total.
-      activeSeats: Number(row.sold_new_seats ?? 0) + Number(row.sold_renewed_seats ?? 0),
+      activeSeats: Number(row.holder_new_seats ?? 0) + Number(row.holder_renewed_seats ?? 0),
       pricedMemberships: Number(row.priced_memberships ?? 0),
       pricedSeats: Number(row.priced_seats ?? 0),
       membershipCommercialValue: moneyFromCents(row.membership_commercial_value ?? 0),
       membershipNetAmount: moneyFromCents(row.membership_net_amount ?? 0),
       membershipDiscountAmount: moneyFromCents(row.membership_discount_amount ?? 0),
       renewing: Number(row.renewing),
-      newSubscribers: Number(row.sold_new_subscribers ?? row.new_subscribers ?? 0),
-      newSeats: Number(row.sold_new_seats ?? row.new_seats ?? 0),
-      renewedSubscribers: Number(row.sold_renewed_subscribers ?? row.renewed_subscribers ?? 0),
-      renewedSeats: Number(row.sold_renewed_seats ?? row.renewed_seats ?? 0),
+      newSubscribers: Number(row.holder_new_subscribers ?? 0),
+      newSeats: Number(row.holder_new_seats ?? 0),
+      renewedSubscribers: Number(row.holder_renewed_subscribers ?? 0),
+      renewedSeats: Number(row.holder_renewed_seats ?? 0),
       prospects: Number(row.prospects),
       membershipSegments: {
-        Compromisos: Number(row.period_segment_commitments ?? 0),
-        VIP: Number(row.period_segment_vip ?? 0),
-        Preferente: Number(row.period_segment_preferente ?? 0),
-        General: Number(row.period_segment_general ?? 0)
+        Compromisos: Number(row.holder_segment_commitments ?? 0),
+        VIP: Number(row.holder_segment_vip ?? 0),
+        Preferente: Number(row.holder_segment_preferente ?? 0),
+        General: Number(row.holder_segment_general ?? 0)
       },
       periodMembershipSegments: {
-        Compromisos: Number(row.period_segment_commitments ?? 0),
-        VIP: Number(row.period_segment_vip ?? 0),
-        Preferente: Number(row.period_segment_preferente ?? 0),
-        General: Number(row.period_segment_general ?? 0)
+        Compromisos: Number(row.holder_segment_commitments ?? 0),
+        VIP: Number(row.holder_segment_vip ?? 0),
+        Preferente: Number(row.holder_segment_preferente ?? 0),
+        General: Number(row.holder_segment_general ?? 0)
       },
       notContacted: Number(row.not_contacted),
       unassigned: Number(row.unassigned),
@@ -1956,12 +2001,40 @@ export class PgCrmRepository {
           [result.rows[0].id, item.product, item.zone ?? null, item.quantity, item.unitPrice]
         );
       }
+      const holderQuantity = saleItems.reduce((sum, item) => sum + item.quantity, 0);
+      await client.query(
+        `INSERT INTO sale_holder_assignments
+          (sale_id,contact_id,quantity,segment,zone,source,source_holder_name,is_primary,created_by,updated_by)
+         VALUES ($1,$2,$3,$4,$5,'crm',$6,true,$7,$7)`,
+        [result.rows[0].id, data.contactId, holderQuantity, saleSegment(saleItems, pricing),
+          saleItems[0]?.zone ?? null, contact.name, actor.id]
+      );
       for (const payment of data.payments) {
         await client.query(
           `INSERT INTO payments (sale_id,amount,method,paid_at,reference,created_by)
            VALUES ($1,$2,$3,$4,$5,$6)`,
           [result.rows[0].id, payment.amount, payment.method, payment.paidAt,
             payment.reference ?? null, actor.id]
+        );
+      }
+      const holderState = await client.query(
+        `SELECT count(*)::integer AS holder_count,COALESCE(sum(quantity),0)::integer AS holder_quantity
+         FROM sale_holder_assignments WHERE sale_id=$1 AND deleted_at IS NULL`,
+        [result.rows[0].id]
+      );
+      const holderCount = Number(holderState.rows[0]?.holder_count ?? 0);
+      const correctedQuantity = saleItems.reduce((sum, item) => sum + item.quantity, 0);
+      if (holderCount > 1 && Number(holderState.rows[0].holder_quantity) !== correctedQuantity) {
+        throw conflict('La orden tiene varios titulares; conserva la cantidad total o corrige primero su distribuciÃ³n.');
+      }
+      if (holderCount === 1) {
+        await client.query(
+          `UPDATE sale_holder_assignments
+           SET contact_id=$2,quantity=$3,segment=$4,zone=$5,source='crm',
+               source_holder_name=$6,updated_by=$7,row_version=row_version+1
+           WHERE sale_id=$1 AND deleted_at IS NULL`,
+          [result.rows[0].id, data.contactId, correctedQuantity, saleSegment(saleItems, pricing),
+            saleItems[0]?.zone ?? null, contact.name, actor.id]
         );
       }
       const targetSubscriberStatus = data.saleType === 'renewal' ? 'current_subscriber' : 'new_subscriber';
@@ -2047,6 +2120,27 @@ export class PgCrmRepository {
           data.reason, actor.id]
       );
       const targetSubscriberStatus = data.saleType === 'renewal' ? 'current_subscriber' : 'new_subscriber';
+      const correctedHolderState = await client.query(
+        `SELECT count(*)::integer AS holder_count,COALESCE(sum(quantity),0)::integer AS holder_quantity
+         FROM sale_holder_assignments WHERE sale_id=$1 AND deleted_at IS NULL`,
+        [saleId]
+      );
+      const correctedHolderCount = Number(correctedHolderState.rows[0]?.holder_count ?? 0);
+      const correctedHolderQuantity = saleItems.reduce((sum, item) => sum + item.quantity, 0);
+      if (correctedHolderCount > 1
+        && Number(correctedHolderState.rows[0].holder_quantity) !== correctedHolderQuantity) {
+        throw conflict('La orden tiene varios titulares; conserva la cantidad total o corrige primero su distribucion.');
+      }
+      if (correctedHolderCount === 1) {
+        await client.query(
+          `UPDATE sale_holder_assignments
+           SET contact_id=$2,quantity=$3,segment=$4,zone=$5,source='crm',
+               source_holder_name=$6,updated_by=$7,row_version=row_version+1
+           WHERE sale_id=$1 AND deleted_at IS NULL`,
+          [saleId, data.contactId, correctedHolderQuantity, saleSegment(saleItems, pricing),
+            saleItems[0]?.zone ?? null, contact.name, actor.id]
+        );
+      }
       await client.query(
         `UPDATE contacts SET subscriber_status=$2,commercial_stage=$3,executive_id=$4,updated_by=$5
          WHERE id=$1`,
@@ -2227,10 +2321,8 @@ export class PgCrmRepository {
 
   async exportSubscriberDetail({ actor, filters, context }) {
     const params = [];
-    const where = [
-      'c.deleted_at IS NULL',
-      "c.subscriber_status IN ('current_subscriber','new_subscriber')"
-    ];
+    const where = ['c.deleted_at IS NULL', 'ha.deleted_at IS NULL', 'es.deleted_at IS NULL',
+      "es.effective_status IN ('confirmed','reserved')"];
     if (actor.role === 'executive') {
       params.push(actor.id);
       where.push(`c.executive_id=$${params.length}`);
@@ -2245,38 +2337,22 @@ export class PgCrmRepository {
       const rows = await client.query(
         `SELECT c.id AS contact_id,concat(c.first_name,' ',c.last_name) AS name,
                 c.subscriber_status,
-                CASE WHEN c.is_commitment_only=true THEN 'No - Compromiso' ELSE 'Si' END
+                CASE WHEN ha.segment='Compromisos' THEN 'No - Compromiso' ELSE 'Si' END
                   AS counts_as_identified_holder,
                 u.display_name AS executive_name,
-                CASE WHEN c.is_commitment_only=true
-                       OR lower(COALESCE(m.product,'')) LIKE '%compromiso%'
-                       OR lower(COALESCE(m.zone,''))='zona suites'
-                     THEN 'Compromisos'
-                     ELSE COALESCE(m.section,'Sin abono activo') END AS segment,
-                COALESCE(m.locality_name,m.zone,'') AS locality,
-                COALESCE(m.seat_count,0)::integer AS seat_count,
-                COALESCE(ms.seats,'') AS seats,m.membership_status,
-                COALESCE(os.orders,'') AS orders,os.first_sale_at,os.last_sale_at
-         FROM contacts c
+                ha.segment,COALESCE(ha.zone,'') AS locality,
+                ha.quantity::integer AS seat_count,
+                array_to_string(ha.seat_identifiers,' | ') AS seats,
+                'active' AS membership_status,
+                es.effective_external_order_number AS orders,
+                es.effective_sold_at AS first_sale_at,es.effective_sold_at AS last_sale_at
+         FROM sale_holder_assignments ha
+         JOIN effective_sales es ON es.id=ha.sale_id
+         JOIN contacts c ON c.id=ha.contact_id
          LEFT JOIN app_users u ON u.id=c.executive_id
-         LEFT JOIN memberships m ON m.contact_id=c.id AND m.deleted_at IS NULL
-           AND m.membership_status='active' AND m.season_code=$${seasonParameter}
-         LEFT JOIN LATERAL (
-           SELECT string_agg(mu.seat_identifier,' | ' ORDER BY mu.unit_number) AS seats
-           FROM membership_units mu WHERE mu.membership_id=m.id AND mu.deleted_at IS NULL
-         ) ms ON true
-         LEFT JOIN LATERAL (
-           SELECT string_agg(DISTINCT es.effective_external_order_number,' | ') AS orders,
-                  min(es.effective_sold_at) AS first_sale_at,max(es.effective_sold_at) AS last_sale_at
-           FROM effective_sales es
-           WHERE es.effective_contact_id=c.id AND es.deleted_at IS NULL
-             AND es.season_code=$${seasonParameter}
-             AND es.effective_status IN ('confirmed','reserved')
-         ) os ON true
-         WHERE ${where.join(' AND ')}
-         ORDER BY CASE WHEN m.id IS NULL THEN 1 ELSE 0 END,
-                  CASE COALESCE(m.section,'') WHEN 'VIP' THEN 1 WHEN 'Preferente' THEN 2 WHEN 'General' THEN 3 ELSE 4 END,
-                  name,m.created_at
+         WHERE ${where.join(' AND ')} AND es.season_code=$${seasonParameter}
+         ORDER BY CASE ha.segment WHEN 'VIP' THEN 1 WHEN 'Preferente' THEN 2 WHEN 'General' THEN 3 ELSE 4 END,
+                  name,es.effective_sold_at,es.effective_external_order_number
          LIMIT $${params.length}`,
         params
       );
