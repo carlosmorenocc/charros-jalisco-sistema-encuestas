@@ -977,6 +977,20 @@ function App() {
     }
   }
 
+  async function exportSubscriberDetail(filters = {}) {
+    if (authClient.isDemo) throw new Error('Modo demostracion: no se descargan datos reales.')
+    const { blob, filename } = await api.exportSubscriberDetail(filters)
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = filename
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(url)
+    return filename
+  }
+
 
   const loadContacts = useCallback(async (filters) => {
     if (authClient.isDemo) return { page: 1, pageSize: 0, total: 0, totalPages: 1 }
@@ -1040,6 +1054,7 @@ function App() {
     onLoadContacts: loadContacts,
     onLoadDashboard: loadDashboard,
     onAuthorizeDashboardPdf: authorizeDashboardPdf,
+    onExportSubscriberDetail: exportSubscriberDetail,
     onCreateInteraction: createInteraction,
     onCreateTask: createTask,
     onCompleteTask: completeTask,
@@ -1267,7 +1282,7 @@ function SegmentedMetricCard({ label, options, selected, onSelect, detail, icon,
   )
 }
 
-function DashboardPage({ contacts, tasks, followupCounts, sales, dashboardSummary, dashboardRevision, isDemo, availableExecutives, onNavigate, onNotify, onLoadDashboard, onAuthorizeDashboardPdf }) {
+function DashboardPage({ contacts, tasks, followupCounts, sales, dashboardSummary, dashboardRevision, isDemo, user, availableExecutives, onNavigate, onNotify, onLoadDashboard, onAuthorizeDashboardPdf, onExportSubscriberDetail }) {
   const [reportFilters, setReportFilters] = useState({ season: 'LMP-2026-27', period: 'month', fromDate: '', toDate: '', executiveId: '' })
   const [loadedFilterKey, setLoadedFilterKey] = useState(isDemo ? 'LMP-2026-27|month|||' : '')
   const [pdfState, setPdfState] = useState({ status: 'idle', message: '' })
@@ -1484,13 +1499,31 @@ function DashboardPage({ contacts, tasks, followupCounts, sales, dashboardSummar
     }
   }
 
+  async function downloadSubscriberDetail() {
+    if (!reportIsReady || pdfState.status === 'generating') return
+    setPdfState({ status: 'generating', message: 'Generando reporte detallado...' })
+    try {
+      await onExportSubscriberDetail({
+        season: reportFilters.season,
+        executiveId: reportFilters.executiveId || undefined,
+      })
+      setPdfState({ status: 'success', message: 'Reporte detallado descargado.' })
+    } catch (error) {
+      setPdfState({ status: 'error', message: error.message || 'No fue posible descargar el reporte detallado.' })
+    }
+  }
+
   const reportActions = (
     <>
       <span className="updated-badge"><span />{reportIsReady ? 'Periodo actualizado' : 'Actualizando periodo…'}</span>
       {reportIsReady && (
-        <SecondaryButton type="button" icon="download" disabled={pdfState.status === 'generating'} aria-busy={pdfState.status === 'generating'} onClick={downloadDashboardPdf}>
-          {pdfState.status === 'generating' ? 'Generando PDF…' : 'Descargar PDF'}
-        </SecondaryButton>
+        <details className="report-download-menu">
+          <summary className="button button--secondary" aria-label="Abrir opciones de descarga"><Icon name="download" size={17} />Descargar <Icon name="chevron" size={14} /></summary>
+          <div className="report-download-options">
+            <button type="button" disabled={pdfState.status === 'generating'} onClick={downloadDashboardPdf}><Icon name="document" size={17} /><span><strong>Reporte ejecutivo PDF</strong><small>Resumen visual del periodo</small></span></button>
+            {canExportData(user) && <button type="button" disabled={pdfState.status === 'generating'} onClick={downloadSubscriberDetail}><Icon name="people" size={17} /><span><strong>Detalle de titulares</strong><small>Zonas, butacas y ordenes vigentes</small></span></button>}
+          </div>
+        </details>
       )}
       {pdfState.message && <span className={`pdf-status pdf-status--${pdfState.status}`} role={pdfState.status === 'error' ? 'alert' : 'status'} aria-live="polite">{pdfState.message}</span>}
     </>
@@ -1965,6 +1998,7 @@ function SalesPage({ sales, contacts, isDemo, user, availableExecutives, pricing
     } catch (error) { setSaleError(error.message || 'No fue posible crear la venta.') }
     finally { setSavingSale(false) }
   }
+
   async function submitCancellation(event) {
     event.preventDefault()
     const reason = cancellationReason.trim()

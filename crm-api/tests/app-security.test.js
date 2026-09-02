@@ -77,6 +77,14 @@ async function withServer(callback) {
         id: 'contact-1', name: 'Persona', membership_section: 'VIP',
         membership_seat_count: 2, membership_seats: 'A-1 | A-2'
       }];
+    },
+    async exportSubscriberDetail() {
+      return [{
+        contact_id: 'contact-1', name: 'Persona', subscriber_status: 'current_subscriber',
+        counts_as_identified_holder: 'Si',
+        segment: 'VIP', locality: 'VIP', seat_count: 2, seats: 'A-1 | A-2',
+        membership_status: 'active', orders: '15420001'
+      }];
     }
   };
   const authService = {
@@ -337,5 +345,14 @@ test('POST de abono devuelve ETag y exportación incluye sección, cantidad y bu
     const csv = await exported.text();
     assert.match(csv, /Sección,Cantidad de abonos,Butacas/);
     assert.match(csv, /VIP,2,A-1 \| A-2/);
+
+    const detailed = await fetch(`${baseUrl}/api/v1/exports/subscribers.csv?season=LMP-2026-27`, {
+      headers: authHeaders({ csrf: false, origin: null })
+    });
+    assert.equal(detailed.status, 200);
+    assert.match(detailed.headers.get('content-disposition'), /titulares-abonos-/);
+    const detailedCsv = await detailed.text();
+    assert.match(detailedCsv, /ID titular CRM,Titular/);
+    assert.match(detailedCsv, /Persona,current_subscriber/);
   });
 });
