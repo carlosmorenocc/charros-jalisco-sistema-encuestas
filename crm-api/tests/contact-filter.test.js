@@ -153,6 +153,10 @@ test('Dirección suma el total documentado de apartados y separa el cobro recibi
         new_subscribers: 0, renewed_subscribers: 0, new_seats: 0, renewed_seats: 0,
         sold_new_subscribers: 1, sold_renewed_subscribers: 0,
         sold_new_seats: 1, sold_renewed_seats: 0,
+        holder_current_subscribers: 1,holder_new_subscribers: 1,holder_renewed_subscribers: 0,
+        holder_new_seats: 1,holder_renewed_seats: 0,
+        holder_segment_commitments: 0,holder_segment_vip: 1,
+        holder_segment_preferente: 0,holder_segment_general: 0,
         period_segment_commitments: 0, period_segment_vip: 1,
         period_segment_preferente: 0, period_segment_general: 0,
         not_contacted: 0, unassigned: 0, overdue_follow_ups: 0,
@@ -178,6 +182,28 @@ test('Dirección suma el total documentado de apartados y separa el cobro recibi
   });
   assert.equal(summary.salesAmount, 4207);
   assert.equal(summary.collectedAmount, 1500);
+});
+
+test('DirecciÃ³n toma titulares, abonos, segmentos y renovaciones desde asignaciones de orden', async () => {
+  let sql;
+  const pool = { async query(value) {
+    sql = String(value).replace(/\s+/g, ' ');
+    return { rows: [{
+      total_contacts: 0,current_subscribers: 0,renewing: 25,new_subscribers: 0,renewed_subscribers: 0,
+      not_contacted: 0,unassigned: 0,overdue_follow_ups: 0,human_interactions: 0,campaign_messages: 0,
+      confirmed_sales: 0,sales_amount: 0,collected_amount: 0,
+      holder_current_subscribers: 200,holder_new_subscribers: 100,holder_renewed_subscribers: 100,
+      holder_new_seats: 300,holder_renewed_seats: 269,holder_segment_commitments: 46,
+      holder_segment_vip: 151,holder_segment_preferente: 152,holder_segment_general: 220
+    }] };
+  } };
+  const summary = await new PgCrmRepository(pool).dashboardSummary({ actor: { id: 'admin',role: 'admin' },filters: { season: 'LMP-2026-27' } });
+  assert.match(sql,/holder_metrics AS/);
+  assert.match(sql,/sale_holder_assignments rha/);
+  assert.equal(summary.currentSubscribers,200);
+  assert.equal(summary.activeSeats,569);
+  assert.equal(summary.renewing,25);
+  assert.deepEqual(summary.membershipSegments,{ Compromisos: 46,VIP: 151,Preferente: 152,General: 220 });
 });
 
 test('bitácora global y tareas abiertas conservan el alcance del ejecutivo', async () => {
