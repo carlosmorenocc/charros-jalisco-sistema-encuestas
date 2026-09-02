@@ -488,6 +488,15 @@ export function validateSale(input) {
         quantity: integer(holder.quantity, `holderAssignments[${index}].quantity`, { min: 1, max: 1000, required: true }),
         isPrimary: Boolean(holder.isPrimary)
       };
+    }),
+    seatDetails: (Array.isArray(input.seatDetails) ? input.seatDetails : []).map((seat, index) => {
+      if (!isObject(seat)) throw badRequest(`seatDetails[${index}] debe ser un objeto.`);
+      return {
+        unitNumber: integer(seat.unitNumber, `seatDetails[${index}].unitNumber`, { min: 1, max: 1000, required: true }),
+        seatIdentifier: cleanString(seat.seatIdentifier, { max: 100, field: `seatDetails[${index}].seatIdentifier` }),
+        jerseySize: seat.jerseySize ? enumValue(seat.jerseySize, ['S', 'M', 'L', 'XL', '2XL'], `seatDetails[${index}].jerseySize`) : null,
+        personalization: cleanString(seat.personalization, { max: 120, field: `seatDetails[${index}].personalization` })
+      };
     })
   };
   if (!/^[A-Za-z0-9][A-Za-z0-9._\-/]{0,79}$/.test(result.externalOrderNumber)) {
@@ -506,6 +515,14 @@ export function validateSale(input) {
       throw badRequest('La distribución debe incluir exactamente un titular principal igual al contacto de la venta.');
     }
     if (assignedQuantity !== soldQuantity) throw badRequest('La distribución de titulares debe sumar exactamente la cantidad de abonos vendidos.');
+  }
+  if (result.seatDetails.length) {
+    const soldQuantity = result.items.reduce((sum, item) => sum + item.quantity, 0);
+    const sequence = result.seatDetails.map((seat) => seat.unitNumber).sort((a, b) => a - b);
+    if (result.seatDetails.length !== soldQuantity
+      || sequence.some((unitNumber, index) => unitNumber !== index + 1)) {
+      throw badRequest('El detalle opcional debe contener exactamente una fila consecutiva por cada abono vendido.');
+    }
   }
   return result;
 }

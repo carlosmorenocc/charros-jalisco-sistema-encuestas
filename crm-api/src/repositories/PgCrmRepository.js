@@ -1938,7 +1938,13 @@ export class PgCrmRepository {
               s.effective_items AS items,
               COALESCE((SELECT jsonb_agg(jsonb_build_object(
                 'contactId',ha.contact_id,'contactName',ha.source_holder_name,
-                'quantity',ha.quantity,'isPrimary',ha.is_primary) ORDER BY ha.is_primary DESC,ha.created_at)
+                'quantity',ha.quantity,'isPrimary',ha.is_primary,
+                'seatDetails',COALESCE((SELECT jsonb_agg(jsonb_build_object(
+                  'unitNumber',su.unit_number,'seatIdentifier',su.seat_identifier,
+                  'jerseySize',su.jersey_size,'personalization',su.seat_personalization)
+                  ORDER BY su.unit_number) FROM sale_seat_units su
+                  WHERE su.holder_assignment_id=ha.id AND su.deleted_at IS NULL),'[]'::jsonb)
+                ) ORDER BY ha.is_primary DESC,ha.created_at)
                 FROM sale_holder_assignments ha WHERE ha.sale_id=s.id AND ha.deleted_at IS NULL), '[]'::jsonb) AS holder_assignments,
               count(*) OVER()::integer AS total_count
        FROM effective_sales s JOIN contacts c ON c.id=s.effective_contact_id LEFT JOIN app_users u ON u.id=s.effective_executive_id
@@ -1969,7 +1975,13 @@ export class PgCrmRepository {
               s.effective_items AS items,COALESCE(p.payments,'[]'::jsonb) AS payments,
               COALESCE((SELECT jsonb_agg(jsonb_build_object(
                 'contactId',ha.contact_id,'contactName',ha.source_holder_name,
-                'quantity',ha.quantity,'isPrimary',ha.is_primary) ORDER BY ha.is_primary DESC,ha.created_at)
+                'quantity',ha.quantity,'isPrimary',ha.is_primary,
+                'seatDetails',COALESCE((SELECT jsonb_agg(jsonb_build_object(
+                  'unitNumber',su.unit_number,'seatIdentifier',su.seat_identifier,
+                  'jerseySize',su.jersey_size,'personalization',su.seat_personalization)
+                  ORDER BY su.unit_number) FROM sale_seat_units su
+                  WHERE su.holder_assignment_id=ha.id AND su.deleted_at IS NULL),'[]'::jsonb)
+                ) ORDER BY ha.is_primary DESC,ha.created_at)
                 FROM sale_holder_assignments ha WHERE ha.sale_id=s.id AND ha.deleted_at IS NULL), '[]'::jsonb) AS holder_assignments
        FROM effective_sales s JOIN contacts c ON c.id=s.effective_contact_id LEFT JOIN app_users u ON u.id=s.effective_executive_id
        LEFT JOIN LATERAL (
@@ -2038,14 +2050,26 @@ export class PgCrmRepository {
           [result.rows[0].id, item.product, item.zone ?? null, item.quantity, item.unitPrice]
         );
       }
+      let holderSeatOffset = 0;
       for (const holder of requestedHolders) {
-        await client.query(
+        const assignment = await client.query(
           `INSERT INTO sale_holder_assignments
             (sale_id,contact_id,quantity,segment,zone,source,source_holder_name,is_primary,created_by,updated_by)
-           VALUES ($1,$2,$3,$4,$5,'crm',$6,$7,$8,$8)`,
+           VALUES ($1,$2,$3,$4,$5,'crm',$6,$7,$8,$8) RETURNING id`,
           [result.rows[0].id, holder.contactId, holder.quantity, saleSegment(saleItems, pricing),
             saleItems[0]?.zone ?? null, holderNames.get(holder.contactId), holder.isPrimary, actor.id]
         );
+        for (let unitNumber = 1; unitNumber <= holder.quantity; unitNumber += 1) {
+          const detail = data.seatDetails?.find((seat) => seat.unitNumber === holderSeatOffset + unitNumber);
+          await client.query(
+            `INSERT INTO sale_seat_units
+              (holder_assignment_id,unit_number,seat_identifier,jersey_size,seat_personalization,source,created_by,updated_by)
+             VALUES ($1,$2,$3,$4,$5,'crm',$6,$6)`,
+            [assignment.rows[0].id, unitNumber, detail?.seatIdentifier ?? null,
+              detail?.jerseySize ?? null, detail?.personalization ?? null, actor.id]
+          );
+        }
+        holderSeatOffset += holder.quantity;
       }
       for (const payment of data.payments) {
         await client.query(
@@ -2177,18 +2201,37 @@ export class PgCrmRepository {
         }
         const holderNames = new Map(holderContacts.rows.map((holder) => [holder.id, holder.name]));
         await client.query(
+          `UPDATE sale_seat_units SET deleted_at=now(),deleted_by=$2,updated_by=$2,row_version=row_version+1
+           WHERE holder_assignment_id IN (
+             SELECT id FROM sale_holder_assignments WHERE sale_id=$1 AND deleted_at IS NULL
+           ) AND deleted_at IS NULL`,
+          [saleId, actor.id]
+        );
+        await client.query(
           `UPDATE sale_holder_assignments SET deleted_at=now(),updated_by=$2,row_version=row_version+1
            WHERE sale_id=$1 AND deleted_at IS NULL`,
           [saleId, actor.id]
         );
+        let holderSeatOffset = 0;
         for (const holder of data.holderAssignments) {
-          await client.query(
+          const assignment = await client.query(
             `INSERT INTO sale_holder_assignments
               (sale_id,contact_id,quantity,segment,zone,source,source_holder_name,is_primary,created_by,updated_by)
-             VALUES ($1,$2,$3,$4,$5,'crm',$6,$7,$8,$8)`,
+             VALUES ($1,$2,$3,$4,$5,'crm',$6,$7,$8,$8) RETURNING id`,
             [saleId, holder.contactId, holder.quantity, saleSegment(saleItems, pricing),
               saleItems[0]?.zone ?? null, holderNames.get(holder.contactId), holder.isPrimary, actor.id]
           );
+          for (let unitNumber = 1; unitNumber <= holder.quantity; unitNumber += 1) {
+            const detail = data.seatDetails?.find((seat) => seat.unitNumber === holderSeatOffset + unitNumber);
+            await client.query(
+              `INSERT INTO sale_seat_units
+                (holder_assignment_id,unit_number,seat_identifier,jersey_size,seat_personalization,source,created_by,updated_by)
+               VALUES ($1,$2,$3,$4,$5,'crm',$6,$6)`,
+              [assignment.rows[0].id, unitNumber, detail?.seatIdentifier ?? null,
+                detail?.jerseySize ?? null, detail?.personalization ?? null, actor.id]
+            );
+          }
+          holderSeatOffset += holder.quantity;
         }
       }
       const targetSubscriberStatus = data.saleType === 'renewal' ? 'current_subscriber' : 'new_subscriber';
@@ -2444,7 +2487,7 @@ export class PgCrmRepository {
     return withTransaction(this.pool, async (client) => {
       const rows = await client.query(
         `SELECT c.id AS contact_id,concat(c.first_name,' ',c.last_name) AS name,
-                c.subscriber_status,
+                c.email,c.phone,c.subscriber_status,
                 CASE WHEN ha.segment='Compromisos' THEN 'No - Compromiso' ELSE 'Si' END
                   AS counts_as_identified_holder,
                 u.display_name AS executive_name,
@@ -2464,11 +2507,31 @@ export class PgCrmRepository {
          LIMIT $${params.length}`,
         params
       );
+      const seatRows = await client.query(
+        `SELECT es.effective_external_order_number AS order_number,
+                es.effective_status AS order_status,es.effective_sale_type AS sale_type,
+                c.id AS contact_id,concat(c.first_name,' ',c.last_name) AS name,
+                c.email,c.phone,ha.is_primary,ha.segment,COALESCE(ha.zone,'') AS locality,
+                su.unit_number,su.seat_identifier,su.jersey_size,su.seat_personalization,
+                u.display_name AS executive_name,es.effective_sold_at AS sold_at,
+                ha.source,ha.id AS holder_assignment_id
+         FROM sale_holder_assignments ha
+         JOIN sale_seat_units su ON su.holder_assignment_id=ha.id AND su.deleted_at IS NULL
+         JOIN effective_sales es ON es.id=ha.sale_id
+         JOIN contacts c ON c.id=ha.contact_id
+         LEFT JOIN app_users u ON u.id=c.executive_id
+         WHERE ${where.join(' AND ')} AND es.season_code=$${seasonParameter}
+         ORDER BY CASE ha.segment WHEN 'VIP' THEN 1 WHEN 'Preferente' THEN 2 WHEN 'General' THEN 3 ELSE 4 END,
+                  es.effective_external_order_number,ha.is_primary DESC,name,su.unit_number
+         LIMIT $${params.length}`,
+        params
+      );
       await this.audit(client, context, {
         action: 'data.exported', entityType: 'subscriber_report',
-        metadata: { rowCount: rows.rowCount, season: filters.season ?? 'LMP-2026-27' }
+        metadata: { holderRowCount: rows.rowCount, seatRowCount: seatRows.rowCount,
+          format: 'xlsx', season: filters.season ?? 'LMP-2026-27' }
       });
-      return rows.rows;
+      return { holders: rows.rows, seats: seatRows.rows };
     });
   }
 

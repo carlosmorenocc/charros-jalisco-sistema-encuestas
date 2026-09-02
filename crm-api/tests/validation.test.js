@@ -219,6 +219,15 @@ test('distribución multititular conserva exactamente la cantidad de la orden', 
     { contactId: UUID, quantity: 3, isPrimary: false },
     { contactId: secondary, quantity: 1, isPrimary: true }
   ] }), /titular principal/);
+  const detailed = validateSale({ ...base, seatDetails: [
+    { unitNumber: 1, seatIdentifier: '112-A-1', jerseySize: 'M', personalization: 'CARLOS' },
+    { unitNumber: 2 }, { unitNumber: 3 }, { unitNumber: 4 }
+  ] });
+  assert.equal(detailed.seatDetails[0].personalization, 'CARLOS');
+  assert.equal(detailed.seatDetails[1].jerseySize, null);
+  assert.throws(() => validateSale({ ...base, seatDetails: [
+    { unitNumber: 1 }, { unitNumber: 3 }, { unitNumber: 4 }, { unitNumber: 5 }
+  ] }), /fila consecutiva/);
 });
 
 test('corrección de venta exige motivo y nunca acepta cobros nuevos', () => {
