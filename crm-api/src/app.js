@@ -50,7 +50,7 @@ export function createApp({ config, repository, authService, logger }) {
   app.get('/ready', async (req, res) => {
     try {
       await repository.ready();
-      res.json({ status: 'ready', release: 'subscriber-detail-export-v1' });
+      res.json({ status: 'ready', release: 'order-holder-reconciliation-v1' });
     } catch (error) {
       req.log?.warn({ errorCode: error?.code ?? 'DB_UNAVAILABLE' }, 'readiness check failed');
       res.status(503).json({ status: 'unavailable', requestId: req.id });
