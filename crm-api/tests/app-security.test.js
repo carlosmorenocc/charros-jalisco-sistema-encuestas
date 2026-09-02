@@ -79,12 +79,17 @@ async function withServer(callback) {
       }];
     },
     async exportSubscriberDetail() {
-      return [{
+      return { holders: [{
         contact_id: 'contact-1', name: 'Persona', subscriber_status: 'current_subscriber',
         counts_as_identified_holder: 'Si',
         segment: 'VIP', locality: 'VIP', seat_count: 2, seats: 'A-1 | A-2',
         membership_status: 'active', orders: '15420001'
-      }];
+      }], seats: [{
+        order_number: '15420001', order_status: 'confirmed', sale_type: 'new',
+        contact_id: 'contact-1', name: 'Persona', is_primary: true, segment: 'VIP',
+        locality: 'VIP', unit_number: 1, seat_identifier: 'A-1', jersey_size: 'M',
+        seat_personalization: 'PERSONA', source: 'crm', holder_assignment_id: 'holder-1'
+      }] };
     }
   };
   const authService = {
@@ -354,5 +359,14 @@ test('POST de abono devuelve ETag y exportación incluye sección, cantidad y bu
     const detailedCsv = await detailed.text();
     assert.match(detailedCsv, /ID titular CRM,Titular/);
     assert.match(detailedCsv, /Persona,current_subscriber/);
+
+    const workbook = await fetch(`${baseUrl}/api/v1/exports/subscribers.xlsx?season=LMP-2026-27`, {
+      headers: authHeaders({ csrf: false, origin: null })
+    });
+    assert.equal(workbook.status, 200);
+    assert.match(workbook.headers.get('content-disposition'), /reporte-titulares-butacas-/);
+    assert.match(workbook.headers.get('content-type'), /spreadsheetml/);
+    const workbookBytes = new Uint8Array(await workbook.arrayBuffer());
+    assert.equal(String.fromCharCode(...workbookBytes.slice(0, 2)), 'PK');
   });
 });

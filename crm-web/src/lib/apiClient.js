@@ -89,10 +89,10 @@ export function createApiClient({
     return { data: envelope.data ?? null, meta: envelope.meta ?? {} }
   }
 
-  async function requestBlob(path) {
+  async function requestBlob(path, accept = 'text/csv', fallbackFilename = 'contactos-crm.csv') {
     const response = await fetchImpl(`${root}${path}`, {
       credentials: 'include',
-      headers: new Headers({ Accept: 'text/csv' }),
+      headers: new Headers({ Accept: accept }),
     })
     if (response.status === 401) onUnauthorized?.()
     if (!response.ok) {
@@ -106,7 +106,7 @@ export function createApiClient({
     onActivity?.()
     return {
       blob: await response.blob(),
-      filename: response.headers.get('Content-Disposition')?.match(/filename="?([^";]+)"?/)?.[1] || 'contactos-crm.csv',
+      filename: response.headers.get('Content-Disposition')?.match(/filename="?([^";]+)"?/)?.[1] || fallbackFilename,
     }
   }
 
@@ -141,7 +141,7 @@ export function createApiClient({
     addPayment: (id, payload) => request(`/sales/${encodeURIComponent(id)}/payments`, { method: 'POST', body: payload }),
     executives: (filters = { active: true }) => request(`/executives${encodeQuery(filters)}`),
     exportContacts: (filters) => requestBlob(`/exports/contacts.csv${encodeQuery(filters)}`),
-    exportSubscriberDetail: (filters) => requestBlob(`/exports/subscribers.csv${encodeQuery(filters)}`),
+    exportSubscriberDetail: (filters) => requestBlob(`/exports/subscribers.xlsx${encodeQuery(filters)}`, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'reporte-titulares-butacas.xlsx'),
     recordDashboardPdfRequest: (filters) => request('/exports/dashboard-pdf-events', { method: 'POST', body: { filters } }),
   }
 }

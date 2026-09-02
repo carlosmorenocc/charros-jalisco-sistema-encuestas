@@ -1735,7 +1735,7 @@ function InteractionLog({ interactions }) {
 }
 
 function initialSaleDraft() {
-  return { externalOrderNumber: '', contactId: '', executiveId: '', kind: 'new', closeStage: 'reserved', localityCode: '', discountCode: '', zone: '', promotion2x1: false, quantity: 1, unitPrice: '', soldAt: new Date().toISOString().slice(0, 10), paymentAmount: '', paymentMethod: 'Transferencia', paymentReference: '', notes: '', correctionReason: '', additionalHolders: [] }
+  return { externalOrderNumber: '', contactId: '', executiveId: '', kind: 'new', closeStage: 'reserved', localityCode: '', discountCode: '', zone: '', promotion2x1: false, quantity: 1, unitPrice: '', soldAt: new Date().toISOString().slice(0, 10), paymentAmount: '', paymentMethod: 'Transferencia', paymentReference: '', notes: '', correctionReason: '', additionalHolders: [], seatDetails: [] }
 }
 
 function SalesPage({ sales, contacts, isDemo, user, availableExecutives, pricingCatalog, onQuoteMembershipPricing, onAddPayment, onCreateSale, onCorrectSale, onCancelSale, onCreate, saleClosure, onClearSaleClosure }) {
@@ -1838,6 +1838,16 @@ function SalesPage({ sales, contacts, isDemo, user, availableExecutives, pricing
     setEditingSale(null)
     onClearSaleClosure()
   }
+  function updateSaleSeatDetail(index, field, value) {
+    setSaleDraft((current) => {
+      const quantity = Math.max(1, Number(current.quantity || 1))
+      const seatDetails = Array.from({ length: quantity }, (_, itemIndex) => current.seatDetails[itemIndex] || {
+        unitNumber: itemIndex + 1, seatIdentifier: '', jerseySize: '', personalization: '',
+      })
+      seatDetails[index] = { ...seatDetails[index], unitNumber: index + 1, [field]: value }
+      return { ...current, seatDetails }
+    })
+  }
   function openSaleCorrection(sale) {
     const items = Array.isArray(sale.items) ? sale.items : []
     const chargedItem = items.find((item) => Number(item.unitPrice || 0) > 0) || items[0] || {}
@@ -1867,6 +1877,7 @@ function SalesPage({ sales, contacts, isDemo, user, availableExecutives, pricing
       paymentAmount: '', paymentMethod: 'Transferencia', paymentReference: '',
       notes: sale.notes || '', correctionReason: '',
       additionalHolders: (sale.holderAssignments || []).filter((holder) => !holder.isPrimary).map((holder) => ({ contactId: holder.contactId, quantity: Number(holder.quantity) })),
+      seatDetails: (sale.holderAssignments || []).flatMap((holder) => holder.seatDetails || []).map((seat, index) => ({ ...seat, unitNumber: index + 1 })),
     })
     setSaleError('')
     setSaleOpen(true)
@@ -1911,7 +1922,9 @@ function SalesPage({ sales, contacts, isDemo, user, availableExecutives, pricing
     setSavingSale(true); setSaleError('')
     try {
       const holderAssignments = [{ contactId: saleDraft.contactId, quantity: quantity - additionalHolderQuantity, isPrimary: true }, ...saleDraft.additionalHolders.map((holder) => ({ contactId: holder.contactId, quantity: Number(holder.quantity), isPrimary: false }))]
-      const payload = { externalOrderNumber: saleDraft.externalOrderNumber.trim(), saleType: saleDraft.kind, closeStage: saleDraft.closeStage, contactId: saleDraft.contactId, executiveId: saleDraft.executiveId, seasonCode: 'LMP-2026-27', status: saleDraft.closeStage === 'won' ? 'confirmed' : 'reserved', soldAt: new Date(`${saleDraft.soldAt}T12:00:00`).toISOString(), currency: 'MXN', notes: [promotion2x1 ? 'Promoción 2x1 aplicada automáticamente desde el catálogo oficial.' : '', saleDraft.notes].filter(Boolean).join(' ') || undefined, items, pricing: { localityCode: saleDraft.localityCode, discountCode: saleDraft.discountCode, seatCount: quantity }, holderAssignments }
+      const seatDetails = Array.from({ length: quantity }, (_, index) => ({ unitNumber: index + 1, seatIdentifier: saleDraft.seatDetails[index]?.seatIdentifier || undefined, jerseySize: saleDraft.seatDetails[index]?.jerseySize || undefined, personalization: saleDraft.seatDetails[index]?.personalization || undefined }))
+      const hasSeatDetails = seatDetails.some((seat) => seat.seatIdentifier || seat.jerseySize || seat.personalization)
+      const payload = { externalOrderNumber: saleDraft.externalOrderNumber.trim(), saleType: saleDraft.kind, closeStage: saleDraft.closeStage, contactId: saleDraft.contactId, executiveId: saleDraft.executiveId, seasonCode: 'LMP-2026-27', status: saleDraft.closeStage === 'won' ? 'confirmed' : 'reserved', soldAt: new Date(`${saleDraft.soldAt}T12:00:00`).toISOString(), currency: 'MXN', notes: [promotion2x1 ? 'Promoción 2x1 aplicada automáticamente desde el catálogo oficial.' : '', saleDraft.notes].filter(Boolean).join(' ') || undefined, items, pricing: { localityCode: saleDraft.localityCode, discountCode: saleDraft.discountCode, seatCount: quantity }, holderAssignments, ...(hasSeatDetails ? { seatDetails } : {}) }
       if (editingSale) await onCorrectSale(editingSale, { ...payload, reason: saleDraft.correctionReason.trim() })
       else await onCreateSale({ ...payload, payments: paymentAmount > 0 ? [{ amount: paymentAmount, method: saleDraft.paymentMethod, paidAt: new Date(`${saleDraft.soldAt}T12:00:00`).toISOString(), reference: saleDraft.paymentReference || undefined }] : [] })
       closeSaleDrawer()
@@ -1954,6 +1967,7 @@ function SalesPage({ sales, contacts, isDemo, user, availableExecutives, pricing
         <label className="field"><span>Descuento o campaña *</span><select value={saleDraft.discountCode} onChange={(event) => setSaleDraft((current) => ({ ...current, discountCode: event.target.value }))}><option value="">Selecciona conscientemente</option>{saleDiscounts.map((item) => <option key={item.code} value={item.code}>{item.displayName}</option>)}</select><small>Usa las mismas reglas oficiales del abono del contacto.</small></label>
         <label className="field"><span>Cantidad de abonos *</span><input type="number" min="1" max="20" value={saleDraft.quantity} onChange={(event) => setSaleDraft((current) => ({ ...current, quantity: event.target.value }))}/></label>
         <label className="field"><span>Precio con descuento por unidad *</span><input type="number" min="0" step="0.01" readOnly value={saleDraft.unitPrice}/><small>{saleQuoteState === 'loading' ? 'Calculando con el catálogo…' : saleQuoteState === 'error' ? saleQuoteError : saleQuote ? `${saleQuote.discountName} · Lista ${currency.format(saleQuote.commercialValue)} · Descuento ${currency.format(saleQuote.discountAmount)} · Total ${currency.format(draftDocumentedTotal)}${saleQuote.pricingMode === 'two_for_one' ? ` · ${saleQuote.chargedUnits} con cargo + ${saleQuote.bonusUnits} bonificados` : ''}` : 'Selecciona zona, descuento y cantidad.'}</small></label>
+        <details className="field field--full seat-secondary-details"><summary>Datos secundarios por butaca</summary><p>Opcional. Puedes guardar la orden sin completar butaca, talla o personalización.</p><div className="seat-secondary-grid">{Array.from({ length: Math.max(1, Number(saleDraft.quantity || 1)) }, (_, index) => { const detail = saleDraft.seatDetails[index] || {}; return <fieldset key={`sale-seat-${index + 1}`}><legend>Abono {index + 1}</legend><label className="field"><span>Butaca</span><input maxLength="100" value={detail.seatIdentifier || ''} onChange={(event) => updateSaleSeatDetail(index, 'seatIdentifier', event.target.value)} placeholder="Ej. 112-A-7"/></label><label className="field"><span>Talla de jersey</span><select value={detail.jerseySize || ''} onChange={(event) => updateSaleSeatDetail(index, 'jerseySize', event.target.value)}><option value="">Sin definir</option><option>S</option><option>M</option><option>L</option><option>XL</option><option>2XL</option></select></label><label className="field field--full"><span>Personalización-butaca</span><input maxLength="120" value={detail.personalization || ''} onChange={(event) => updateSaleSeatDetail(index, 'personalization', event.target.value)} placeholder="Opcional"/></label></fieldset> })}</div></details>
         {!editingSale && <><label className="field"><span>Cobro inicial</span><input type="number" min="0" step="0.01" value={saleDraft.paymentAmount} onChange={(event) => setSaleDraft((current) => ({ ...current, paymentAmount: event.target.value }))}/><small>Puede ser $0, apartado o liquidación. Saldo: {currency.format(Math.max(0, draftDocumentedTotal - Number(saleDraft.paymentAmount || 0)))}</small></label><label className="field"><span>Método</span><select value={saleDraft.paymentMethod} onChange={(event) => setSaleDraft((current) => ({ ...current, paymentMethod: event.target.value }))}><option>Transferencia</option><option>Tarjeta</option><option>Efectivo</option><option>Depósito</option><option>Otro</option></select></label><label className="field"><span>Referencia del cobro</span><input value={saleDraft.paymentReference} onChange={(event) => setSaleDraft((current) => ({ ...current, paymentReference: event.target.value }))}/></label></>}
         <label className="field field--full"><span>Notas</span><textarea rows="3" value={saleDraft.notes} onChange={(event) => setSaleDraft((current) => ({ ...current, notes: event.target.value }))}/></label>
         {editingSale && <label className="field field--full"><span>Motivo de la corrección *</span><textarea autoFocus required minLength="5" maxLength="500" rows="3" value={saleDraft.correctionReason} onChange={(event) => setSaleDraft((current) => ({ ...current, correctionReason: event.target.value }))} placeholder="Describe qué dato estaba incorrecto y por qué se corrige."/><small>Quedará registrado en la bitácora de auditoría. Los cobros existentes no se modifican.</small></label>}

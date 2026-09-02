@@ -18,6 +18,7 @@ import {
   validateUuid
 } from './lib/validation.js';
 import { rowsToCsv } from './lib/csv.js';
+import { subscriberWorkbookBuffer } from './lib/subscriberWorkbook.js';
 import { effectivePermissions } from './security/permissions.js';
 import { requestBodyHash } from './lib/idempotency.js';
 
@@ -300,7 +301,8 @@ export function createApiRouter({ service, config }) {
 
   router.get('/exports/subscribers.csv', asyncHandler(async (req, res) => {
     const filters = parseListQuery(req.query);
-    const rows = await service.exportSubscriberDetail(req.actor, filters, req.auditContext);
+    const report = await service.exportSubscriberDetail(req.actor, filters, req.auditContext);
+    const rows = Array.isArray(report) ? report : report.holders;
     const csv = rowsToCsv(rows, [
       { key: 'contact_id', label: 'ID titular CRM' },
       { key: 'name', label: 'Titular' },
@@ -320,6 +322,18 @@ export function createApiRouter({ service, config }) {
     res.type('text/csv; charset=utf-8');
     res.setHeader('content-disposition', `attachment; filename="titulares-abonos-${date}.csv"`);
     res.send(csv);
+  }));
+
+  router.get('/exports/subscribers.xlsx', asyncHandler(async (req, res) => {
+    const filters = parseListQuery(req.query);
+    const report = await service.exportSubscriberDetail(req.actor, filters, req.auditContext);
+    const workbook = await subscriberWorkbookBuffer({
+      holders: report.holders ?? [], seats: report.seats ?? []
+    });
+    const date = new Date().toISOString().slice(0, 10);
+    res.type('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('content-disposition', `attachment; filename="reporte-titulares-butacas-${date}.xlsx"`);
+    res.send(workbook);
   }));
 
   router.post('/exports/dashboard-pdf-events', asyncHandler(async (req, res) => {
