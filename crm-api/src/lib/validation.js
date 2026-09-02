@@ -480,13 +480,32 @@ export function validateSale(input) {
       method: cleanString(payment.method, { required: true, max: 80, field: `payments[${index}].method` }),
       paidAt: isoDate(payment.paidAt, `payments[${index}].paidAt`) ?? new Date().toISOString(),
       reference: cleanString(payment.reference, { max: 160, field: `payments[${index}].reference` })
-    }))
+    })),
+    holderAssignments: (Array.isArray(input.holderAssignments) ? input.holderAssignments : []).map((holder, index) => {
+      if (!isObject(holder)) throw badRequest(`holderAssignments[${index}] debe ser un objeto.`);
+      return {
+        contactId: uuid(holder.contactId, `holderAssignments[${index}].contactId`, { required: true }),
+        quantity: integer(holder.quantity, `holderAssignments[${index}].quantity`, { min: 1, max: 1000, required: true }),
+        isPrimary: Boolean(holder.isPrimary)
+      };
+    })
   };
   if (!/^[A-Za-z0-9][A-Za-z0-9._\-/]{0,79}$/.test(result.externalOrderNumber)) {
     throw badRequest('externalOrderNumber contiene caracteres no permitidos.');
   }
   if (result.status === 'confirmed' && !result.soldAt) {
     throw badRequest('soldAt es obligatoria para confirmar una venta.');
+  }
+  if (result.holderAssignments.length) {
+    const holderIds = result.holderAssignments.map((holder) => holder.contactId);
+    const primary = result.holderAssignments.filter((holder) => holder.isPrimary);
+    const soldQuantity = result.items.reduce((sum, item) => sum + item.quantity, 0);
+    const assignedQuantity = result.holderAssignments.reduce((sum, holder) => sum + holder.quantity, 0);
+    if (new Set(holderIds).size !== holderIds.length) throw badRequest('Cada titular debe aparecer una sola vez en la orden.');
+    if (primary.length !== 1 || primary[0].contactId !== result.contactId) {
+      throw badRequest('La distribución debe incluir exactamente un titular principal igual al contacto de la venta.');
+    }
+    if (assignedQuantity !== soldQuantity) throw badRequest('La distribución de titulares debe sumar exactamente la cantidad de abonos vendidos.');
   }
   return result;
 }

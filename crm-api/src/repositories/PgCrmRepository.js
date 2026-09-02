@@ -83,6 +83,7 @@ function contactRow(row) {
     membershipSeats: Array.isArray(row.membership_seats)
       ? row.membership_seats.filter((seat) => typeof seat === 'string')
       : [],
+    associatedOrders: Array.isArray(row.associated_orders) ? row.associated_orders : [],
     membershipRowVersion: row.membership_row_version == null
       ? null
       : Number(row.membership_row_version),
@@ -215,7 +216,8 @@ function saleRow(row) {
     correctionId: row.correction_id ?? null,
     correctionReason: row.correction_reason ?? null,
     correctedAt: row.corrected_at ?? null,
-    payments: row.payments ?? []
+    payments: row.payments ?? [],
+    holderAssignments: row.holder_assignments ?? []
   };
 }
 
@@ -1009,6 +1011,13 @@ export class PgCrmRepository {
     const result = await this.pool.query(
       `SELECT c.*, u.display_name AS executive_name, s.seat_count, s.managed_seat_count, s.seasons_count,
                s.next_task_at, s.overdue_tasks, s.last_human_contact_channel,
+               COALESCE((SELECT jsonb_agg(jsonb_build_object(
+                 'saleId',es.id,'orderNumber',es.effective_external_order_number,
+                 'quantity',ha.quantity,'segment',ha.segment,'zone',ha.zone,
+                 'status',es.effective_status,'isPrimary',ha.is_primary,
+                 'soldAt',es.effective_sold_at) ORDER BY es.effective_sold_at DESC)
+                 FROM sale_holder_assignments ha JOIN effective_sales es ON es.id=ha.sale_id
+                 WHERE ha.contact_id=c.id AND ha.deleted_at IS NULL AND es.deleted_at IS NULL), '[]'::jsonb) AS associated_orders,
                ${SELECTED_MEMBERSHIP_COLUMNS},
                count(*) OVER()::integer AS total_count
        FROM contacts c
@@ -1037,6 +1046,13 @@ export class PgCrmRepository {
     const result = await client.query(
       `SELECT c.*, u.display_name AS executive_name, s.seat_count, s.managed_seat_count, s.seasons_count,
                s.next_task_at, s.overdue_tasks, s.last_human_contact_channel,
+               COALESCE((SELECT jsonb_agg(jsonb_build_object(
+                 'saleId',es.id,'orderNumber',es.effective_external_order_number,
+                 'quantity',ha.quantity,'segment',ha.segment,'zone',ha.zone,
+                 'status',es.effective_status,'isPrimary',ha.is_primary,
+                 'soldAt',es.effective_sold_at) ORDER BY es.effective_sold_at DESC)
+                 FROM sale_holder_assignments ha JOIN effective_sales es ON es.id=ha.sale_id
+                 WHERE ha.contact_id=c.id AND ha.deleted_at IS NULL AND es.deleted_at IS NULL), '[]'::jsonb) AS associated_orders,
                ${SELECTED_MEMBERSHIP_COLUMNS}
        FROM contacts c
        LEFT JOIN app_users u ON u.id = c.executive_id
@@ -1928,6 +1944,10 @@ export class PgCrmRepository {
               concat(c.first_name,' ',c.last_name) AS contact_name,
               u.display_name AS executive_name,
               s.effective_items AS items,
+              COALESCE((SELECT jsonb_agg(jsonb_build_object(
+                'contactId',ha.contact_id,'contactName',ha.source_holder_name,
+                'quantity',ha.quantity,'isPrimary',ha.is_primary) ORDER BY ha.is_primary DESC,ha.created_at)
+                FROM sale_holder_assignments ha WHERE ha.sale_id=s.id AND ha.deleted_at IS NULL), '[]'::jsonb) AS holder_assignments,
               count(*) OVER()::integer AS total_count
        FROM effective_sales s JOIN contacts c ON c.id=s.effective_contact_id LEFT JOIN app_users u ON u.id=s.effective_executive_id
        LEFT JOIN LATERAL (
@@ -1954,7 +1974,11 @@ export class PgCrmRepository {
     const result = await client.query(
       `SELECT s.*, COALESCE(p.paid_amount,0)::numeric AS paid_amount,
               concat(c.first_name,' ',c.last_name) AS contact_name,u.display_name AS executive_name,
-              s.effective_items AS items,COALESCE(p.payments,'[]'::jsonb) AS payments
+              s.effective_items AS items,COALESCE(p.payments,'[]'::jsonb) AS payments,
+              COALESCE((SELECT jsonb_agg(jsonb_build_object(
+                'contactId',ha.contact_id,'contactName',ha.source_holder_name,
+                'quantity',ha.quantity,'isPrimary',ha.is_primary) ORDER BY ha.is_primary DESC,ha.created_at)
+                FROM sale_holder_assignments ha WHERE ha.sale_id=s.id AND ha.deleted_at IS NULL), '[]'::jsonb) AS holder_assignments
        FROM effective_sales s JOIN contacts c ON c.id=s.effective_contact_id LEFT JOIN app_users u ON u.id=s.effective_executive_id
        LEFT JOIN LATERAL (
          SELECT sum(p.amount + COALESCE(a.amount,0)) AS paid_amount,
@@ -1991,6 +2015,19 @@ export class PgCrmRepository {
         seasonCode: data.seasonCode, ...data.pricing
       }) : null;
       const saleItems = saleItemsFromPricing(data, pricing);
+      const soldQuantity = saleItems.reduce((sum, item) => sum + item.quantity, 0);
+      const requestedHolders = data.holderAssignments?.length
+        ? data.holderAssignments
+        : [{ contactId: data.contactId, quantity: soldQuantity, isPrimary: true }];
+      const holderContacts = await client.query(
+        `SELECT id,concat(first_name,' ',last_name) AS name FROM contacts
+         WHERE id=ANY($1::uuid[]) AND deleted_at IS NULL FOR UPDATE`,
+        [requestedHolders.map((holder) => holder.contactId)]
+      );
+      if (holderContacts.rows.length !== requestedHolders.length) {
+        throw conflict('Uno o más titulares ya no están disponibles. Actualiza la selección e intenta nuevamente.');
+      }
+      const holderNames = new Map(holderContacts.rows.map((holder) => [holder.id, holder.name]));
       const total = pricing ? moneyFromCents(pricing.netAmount)
         : saleItems.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
       const paid = data.payments.reduce((sum, payment) => sum + payment.amount, 0);
@@ -2009,14 +2046,15 @@ export class PgCrmRepository {
           [result.rows[0].id, item.product, item.zone ?? null, item.quantity, item.unitPrice]
         );
       }
-      const holderQuantity = saleItems.reduce((sum, item) => sum + item.quantity, 0);
-      await client.query(
-        `INSERT INTO sale_holder_assignments
-          (sale_id,contact_id,quantity,segment,zone,source,source_holder_name,is_primary,created_by,updated_by)
-         VALUES ($1,$2,$3,$4,$5,'crm',$6,true,$7,$7)`,
-        [result.rows[0].id, data.contactId, holderQuantity, saleSegment(saleItems, pricing),
-          saleItems[0]?.zone ?? null, contact.name, actor.id]
-      );
+      for (const holder of requestedHolders) {
+        await client.query(
+          `INSERT INTO sale_holder_assignments
+            (sale_id,contact_id,quantity,segment,zone,source,source_holder_name,is_primary,created_by,updated_by)
+           VALUES ($1,$2,$3,$4,$5,'crm',$6,$7,$8,$8)`,
+          [result.rows[0].id, holder.contactId, holder.quantity, saleSegment(saleItems, pricing),
+            saleItems[0]?.zone ?? null, holderNames.get(holder.contactId), holder.isPrimary, actor.id]
+        );
+      }
       for (const payment of data.payments) {
         await client.query(
           `INSERT INTO payments (sale_id,amount,method,paid_at,reference,created_by)
@@ -2062,25 +2100,34 @@ export class PgCrmRepository {
            updated_by=$5 WHERE id=$1`,
         [data.contactId, targetSubscriberStatus, data.closeStage, data.executiveId, actor.id]
       );
+      await client.query(
+        `UPDATE contacts SET subscriber_status=$2,commercial_stage=$3,updated_by=$4
+         WHERE id=ANY($1::uuid[])`,
+        [requestedHolders.map((holder) => holder.contactId), targetSubscriberStatus, data.closeStage, actor.id]
+      );
       if (data.closeStage === 'won') {
         // Each order gets its own membership so additional purchases increase active
         // seats instead of merely reactivating the contact's previous membership.
         const primaryItem = saleItems[0];
-        const membershipSeatCount = saleItems.reduce((sum, item) => sum + item.quantity, 0);
         const membershipProduct = `${primaryItem.product} · ORDEN ${data.externalOrderNumber}`;
-        const membership = await client.query(
-          `INSERT INTO memberships
-            (contact_id,season_code,membership_status,seat_count,zone,section,product,start_date,created_by,updated_by)
-           VALUES ($1,$2,'active',$3,$4,'General',$5,$6,$7,$7) RETURNING id`,
-          [data.contactId, data.seasonCode, membershipSeatCount, primaryItem.zone ?? null,
-            membershipProduct, data.soldAt ?? new Date(), actor.id]
-        );
-        for (let index = 1; index <= membershipSeatCount; index += 1) {
-          await client.query(
-            `INSERT INTO membership_units (membership_id,unit_number,zone,product,created_by,updated_by)
-             VALUES ($1,$2,$3,$4,$5,$5)`,
-            [membership.rows[0].id, index, primaryItem.zone ?? null, membershipProduct, actor.id]
+        const membershipSection = saleSegment(saleItems, pricing) === 'Compromisos'
+          ? 'General'
+          : saleSegment(saleItems, pricing);
+        for (const holder of requestedHolders) {
+          const membership = await client.query(
+            `INSERT INTO memberships
+              (contact_id,season_code,membership_status,seat_count,zone,section,product,start_date,created_by,updated_by)
+             VALUES ($1,$2,'active',$3,$4,$5,$6,$7,$8,$8) RETURNING id`,
+            [holder.contactId, data.seasonCode, holder.quantity, primaryItem.zone ?? null,
+              membershipSection, membershipProduct, data.soldAt ?? new Date(), actor.id]
           );
+          for (let index = 1; index <= holder.quantity; index += 1) {
+            await client.query(
+              `INSERT INTO membership_units (membership_id,unit_number,zone,product,created_by,updated_by)
+               VALUES ($1,$2,$3,$4,$5,$5)`,
+              [membership.rows[0].id, index, primaryItem.zone ?? null, membershipProduct, actor.id]
+            );
+          }
         }
       }
       const created = saleRow(result.rows[0]);
@@ -2127,6 +2174,31 @@ export class PgCrmRepository {
           data.status, data.soldAt ?? null, total, data.notes ?? null, JSON.stringify(saleItems),
           data.reason, actor.id]
       );
+      if (data.holderAssignments?.length) {
+        const holderContacts = await client.query(
+          `SELECT id,concat(first_name,' ',last_name) AS name FROM contacts
+           WHERE id=ANY($1::uuid[]) AND deleted_at IS NULL FOR UPDATE`,
+          [data.holderAssignments.map((holder) => holder.contactId)]
+        );
+        if (holderContacts.rows.length !== data.holderAssignments.length) {
+          throw conflict('Uno o más titulares ya no están disponibles. Actualiza la selección e intenta nuevamente.');
+        }
+        const holderNames = new Map(holderContacts.rows.map((holder) => [holder.id, holder.name]));
+        await client.query(
+          `UPDATE sale_holder_assignments SET deleted_at=now(),updated_by=$2,row_version=row_version+1
+           WHERE sale_id=$1 AND deleted_at IS NULL`,
+          [saleId, actor.id]
+        );
+        for (const holder of data.holderAssignments) {
+          await client.query(
+            `INSERT INTO sale_holder_assignments
+              (sale_id,contact_id,quantity,segment,zone,source,source_holder_name,is_primary,created_by,updated_by)
+             VALUES ($1,$2,$3,$4,$5,'crm',$6,$7,$8,$8)`,
+            [saleId, holder.contactId, holder.quantity, saleSegment(saleItems, pricing),
+              saleItems[0]?.zone ?? null, holderNames.get(holder.contactId), holder.isPrimary, actor.id]
+          );
+        }
+      }
       const targetSubscriberStatus = data.saleType === 'renewal' ? 'current_subscriber' : 'new_subscriber';
       const correctedHolderState = await client.query(
         `SELECT count(*)::integer AS holder_count,COALESCE(sum(quantity),0)::integer AS holder_quantity
@@ -2154,6 +2226,43 @@ export class PgCrmRepository {
          WHERE id=$1`,
         [data.contactId, targetSubscriberStatus, data.closeStage, data.executiveId, actor.id]
       );
+      await client.query(
+        `UPDATE contacts SET subscriber_status=$2,commercial_stage=$3,updated_by=$4
+         WHERE id IN (SELECT contact_id FROM sale_holder_assignments WHERE sale_id=$1 AND deleted_at IS NULL)`,
+        [saleId, targetSubscriberStatus, data.closeStage, actor.id]
+      );
+      await client.query(
+        `UPDATE memberships SET membership_status='cancelled',updated_by=$2,updated_at=now(),row_version=row_version+1
+         WHERE deleted_at IS NULL AND product LIKE $1`,
+        [`%· ORDEN ${before.externalOrderNumber}`, actor.id]
+      );
+      if (data.closeStage === 'won') {
+        const primaryItem = saleItems[0];
+        const membershipProduct = `${primaryItem.product} · ORDEN ${data.externalOrderNumber}`;
+        const segment = saleSegment(saleItems, pricing);
+        const membershipSection = segment === 'Compromisos' ? 'General' : segment;
+        const correctedHolders = await client.query(
+          `SELECT contact_id,quantity FROM sale_holder_assignments
+           WHERE sale_id=$1 AND deleted_at IS NULL ORDER BY is_primary DESC,created_at`,
+          [saleId]
+        );
+        for (const holder of correctedHolders.rows) {
+          const membership = await client.query(
+            `INSERT INTO memberships
+              (contact_id,season_code,membership_status,seat_count,zone,section,product,start_date,created_by,updated_by)
+             VALUES ($1,$2,'active',$3,$4,$5,$6,$7,$8,$8) RETURNING id`,
+            [holder.contact_id, data.seasonCode, holder.quantity, primaryItem.zone ?? null,
+              membershipSection, membershipProduct, data.soldAt ?? new Date(), actor.id]
+          );
+          for (let index = 1; index <= Number(holder.quantity); index += 1) {
+            await client.query(
+              `INSERT INTO membership_units (membership_id,unit_number,zone,product,created_by,updated_by)
+               VALUES ($1,$2,$3,$4,$5,$5)`,
+              [membership.rows[0].id, index, primaryItem.zone ?? null, membershipProduct, actor.id]
+            );
+          }
+        }
+      }
       const after = await this.getSale(saleId, actor, { client });
       await this.audit(client, context, {
         action: 'sale.corrected', entityType: 'sale', entityId: saleId, before, after,
@@ -2209,10 +2318,9 @@ export class PgCrmRepository {
       );
       await client.query(
         `UPDATE memberships
-         SET membership_status='cancelled',updated_by=$2,updated_at=now(),row_version=row_version+1
-         WHERE contact_id=$1 AND deleted_at IS NULL
-           AND product LIKE $3`,
-        [before.contactId, actor.id, `%· ORDEN ${before.externalOrderNumber}`]
+         SET membership_status='cancelled',updated_by=$1,updated_at=now(),row_version=row_version+1
+         WHERE deleted_at IS NULL AND product LIKE $2`,
+        [actor.id, `%· ORDEN ${before.externalOrderNumber}`]
       );
       const after = await this.getSale(saleId, actor, { client });
       await this.audit(client, context, {

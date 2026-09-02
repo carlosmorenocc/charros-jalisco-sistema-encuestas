@@ -79,18 +79,17 @@ describe('CRM web en modo demostración', () => {
     expect(screen.getByDisplayValue('P-A-99')).toBeInTheDocument()
   })
 
-  it('permite iniciar una orden adicional sin reemplazar los abonos existentes', async () => {
+  it('inicia una orden adicional desde Ventas sin fabricar una membresía aislada', async () => {
     render(<App />)
     fireEvent.click(await screen.findByRole('button', { name: /Cartera y Renovaciones/i }))
     fireEvent.click(screen.getByRole('button', { name: 'Editar abonos de Mariana López' }))
 
     expect(await screen.findByText('1 orden registrada para la temporada actual.')).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Agregar otra orden' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Registrar otra orden' }))
 
-    expect(screen.getByLabelText(/Orden de abonos/)).toHaveValue('new')
-    expect(screen.getByLabelText(/Sección/)).toHaveValue('')
-    expect(screen.getByRole('button', { name: 'Agregar abonos' })).toBeDisabled()
-    expect(screen.getByText('1 orden registrada para la temporada actual.')).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Nueva venta' })).toBeInTheDocument()
+    expect(screen.getByLabelText(/Titular/)).toHaveValue('DEMO-001')
+    expect(screen.getByLabelText(/Número de orden/)).toHaveValue('')
   })
 
   it('confirma una edición normal de contacto con el mensaje acordado', async () => {

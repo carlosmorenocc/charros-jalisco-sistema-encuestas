@@ -531,6 +531,17 @@ select:focus, input:focus, textarea:focus { outline: 0; border-color: var(--blue
 .membership-orders-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
 .membership-orders-heading h3 { margin: 2px 0 0; font-size: 14px; }
 .membership-orders-heading .button { flex: 0 0 auto; }
+.associated-sales { margin: 0 0 22px; }
+.associated-sales-list { display: grid; gap: 8px; }
+.associated-sales-list article { padding: 11px 12px; background: #f7f9fb; border: 1px solid var(--line); border-radius: 8px; }
+.associated-sales-list article > div { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.associated-sales-list article > span { display: block; margin-top: 5px; color: #6f7d90; font-size: 9px; }
+.holder-distribution { padding: 12px; background: #f7f9fb; border: 1px solid var(--line); border-radius: 8px; }
+.holder-distribution summary { cursor: pointer; color: var(--blue-800); font-weight: 800; }
+.holder-distribution > p { color: #6f7d90; font-size: 9px; }
+.holder-primary, .holder-row { display: flex; align-items: end; justify-content: space-between; gap: 10px; padding: 9px 0; border-top: 1px solid var(--line); }
+.holder-primary span { color: #526177; font-size: 9px; }
+.holder-row .field { flex: 1; }
 .membership-editor h3 { padding-bottom: 9px; margin: 0 0 13px; color: #25334a; border-bottom: 1px solid var(--line); font-size: 11px; font-weight: 800; }
 .membership-fields { margin-bottom: 13px; }
 .membership-quote { min-height: 20px; margin: 0 0 13px; color: #6f7d91; font-size: 8.5px; }
