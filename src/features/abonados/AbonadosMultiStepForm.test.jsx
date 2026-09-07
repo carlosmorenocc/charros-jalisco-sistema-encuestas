@@ -29,6 +29,11 @@ describe('AbonadosMultiStepForm', () => {
   it('despliega una tarjeta por cada abono y normaliza la personalización', () => {
     render(<AbonadosMultiStepForm />); selectQuantity(2)
     expect(screen.getByText('Abono 1')).toBeInTheDocument(); expect(screen.getByText('Abono 2')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'VIP' })).toBeInTheDocument()
+    expect(screen.getByText('VIP Lateral')).toBeInTheDocument()
+    expect(screen.getByText('Planta Baja Central')).toBeInTheDocument()
+    expect(screen.getByText('Lateral Preferente 1ra–3ra')).toBeInTheDocument()
+    expect(screen.getByText('Planta Alta')).toBeInTheDocument()
     fillUnit(1, { text: 'martinez123', number: '2x29' })
     expect(screen.getByLabelText(/Texto/i, { selector: '#abonado-personalizacion-1' })).toHaveValue('MARTINEZ')
     expect(screen.getByLabelText(/Número/i, { selector: '#abonado-numero-1' })).toHaveValue('22')

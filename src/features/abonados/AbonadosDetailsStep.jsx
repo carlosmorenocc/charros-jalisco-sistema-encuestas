@@ -6,6 +6,24 @@ export const ABONO_ZONES = ['VIP', 'PREFERENTE', 'GENERAL']
 
 const ABONOS_OPTIONS = Array.from({ length: MAX_ABONOS }, (_, index) => index + 1)
 
+const ZONE_SECTIONS = [
+  { zone: 'VIP', sections: ['VIP', 'VIP Lateral'] },
+  {
+    zone: 'Preferente',
+    sections: [
+      'Premiere 1ra–3ra',
+      'Planta Baja Central',
+      'Lateral Premier 1ra–3ra',
+      'Butaca Preferente 1ra–3ra',
+      'Planta Baja 1ra–3ra'
+    ]
+  },
+  {
+    zone: 'General',
+    sections: ['Lateral Preferente 1ra–3ra', 'Lateral 1ra–3ra', 'Planta Alta']
+  }
+]
+
 export function normalizeSeatText(value) {
   return String(value || '').toLocaleUpperCase('es-MX').replace(/[^A-ZÁÉÍÓÚÜÑ ]/g, '').replace(/\s+/g, ' ').slice(0, 10)
 }
@@ -86,6 +104,28 @@ export default function AbonadosDetailsStep({ data, update, errors = {} }) {
         </select>
         <ErrorMessage id="abonado-cantidad-abonos-error" message={errors.cantidadAbonos} />
       </div>
+
+      {selectedQuantity > 0 && (
+        <aside className="zone-guide" aria-labelledby="zone-guide-title">
+          <div className="zone-guide-heading">
+            <span className="zone-guide-icon" aria-hidden="true">i</span>
+            <div>
+              <strong id="zone-guide-title">¿A qué zona pertenece mi localidad?</strong>
+              <small>Consulta esta guía antes de registrar cada abono.</small>
+            </div>
+          </div>
+          <div className="zone-guide-grid">
+            {ZONE_SECTIONS.map(({ zone, sections }) => (
+              <section className={`zone-guide-card zone-guide-card--${zone.toLowerCase()}`} key={zone}>
+                <h4>{zone}</h4>
+                <ul>
+                  {sections.map((section) => <li key={section}>{section}</li>)}
+                </ul>
+              </section>
+            ))}
+          </div>
+        </aside>
+      )}
 
       {Array.from({ length: selectedQuantity }, (_, index) => {
         const position = index + 1
