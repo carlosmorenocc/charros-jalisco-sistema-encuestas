@@ -72,7 +72,8 @@ describe('AbonadosMultiStepForm', () => {
 
   it('envía zona, personalización, jersey condicional y preferencia', async () => {
     vi.mocked(submitAbonadoForm).mockResolvedValueOnce({ ok: true })
-    render(<AbonadosMultiStepForm />); fillContact(); selectQuantity(2)
+    const onComplete = vi.fn()
+    render(<AbonadosMultiStepForm onComplete={onComplete} />); fillContact(); selectQuantity(2)
     fillUnit(1, { zone: 'VIP', size: 'XL', text: 'Martinez', number: '22' })
     fillUnit(2, { zone: 'GENERAL', text: 'Lopez', number: '7' })
     fireEvent.click(screen.getByRole('button', { name: /Siguiente/i })); fireEvent.click(screen.getByLabelText('No'))
@@ -87,5 +88,6 @@ describe('AbonadosMultiStepForm', () => {
         { zona: 'GENERAL', tallaJersey: '', personalizacionTexto: 'LOPEZ', personalizacionNumero: '7' }
       ]
     })))
+    expect(onComplete).toHaveBeenCalledOnce()
   })
 })

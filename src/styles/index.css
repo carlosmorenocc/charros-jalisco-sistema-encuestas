@@ -239,11 +239,11 @@ label {
 .form-label-with-help { display: flex; align-items: center; gap: 8px; }
 .form-label-with-help label { margin-bottom: 0; }
 .info-help { position: relative; width: 24px; height: 24px; border: 0; border-radius: 50%; background: var(--blue); color: #fff; font-weight: 800; cursor: help; }
-.boleto-tooltip { position: absolute; z-index: 40; top: calc(100% + 10px); left: 50%; width: min(360px, calc(100vw - 56px)); padding: 14px; border: 1px solid #d7e1f2; border-radius: 14px; background: #fff; color: var(--text-dark); text-align: left; box-shadow: var(--shadow-lg); opacity: 0; visibility: hidden; transform: translateX(-50%) translateY(-4px); transition: 0.18s ease; }
+.boleto-tooltip { position: absolute; z-index: 40; top: calc(100% + 10px); left: 50%; width: min(360px, calc(100vw - 56px)); padding: 14px; border: 1px solid #d7e1f2; border-radius: 14px; background: #fff; color: var(--text-dark); text-align: left; font-size: 0.84rem; font-weight: 400; box-shadow: var(--shadow-lg); opacity: 0; visibility: hidden; transform: translateX(-50%) translateY(-4px); transition: 0.18s ease; }
 .info-help:hover .boleto-tooltip, .info-help:focus .boleto-tooltip, .info-help:focus-within .boleto-tooltip { opacity: 1; visibility: visible; transform: translateX(-50%) translateY(0); }
-.boleto-tooltip strong { color: var(--blue); }
+.boleto-tooltip strong { display: block; color: var(--blue); font-size: 1.05rem; font-weight: 700; line-height: 1.25; }
 .boleto-tooltip ol { margin: 10px 0 12px 20px; padding: 0; }
-.boleto-tooltip li { margin-bottom: 6px; font-size: 0.88rem; line-height: 1.35; }
+.boleto-tooltip li { margin-bottom: 6px; font-size: 0.84rem; font-weight: 400; line-height: 1.4; }
 .boleto-tooltip img { display: block; width: min(100%, 230px); max-height: 330px; margin: 0 auto; border-radius: 10px; object-fit: cover; object-position: top; }
 
 .profile-step > label,

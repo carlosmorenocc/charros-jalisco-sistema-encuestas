@@ -1,4 +1,4 @@
-import React, { lazy, Suspense } from 'react'
+import React, { lazy, Suspense, useState } from 'react'
 import Hero from './components/Hero'
 import MultiStepForm from './components/MultiStepForm'
 import LeadMultiStepForm from './components/LeadMultiStepForm'
@@ -11,6 +11,7 @@ import RegistrosCsvDownloadPage from './features/registros/admin/RegistrosCsvDow
 const SorteosApp = lazy(() => import('./features/sorteos/SorteosApp'))
 
 export default function App() {
+  const [subscriberCompleted, setSubscriberCompleted] = useState(false)
   const pathname = typeof window !== 'undefined' ? window.location.pathname : '/'
   const normalizedPathname = pathname.replace(/\/+$/, '') || '/'
   const isSorteosMode = pathname.startsWith('/sorteos')
@@ -66,8 +67,9 @@ export default function App() {
   const heroProps = isAbonadosMode
     ? {
       title: 'Registro de Abonados LMP 2026-2027',
-      slogan: 'Tu Abono, tu hogar en Charros',
+      slogan: 'Tu Abono, tu hogar en Charros. ⚾🏆',
       description: 'Completa este registro para indicar cuántos abonos tienes, personalizar cada una de tus butacas y, si pertenecen a las zonas VIP o Preferente, seleccionar la talla de tu Jersey del Bicampeonato para la temporada LMP 2026-2027.',
+      showDescription: !subscriberCompleted,
       showEngagementRow: false
     }
     : isLeadsMode
@@ -92,7 +94,7 @@ export default function App() {
 
       <main className="container">
         {isAbonadosMode
-          ? <AbonadosMultiStepForm />
+          ? <AbonadosMultiStepForm onComplete={() => setSubscriberCompleted(true)} />
           : (isLeadsMode ? <LeadMultiStepForm /> : <MultiStepForm />)}
       </main>
 

@@ -27,7 +27,8 @@ export default function Hero({
   shareText = 'Comparte esta encuesta con la afición Charros.',
   shareButtonText = 'Compartir enlace para participar por premios',
   metrics = defaultMetrics,
-  showEngagementRow = true
+  showEngagementRow = true,
+  showDescription = true
 }){
   const [copied, setCopied] = useState(false)
 
@@ -70,7 +71,7 @@ export default function Hero({
         </a>
         <h1>{renderHeroTitle(title)}</h1>
         <p className="slogan">{slogan}</p>
-        <p className="hero-description">{description}</p>
+        {showDescription && <p className="hero-description">{description}</p>}
 
         {showEngagementRow && (
           <div className="hero-metrics">

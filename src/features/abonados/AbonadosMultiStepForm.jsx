@@ -58,7 +58,7 @@ function getStepErrors(stepId, data) {
   return errors
 }
 
-export default function AbonadosMultiStepForm() {
+export default function AbonadosMultiStepForm({ onComplete = () => {} }) {
   const [index, setIndex] = useState(0)
   const [data, setData] = useState({})
   const [stepErrors, setStepErrors] = useState({})
@@ -108,6 +108,7 @@ export default function AbonadosMultiStepForm() {
         preferenciaEntrega: data.boletoMovilLigado === 'NO' ? data.preferenciaEntrega : '',
         aceptaAvisoPrivacidad: Boolean(data.aceptaAvisoPrivacidad), aceptaComunicaciones: Boolean(data.aceptaComunicaciones)
       })
+      onComplete()
       setDone(true)
     } catch (submissionError) {
       setError(submissionError?.status === 409 ? 'Este correo ya cuenta con un registro para la temporada LMP 2026-2027.' : 'No pudimos guardar tu registro. Revisa tu conexión e intenta nuevamente.')

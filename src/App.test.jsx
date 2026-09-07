@@ -1,5 +1,5 @@
 import React from 'react'
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import App from './App'
 
 vi.mock('./features/sorteos/SorteosApp', () => ({
@@ -7,7 +7,7 @@ vi.mock('./features/sorteos/SorteosApp', () => ({
 }))
 
 vi.mock('./features/abonados/AbonadosMultiStepForm', () => ({
-  default: () => <section>Formulario de abonados cargado</section>
+  default: ({ onComplete }) => <section>Formulario de abonados cargado<button type="button" onClick={onComplete}>Completar registro simulado</button></section>
 }))
 
 vi.mock('./features/abonados/admin/AbonadosCsvDownloadPage', () => ({
@@ -65,7 +65,7 @@ describe('App routing', () => {
       expect(
         screen.getByRole('heading', { name: 'Registro de Abonados LMP 2026-2027' })
       ).toBeInTheDocument()
-      expect(screen.getByText('Tu Abono, tu hogar en Charros')).toBeInTheDocument()
+      expect(screen.getByText('Tu Abono, tu hogar en Charros. ⚾🏆')).toBeInTheDocument()
       expect(screen.getByText(/personalizar cada una de tus butacas/i)).toBeInTheDocument()
       expect(screen.getByText(/indicar cuántos abonos tienes/i)).toBeInTheDocument()
       expect(screen.queryByText('Tu jersey, tu talla, tu temporada')).not.toBeInTheDocument()
@@ -77,6 +77,18 @@ describe('App routing', () => {
       ).not.toBeInTheDocument()
     }
   )
+
+  it('oculta la descripción larga al completar el registro de abonados', () => {
+    vi.stubEnv('VITE_PUBLIC_FORMS_ENABLED', 'false')
+    vi.stubEnv('VITE_SUBSCRIBER_FORM_ENABLED', 'true')
+    window.history.pushState({}, '', '/abonados')
+    render(<App />)
+
+    expect(screen.getByText(/personalizar cada una de tus butacas/i)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Completar registro simulado' }))
+    expect(screen.queryByText(/personalizar cada una de tus butacas/i)).not.toBeInTheDocument()
+    expect(screen.getByText('Tu Abono, tu hogar en Charros. ⚾🏆')).toBeInTheDocument()
+  })
 
   it.each(['/admin/abonados', '/admin/abonados/'])(
     'carga la exportación privada antes del bloqueo de formularios en %s',
