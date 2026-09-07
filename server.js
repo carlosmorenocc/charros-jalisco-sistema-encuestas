@@ -33,8 +33,10 @@ const abonadosCsvExportToken = process.env.ABONADOS_CSV_EXPORT_TOKEN || ''
 
 const SUBSCRIBER_CAMPAIGN_NAME = 'Abonados LMP 2026-2027'
 const SUBSCRIBER_SOURCE = 'abonados-lmp-26-27'
-const SUBSCRIBER_PRIVACY_NOTICE_VERSION = '2026-08-01'
+const SUBSCRIBER_PRIVACY_NOTICE_VERSION = '2026-09-07'
 const SUBSCRIBER_JERSEY_SIZES = new Set(['S', 'M', 'L', 'XL', '2XL'])
+const SUBSCRIBER_ZONES = new Set(['VIP', 'PREFERENTE', 'GENERAL'])
+const SUBSCRIBER_DELIVERY_PREFERENCES = new Set(['APP_BOLETOMOVIL', 'PDF'])
 const SUBSCRIBER_MAX_SEASON_TICKETS = 20
 // Preserve the deployed 25-column CSV schema so historical records remain readable.
 const SUBSCRIBER_JERSEY_CSV_CAPACITY = 25
@@ -111,7 +113,7 @@ const SUBSCRIBER_JERSEY_CSV_COLUMNS = Array.from(
   (_, index) => `tallaJersey${index + 1}`
 )
 
-const SUBSCRIBER_CSV_COLUMNS = [
+const PREVIOUS_SUBSCRIBER_CSV_COLUMNS = [
   'submissionId',
   'timestamp',
   'campaignName',
@@ -126,6 +128,29 @@ const SUBSCRIBER_CSV_COLUMNS = [
   'aceptaComunicaciones',
   'privacyNoticeVersion',
   'consentTimestamp'
+]
+
+const SUBSCRIBER_ZONE_CSV_COLUMNS = Array.from(
+  { length: SUBSCRIBER_JERSEY_CSV_CAPACITY },
+  (_, index) => `zonaAbono${index + 1}`
+)
+const SUBSCRIBER_PERSONALIZATION_TEXT_CSV_COLUMNS = Array.from(
+  { length: SUBSCRIBER_JERSEY_CSV_CAPACITY },
+  (_, index) => `personalizacionTexto${index + 1}`
+)
+const SUBSCRIBER_PERSONALIZATION_NUMBER_CSV_COLUMNS = Array.from(
+  { length: SUBSCRIBER_JERSEY_CSV_CAPACITY },
+  (_, index) => `personalizacionNumero${index + 1}`
+)
+
+const SUBSCRIBER_CSV_COLUMNS = [
+  'submissionId', 'timestamp', 'campaignName', 'source', 'nombre', 'apellido', 'email', 'telefono', 'cantidadAbonos',
+  ...SUBSCRIBER_ZONE_CSV_COLUMNS,
+  ...SUBSCRIBER_JERSEY_CSV_COLUMNS,
+  ...SUBSCRIBER_PERSONALIZATION_TEXT_CSV_COLUMNS,
+  ...SUBSCRIBER_PERSONALIZATION_NUMBER_CSV_COLUMNS,
+  'boletoMovilLigado', 'boletoMovilId', 'preferenciaEntrega',
+  'aceptaAvisoPrivacidad', 'aceptaComunicaciones', 'privacyNoticeVersion', 'consentTimestamp'
 ]
 
 const REQUIRED_FIELDS = ['nombre', 'apellido', 'email']
@@ -207,14 +232,17 @@ function ensureSubscriberDataFile() {
   const firstLine = legacyContent.split(/\r?\n/, 1)[0].replace(/^\uFEFF/, '')
   if (firstLine === expectedHeader) return
 
-  const legacyHeader = LEGACY_SUBSCRIBER_CSV_COLUMNS.join(',')
-  if (firstLine !== legacyHeader) {
+  const supportedHeaders = new Set([
+    LEGACY_SUBSCRIBER_CSV_COLUMNS.join(','),
+    PREVIOUS_SUBSCRIBER_CSV_COLUMNS.join(',')
+  ])
+  if (!supportedHeaders.has(firstLine)) {
     throw new Error(
       `Unsupported subscriber CSV schema at ${subscriberCsvPath}; existing data was preserved`
     )
   }
 
-  const migratedContent = migrateLegacySubscriberCsv(legacyContent)
+  const migratedContent = migrateSubscriberCsv(legacyContent)
   const backupPath = ensureSubscriberMigrationBackup(legacyContent)
   const migrationPath = `${subscriberCsvPath}.migration.tmp`
 
@@ -226,7 +254,7 @@ function ensureSubscriberDataFile() {
 function ensureSubscriberMigrationBackup(legacyContent) {
   const backupBase = path.join(
     dataDir,
-    'submissions_abonados_lmp_2026_2027_legacy_single_size_backup'
+    'submissions_abonados_lmp_2026_2027_schema_backup'
   )
 
   for (let suffix = 0; ; suffix += 1) {
@@ -242,7 +270,7 @@ function ensureSubscriberMigrationBackup(legacyContent) {
   }
 }
 
-function migrateLegacySubscriberCsv(legacyContent) {
+function migrateSubscriberCsv(legacyContent) {
   const lines = legacyContent.split(/\r?\n/)
   const header = parseCsvLine(lines[0].replace(/^\uFEFF/, ''))
   const migratedRows = []
@@ -258,10 +286,8 @@ function migrateLegacySubscriberCsv(legacyContent) {
     const legacyRow = Object.fromEntries(header.map((column, index) => [column, values[index]]))
     const migratedRow = {
       ...legacyRow,
-      // The legacy form never asked how many season tickets the person held.
-      // Preserve that fact instead of inferring a value that was not collected.
-      cantidadAbonos: '',
-      tallaJersey1: legacyRow.tallaJersey
+      cantidadAbonos: header.includes('cantidadAbonos') ? legacyRow.cantidadAbonos : '',
+      tallaJersey1: legacyRow.tallaJersey1 || legacyRow.tallaJersey || ''
     }
     migratedRows.push(buildSubscriberCsvRow(migratedRow).trimEnd())
   }
@@ -457,13 +483,18 @@ function normalizeLeadPayload(input) {
 function normalizeSubscriberPayload(input) {
   const raw = input && typeof input === 'object' && !Array.isArray(input) ? input : {}
   const timestamp = new Date().toISOString()
-  const hasNewTicketFields = Object.hasOwn(raw, 'cantidadAbonos') || Object.hasOwn(raw, 'tallasJersey')
-  const isLegacySingleSizePayload = !hasNewTicketFields && typeof raw.tallaJersey === 'string'
-  const cantidadAbonos = isLegacySingleSizePayload ? '' : raw.cantidadAbonos
-  const rawJerseySizes = isLegacySingleSizePayload ? [raw.tallaJersey] : raw.tallasJersey
-  const tallasJersey = Array.isArray(rawJerseySizes)
-    ? rawJerseySizes.map((size) => typeof size === 'string' ? size.trim().toUpperCase() : size)
-    : rawJerseySizes
+  const cantidadAbonos = raw.cantidadAbonos
+  const unidadesAbono = Array.isArray(raw.unidadesAbono) ? raw.unidadesAbono.map((unit) => {
+    const source = unit && typeof unit === 'object' && !Array.isArray(unit) ? unit : {}
+    return {
+      zona: typeof source.zona === 'string' ? source.zona.trim().toUpperCase() : '',
+      tallaJersey: typeof source.tallaJersey === 'string' ? source.tallaJersey.trim().toUpperCase() : '',
+      personalizacionTexto: typeof source.personalizacionTexto === 'string'
+        ? source.personalizacionTexto.trim().toLocaleUpperCase('es-MX') : '',
+      personalizacionNumero: typeof source.personalizacionNumero === 'string'
+        ? source.personalizacionNumero.trim() : ''
+    }
+  }) : raw.unidadesAbono
 
   return {
     submissionId: randomUUID(),
@@ -475,14 +506,18 @@ function normalizeSubscriberPayload(input) {
     email: normalizeEmail(raw.email),
     telefono: typeof raw.telefono === 'string' ? raw.telefono.trim() : '',
     cantidadAbonos,
-    tallasJersey,
-    isLegacySingleSizePayload,
+    unidadesAbono,
+    ...Object.fromEntries(SUBSCRIBER_ZONE_CSV_COLUMNS.map((column, index) => [column, Array.isArray(unidadesAbono) ? unidadesAbono[index]?.zona || '' : ''])),
     ...Object.fromEntries(
       SUBSCRIBER_JERSEY_CSV_COLUMNS.map((column, index) => [
-        column,
-        Array.isArray(tallasJersey) ? tallasJersey[index] || '' : ''
+        column, Array.isArray(unidadesAbono) ? unidadesAbono[index]?.tallaJersey || '' : ''
       ])
     ),
+    ...Object.fromEntries(SUBSCRIBER_PERSONALIZATION_TEXT_CSV_COLUMNS.map((column, index) => [column, Array.isArray(unidadesAbono) ? unidadesAbono[index]?.personalizacionTexto || '' : ''])),
+    ...Object.fromEntries(SUBSCRIBER_PERSONALIZATION_NUMBER_CSV_COLUMNS.map((column, index) => [column, Array.isArray(unidadesAbono) ? unidadesAbono[index]?.personalizacionNumero || '' : ''])),
+    boletoMovilLigado: typeof raw.boletoMovilLigado === 'string' ? raw.boletoMovilLigado.trim().toUpperCase() : '',
+    boletoMovilId: typeof raw.boletoMovilId === 'string' ? raw.boletoMovilId.trim() : '',
+    preferenciaEntrega: typeof raw.preferenciaEntrega === 'string' ? raw.preferenciaEntrega.trim().toUpperCase() : '',
     aceptaAvisoPrivacidad: raw.aceptaAvisoPrivacidad === true,
     aceptaComunicaciones: raw.aceptaComunicaciones === true,
     privacyNoticeVersion: SUBSCRIBER_PRIVACY_NOTICE_VERSION,
@@ -507,16 +542,25 @@ function validateSubscriberPayload(payload) {
   const hasValidTicketCount = Number.isInteger(payload.cantidadAbonos)
     && payload.cantidadAbonos >= 1
     && payload.cantidadAbonos <= SUBSCRIBER_MAX_SEASON_TICKETS
-  if (!payload.isLegacySingleSizePayload && !hasValidTicketCount) invalid.push('cantidadAbonos')
+  if (!hasValidTicketCount) invalid.push('cantidadAbonos')
 
-  const hasValidJerseySizes = Array.isArray(payload.tallasJersey)
-    && payload.tallasJersey.every((size) => SUBSCRIBER_JERSEY_SIZES.has(size))
-  const hasMatchingJerseySizeCount = payload.isLegacySingleSizePayload
-    ? Array.isArray(payload.tallasJersey) && payload.tallasJersey.length === 1
-    : hasValidTicketCount
-      && Array.isArray(payload.tallasJersey)
-      && payload.tallasJersey.length === payload.cantidadAbonos
-  if (!hasValidJerseySizes || !hasMatchingJerseySizeCount) invalid.push('tallasJersey')
+  const hasValidUnits = hasValidTicketCount && Array.isArray(payload.unidadesAbono)
+    && payload.unidadesAbono.length === payload.cantidadAbonos
+    && payload.unidadesAbono.every((unit) => {
+      if (!SUBSCRIBER_ZONES.has(unit.zona)) return false
+      if ((unit.zona === 'VIP' || unit.zona === 'PREFERENTE') && !SUBSCRIBER_JERSEY_SIZES.has(unit.tallaJersey)) return false
+      if (unit.zona === 'GENERAL' && unit.tallaJersey !== '') return false
+      if (!/^(?=.*[A-ZÁÉÍÓÚÜÑ])[A-ZÁÉÍÓÚÜÑ ]{1,10}$/.test(unit.personalizacionTexto)) return false
+      return /^\d{1,2}$/.test(unit.personalizacionNumero)
+    })
+  if (!hasValidUnits) invalid.push('unidadesAbono')
+  if (!['SI', 'NO'].includes(payload.boletoMovilLigado)) invalid.push('boletoMovilLigado')
+  if (payload.boletoMovilLigado === 'NO') {
+    if (!/^\d{1,20}$/.test(payload.boletoMovilId)) invalid.push('boletoMovilId')
+    if (!SUBSCRIBER_DELIVERY_PREFERENCES.has(payload.preferenciaEntrega)) invalid.push('preferenciaEntrega')
+  } else if (payload.boletoMovilId || payload.preferenciaEntrega) {
+    invalid.push('boletoMovilDatosInesperados')
+  }
   if (!payload.privacyTypeValid || payload.aceptaAvisoPrivacidad !== true) {
     invalid.push('aceptaAvisoPrivacidad')
   }

@@ -14,7 +14,13 @@ describe('submitAbonadoForm', () => {
       email: 'maria@example.com',
       telefono: '3331234567',
       cantidadAbonos: 2,
-      tallasJersey: ['M', 'XL'],
+      unidadesAbono: [
+        { zona: 'VIP', tallaJersey: 'M', personalizacionTexto: 'MARIA', personalizacionNumero: '10' },
+        { zona: 'GENERAL', tallaJersey: '', personalizacionTexto: 'LOPEZ', personalizacionNumero: '7' }
+      ],
+      boletoMovilLigado: 'NO',
+      boletoMovilId: '486585',
+      preferenciaEntrega: 'PDF',
       aceptaAvisoPrivacidad: true,
       aceptaComunicaciones: false
     }

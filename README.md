@@ -164,8 +164,10 @@ npm run preview      # Vista previa
 ### Registro de abonados LMP 2026-2027
 
 - Se habilita de manera independiente con `SUBSCRIBER_FORM_ENABLED=true`.
-- Admite de `1` a `20` abonos y exige exactamente una talla por cada abono.
-- Admite exclusivamente las tallas `S`, `M`, `L`, `XL` y `2XL`.
+- Admite de `1` a `20` abonos y captura zona y personalización por cada uno.
+- VIP y Preferente exigen jersey (`S`, `M`, `L`, `XL`, `2XL`); General no solicita talla.
+- La personalización exige de 1 a 10 letras en mayúsculas y un número de 1 o 2 dígitos.
+- Registra si el abono ya está ligado a BoletoMóvil; si no, solicita ID y preferencia App/PDF.
 - Exige que `aceptaAvisoPrivacidad` sea el booleano `true`.
 - Guarda nombre, apellido, correo, teléfono, cantidad de abonos, hasta 20 tallas nuevas y consentimientos en un CSV propio.
 - El servidor genera el identificador, fecha, campaña, origen y metadatos del aviso; ignora esos valores si llegan desde el cliente.
@@ -181,27 +183,25 @@ Payload público:
   "email": "ana@example.com",
   "telefono": "3312345678",
   "cantidadAbonos": 2,
-  "tallasJersey": ["M", "XL"],
+  "unidadesAbono": [
+    { "zona": "VIP", "tallaJersey": "M", "personalizacionTexto": "MARTINEZ", "personalizacionNumero": "22" },
+    { "zona": "GENERAL", "tallaJersey": "", "personalizacionTexto": "LOPEZ", "personalizacionNumero": "7" }
+  ],
+  "boletoMovilLigado": "NO",
+  "boletoMovilId": "486585",
+  "preferenciaEntrega": "APP_BOLETOMOVIL",
   "aceptaAvisoPrivacidad": true,
   "aceptaComunicaciones": false
 }
 ```
 
 El CSV independiente usa columnas planas compatibles con Excel:
-`cantidadAbonos`, `tallaJersey1`, ..., `tallaJersey25`. Las cinco columnas finales
-se conservan únicamente por compatibilidad con registros históricos; las nuevas
-capturas aceptan como máximo 20 abonos. Al iniciar por primera vez
-con un CSV anterior que solo contenía `tallaJersey`, el backend crea un respaldo
-en el mismo directorio y migra cada talla a `tallaJersey1`. `cantidadAbonos` queda
-vacío en esas filas históricas porque ese dato no fue recopilado. La migración es
-idempotente y conserva la deduplicación por correo tras reinicios.
-
-El despliegue debe ser **backend primero**. La compatibilidad temporal permite que
-el frontend anterior siga enviando `tallaJersey`; esas filas también conservan
-`cantidadAbonos` vacío. Después de migrar el CSV, el rollback seguro es solo del
-frontend. No reviertas el backend a una versión anterior: la migración de datos es
-forward-only. Para una recuperación excepcional del backend, detén la escritura y
-restaura conscientemente el archivo de respaldo antes de arrancar la versión antigua.
+`cantidadAbonos`, `zonaAbono1..25`, `tallaJersey1..25`,
+`personalizacionTexto1..25`, `personalizacionNumero1..25`, `boletoMovilLigado`,
+`boletoMovilId` y `preferenciaEntrega`. Las posiciones 21 a 25 se conservan por
+compatibilidad histórica. Al arrancar, el backend respalda y migra automáticamente
+los dos esquemas anteriores, sin inventar zona, personalización o datos de vinculación.
+La migración es idempotente y conserva la deduplicación por correo.
 
 ### Seguridad de exportaciones CSV
 

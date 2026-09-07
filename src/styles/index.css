@@ -199,6 +199,53 @@ label {
   margin-bottom: 22px;
 }
 
+.subscriber-unit-card {
+  margin: 26px 0;
+  padding: 20px;
+  border: 1px solid #d9e3f0;
+  border-radius: 14px;
+  background: linear-gradient(145deg, #ffffff, #f7faff);
+  box-shadow: 0 8px 22px rgba(9, 53, 107, 0.08);
+}
+
+.subscriber-unit-card > legend {
+  padding: 0 10px;
+  color: var(--blue);
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.personalization-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: baseline;
+  margin: 4px 0 12px;
+  color: var(--blue-dark);
+}
+
+.personalization-heading small { color: var(--text-light); }
+.personalization-grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(120px, 1fr); gap: 14px; }
+.personalization-grid .form-field { margin-bottom: 0; }
+
+.choice-fieldset { border: 0; margin: 0 0 24px; padding: 0; }
+.choice-fieldset > legend { margin-bottom: 12px; color: var(--text-dark); font-weight: 600; }
+.choice-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.choice-card { display: flex; align-items: center; gap: 10px; margin: 0; padding: 14px 16px; border: 1px solid #cfdaea; border-radius: 12px; background: #fff; cursor: pointer; }
+.choice-card:has(input:checked) { border-color: var(--blue); background: #eef6ff; box-shadow: 0 0 0 2px rgba(0, 84, 166, 0.1); }
+.choice-card input { margin: 0; }
+.choice-card span { font-weight: 600; }
+
+.form-label-with-help { display: flex; align-items: center; gap: 8px; }
+.form-label-with-help label { margin-bottom: 0; }
+.info-help { position: relative; width: 24px; height: 24px; border: 0; border-radius: 50%; background: var(--blue); color: #fff; font-weight: 800; cursor: help; }
+.boleto-tooltip { position: absolute; z-index: 40; top: calc(100% + 10px); left: 50%; width: min(360px, calc(100vw - 56px)); padding: 14px; border: 1px solid #d7e1f2; border-radius: 14px; background: #fff; color: var(--text-dark); text-align: left; box-shadow: var(--shadow-lg); opacity: 0; visibility: hidden; transform: translateX(-50%) translateY(-4px); transition: 0.18s ease; }
+.info-help:hover .boleto-tooltip, .info-help:focus .boleto-tooltip, .info-help:focus-within .boleto-tooltip { opacity: 1; visibility: visible; transform: translateX(-50%) translateY(0); }
+.boleto-tooltip strong { color: var(--blue); }
+.boleto-tooltip ol { margin: 10px 0 12px 20px; padding: 0; }
+.boleto-tooltip li { margin-bottom: 6px; font-size: 0.88rem; line-height: 1.35; }
+.boleto-tooltip img { display: block; width: min(100%, 230px); max-height: 330px; margin: 0 auto; border-radius: 10px; object-fit: cover; object-position: top; }
+
 .profile-step > label,
 .experience-step > label {
   display: block;
@@ -603,6 +650,11 @@ legend {
 }
 
 @media (max-width: 639px) {
+  .subscriber-unit-card { padding: 16px 14px; }
+  .personalization-grid, .choice-cards--wide { grid-template-columns: 1fr; }
+  .personalization-heading { align-items: flex-start; flex-direction: column; gap: 3px; }
+  .boleto-tooltip { left: auto; right: -16px; transform: translateY(-4px); }
+  .info-help:hover .boleto-tooltip, .info-help:focus .boleto-tooltip, .info-help:focus-within .boleto-tooltip { transform: translateY(0); }
   .hero {
     padding: 32px 16px;
   }
