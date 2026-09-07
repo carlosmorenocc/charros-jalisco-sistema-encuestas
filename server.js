@@ -734,6 +734,7 @@ app.get('/healthz', (_req, res) => {
   res.json({
     ok: true,
     status: 'ready',
+    release: 'subscriber-personalization-v1',
     publicFormsEnabled,
     subscriberFormEnabled,
     queueSize: pendingRows.length
