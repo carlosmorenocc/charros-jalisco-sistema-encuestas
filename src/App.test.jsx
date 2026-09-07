@@ -65,7 +65,8 @@ describe('App routing', () => {
       expect(
         screen.getByRole('heading', { name: 'Registro de Abonados LMP 2026-2027' })
       ).toBeInTheDocument()
-      expect(screen.getByText('Tu jersey, tu temporada')).toBeInTheDocument()
+      expect(screen.getByText('Tu Abono, tu hogar en Charros')).toBeInTheDocument()
+      expect(screen.getByText(/personalizar cada una de tus butacas/i)).toBeInTheDocument()
       expect(screen.getByText(/indicar cuántos abonos tienes/i)).toBeInTheDocument()
       expect(screen.queryByText('Tu jersey, tu talla, tu temporada')).not.toBeInTheDocument()
       expect(screen.queryByRole('button', { name: /Compartir registro de abonados/i })).not.toBeInTheDocument()

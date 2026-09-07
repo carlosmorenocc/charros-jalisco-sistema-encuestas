@@ -66,8 +66,8 @@ export default function App() {
   const heroProps = isAbonadosMode
     ? {
       title: 'Registro de Abonados LMP 2026-2027',
-      slogan: 'Tu jersey, tu temporada',
-      description: 'Completa este registro breve para indicar cuántos abonos tienes y registrar la talla de jersey correspondiente a cada uno para la temporada LMP 2026-2027.',
+      slogan: 'Tu Abono, tu hogar en Charros',
+      description: 'Completa este registro para indicar cuántos abonos tienes, personalizar cada una de tus butacas y, si pertenecen a las zonas VIP o Preferente, seleccionar la talla de tu Jersey del Bicampeonato para la temporada LMP 2026-2027.',
       showEngagementRow: false
     }
     : isLeadsMode
