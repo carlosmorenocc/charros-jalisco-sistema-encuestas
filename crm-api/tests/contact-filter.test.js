@@ -79,7 +79,7 @@ test('aplica el canal de última interacción al resumen sin interpolar valores'
 
   assert.match(call.sql, /LEFT JOIN contact_operational_summary s ON s\.id = c\.id/);
   assert.match(call.sql, /s\.last_human_contact_channel = \$1/);
-  assert.deepEqual(call.params, ['email', null, null, null]);
+  assert.deepEqual(call.params, ['email', null, null, null, null]);
 });
 
 test('la vista de eliminados no mezcla contactos activos', () => {
@@ -126,7 +126,8 @@ test('aplica temporada en ventas y dashboard con parámetros SQL', async () => {
   assert.equal(calls[0].params[0], 'LMP-2026-27');
   assert.match(calls[1].sql, /m\.season_code = \$3/);
   assert.match(calls[1].sql, /s\.season_code = \$3/);
-  assert.equal(calls[1].params.at(-1), 'LMP-2026-27');
+  assert.equal(calls[1].params.at(-2), 'LMP-2026-27');
+  assert.equal(calls[1].params.at(-1), null);
   assert.match(calls[1].sql, /membership_status IN \('active','renewing'\)/);
   assert.match(calls[1].sql, /s\.effective_sale_type='new'/);
   assert.match(calls[1].sql, /period_active_subscribers/);

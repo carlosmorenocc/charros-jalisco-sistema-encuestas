@@ -45,6 +45,7 @@ function initialDraft(kind, user) {
     firstName: '', lastName: '', email: '', phone: '', municipality: '',
     subscriberStatus, commercialStage: 'to_contact', declaredTenureSeasons: '',
     seasonCode: ACTIVE_SEASON, seatCount: 1, jerseySizes: [''], zone: '', product: '',
+    commercialSegment: '', suiteNumber: '',
     startDate: '', renewalDate: '', preferredChannel: '', executiveId: '',
     businessSource: '', consentStatus: 'unknown', consentEvidenceConfirmed: false,
     initialObservation: '', scheduleTask: false, taskAssignedTo: user.id,
@@ -76,6 +77,10 @@ function validateStep(draft, step) {
       if (['current_subscriber', 'new_subscriber'].includes(draft.subscriberStatus) && !draft.startDate) errors.startDate = 'Captura la fecha de inicio del abono activo.'
       if (draft.subscriberStatus === 'renewing' && !draft.renewalDate) errors.renewalDate = 'Captura la fecha prevista de renovación.'
     }
+  }
+  if (step === 1 && classificationHasMembership(draft.subscriberStatus)
+    && draft.commercialSegment === 'Compromisos' && !draft.suiteNumber.trim()) {
+    errors.suiteNumber = 'Captura el número de Suite.'
   }
   if (step === 2) {
     if (!draft.businessSource) errors.businessSource = 'Selecciona el origen comercial.'
@@ -205,7 +210,9 @@ export default function ManualContactDrawer({ kind, user, executiveOptions, onCl
             </div></fieldset>
             <fieldset><legend>Abonos de la temporada</legend>{!hasMembership ? <div className="manual-inline-note"><strong>Prospecto sin abono</strong><span>El registro se crea sin membresía. Podrás agregarla cuando avance la relación.</span></div> : <><div className="manual-membership-summary"><span>Se registrará un abono <strong>{membershipLabel(draft.subscriberStatus)}</strong> en LMP 2026–2027.</span></div><div className="form-grid">
               <label className="field"><span>Cantidad de abonos *</span><select value={draft.seatCount} onChange={(event) => updateSeatCount(event.target.value)} aria-invalid={Boolean(errors.seatCount)}>{Array.from({ length: 20 }, (_, index) => index + 1).map((value) => <option key={value}>{value}</option>)}</select><FieldError>{errors.seatCount}</FieldError></label>
-              <label className="field"><span>Zona</span><input maxLength="120" value={draft.zone} onChange={(event) => update('zone', event.target.value)} placeholder="Opcional; aplica a todos"/></label>
+              <label className="field"><span>Zona del abono</span><select value={draft.commercialSegment} onChange={(event) => { update('commercialSegment', event.target.value); if (event.target.value !== 'Compromisos') update('suiteNumber', '') }}><option value="">Sin definir</option><option>VIP</option><option>Preferente</option><option>General</option><option>Compromisos</option></select></label>
+              {draft.commercialSegment === 'Compromisos' && <label className="field"><span>Número de Suite *</span><input maxLength="40" value={draft.suiteNumber} onChange={(event) => update('suiteNumber', event.target.value)} aria-invalid={Boolean(errors.suiteNumber)} placeholder="Ej. 14"/><FieldError>{errors.suiteNumber}</FieldError></label>}
+              <label className="field"><span>Zona detallada</span><input maxLength="120" value={draft.zone} onChange={(event) => update('zone', event.target.value)} placeholder="Opcional; aplica a todos"/></label>
               <label className="field"><span>Producto o plan</span><input maxLength="160" value={draft.product} onChange={(event) => update('product', event.target.value)} placeholder="Opcional; aplica a todos"/></label>
               {['current_subscriber', 'new_subscriber'].includes(draft.subscriberStatus) && <label className="field"><span>Inicio del abono *</span><input type="date" max={localInputDate(new Date())} value={draft.startDate} onChange={(event) => update('startDate', event.target.value)} aria-invalid={Boolean(errors.startDate)}/><FieldError>{errors.startDate}</FieldError></label>}
               {draft.subscriberStatus === 'renewing' && <label className="field"><span>Fecha objetivo de renovación *</span><input type="date" value={draft.renewalDate} onChange={(event) => update('renewalDate', event.target.value)} aria-invalid={Boolean(errors.renewalDate)}/><FieldError>{errors.renewalDate}</FieldError></label>}

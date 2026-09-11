@@ -9,6 +9,26 @@ function moneyFromCents(value) {
   return value == null ? null : Number(value) / 100;
 }
 
+const PARKING_UNIT_PRICE = 4640;
+
+function isParkingItem(item) {
+  return /estacionamiento/i.test(`${item?.product ?? ''} ${item?.zone ?? ''}`);
+}
+
+function saleFacets(items, commercialCategory) {
+  const facets = new Set();
+  if (commercialCategory === 'commitment') facets.add('Compromisos');
+  for (const item of items) {
+    if (isParkingItem(item)) { facets.add('Estacionamientos'); continue; }
+    const text = `${item?.product ?? ''} ${item?.zone ?? ''}`.toLowerCase();
+    if (text.includes('compromiso') || text.includes('zona suites') || /^suite\s/.test(text)) facets.add('Compromisos');
+    else if (text.includes('vip') || text.includes('suites')) facets.add('VIP');
+    else if (text.includes('preferente') || text.includes('premier') || text.includes('planta baja')) facets.add('Preferente');
+    else facets.add('General');
+  }
+  return [...facets];
+}
+
 function membershipPricingFields(row, prefix = '') {
   const field = (name) => row[`${prefix}${name}`];
   const discountCode = field('discount_code') ?? null;
@@ -63,6 +83,8 @@ function contactRow(row) {
     consentAt: row.consent_at,
     privacyNoticeVersion: row.privacy_notice_version,
     summaryNotes: row.summary_notes,
+    commercialSegment: row.commercial_segment ?? null,
+    suiteNumber: row.suite_number ?? null,
     lastHumanContactAt: row.last_human_contact_at,
     lastHumanContactChannel: row.last_human_contact_channel,
     nextFollowUpAt: row.next_follow_up_at,
@@ -219,10 +241,13 @@ function saleRow(row) {
     updatedAt: row.updated_at,
     rowVersion: Number(row.row_version),
     items,
+    purchaseFacets: saleFacets(items, row.commercial_category),
     segment,
     commercialCategory: row.commercial_category ?? (segment === 'Compromisos' ? 'commitment' : 'subscription'),
     coverageSeasons: Number(row.coverage_seasons ?? (segment === 'Compromisos' ? coverageMatch?.[1] ?? 2 : 1)),
     suiteNumber: row.suite_number ?? (suiteZone ? suiteZone.replace(/^suite\s+/i, '').trim() : null),
+    parkingQuantity: Number(row.parking_quantity ?? items.filter(isParkingItem).reduce((sum, item) => sum + Number(item.quantity || 0), 0)),
+    parkingUnitPrice: PARKING_UNIT_PRICE,
     correctionId: row.correction_id ?? null,
     correctionReason: row.correction_reason ?? null,
     correctedAt: row.corrected_at ?? null,
@@ -253,9 +278,19 @@ function saleItemsFromPricing(data, pricing) {
   ];
 }
 
+function withParkingItems(items, parkingQuantity) {
+  const baseItems = items.filter((item) => !isParkingItem(item));
+  if (!parkingQuantity) return baseItems;
+  return [...baseItems, {
+    product: 'ESTACIONAMIENTO DE TEMPORADA', zone: 'Estacionamientos',
+    quantity: parkingQuantity, unitPrice: PARKING_UNIT_PRICE
+  }];
+}
+
 function saleSegment(items, pricing) {
   if (pricing?.section) return pricing.section;
-  const text = items.map((item) => `${item.product ?? ''} ${item.zone ?? ''}`).join(' ').toLowerCase();
+  const text = items.filter((item) => !isParkingItem(item))
+    .map((item) => `${item.product ?? ''} ${item.zone ?? ''}`).join(' ').toLowerCase();
   if (text.includes('compromiso') || text.includes('zona suites')) return 'Compromisos';
   if (text.includes('vip') || text.includes('suites')) return 'VIP';
   if (text.includes('preferente') || text.includes('premier') || text.includes('planta baja')) return 'Preferente';
@@ -707,6 +742,25 @@ export class PgCrmRepository {
     const fromParameter = params.length + 1;
     const toParameter = params.length + 2;
     const seasonParameter = params.length + 3;
+    const facetsParameter = params.length + 4;
+    const facetMatch = (saleAlias) => `(
+      $${facetsParameter}::text[] IS NULL OR cardinality($${facetsParameter}::text[]) = 0 OR EXISTS (
+        SELECT 1 FROM jsonb_array_elements(${saleAlias}.effective_items) facet_item
+        WHERE
+          ('Estacionamientos'=ANY($${facetsParameter}::text[]) AND (lower(COALESCE(facet_item->>'product','')) LIKE '%estacionamiento%' OR lower(COALESCE(facet_item->>'zone','')) LIKE '%estacionamiento%'))
+          OR ('Compromisos'=ANY($${facetsParameter}::text[]) AND (lower(COALESCE(facet_item->>'product','')) LIKE '%compromiso%' OR lower(COALESCE(facet_item->>'zone',''))='zona suites'))
+          OR ('VIP'=ANY($${facetsParameter}::text[]) AND lower(COALESCE(facet_item->>'zone','')) LIKE '%vip%')
+          OR ('Preferente'=ANY($${facetsParameter}::text[]) AND (lower(COALESCE(facet_item->>'zone','')) LIKE '%preferente%' OR lower(COALESCE(facet_item->>'zone','')) LIKE '%premier%' OR lower(COALESCE(facet_item->>'zone','')) LIKE '%planta baja%'))
+          OR ('General'=ANY($${facetsParameter}::text[]) AND lower(COALESCE(facet_item->>'product','')) NOT LIKE '%compromiso%' AND lower(COALESCE(facet_item->>'product','')) NOT LIKE '%estacionamiento%' AND lower(COALESCE(facet_item->>'zone','')) NOT LIKE '%vip%' AND lower(COALESCE(facet_item->>'zone','')) NOT LIKE '%preferente%' AND lower(COALESCE(facet_item->>'zone','')) NOT LIKE '%premier%' AND lower(COALESCE(facet_item->>'zone','')) NOT LIKE '%planta baja%' AND lower(COALESCE(facet_item->>'zone','')) NOT LIKE '%estacionamiento%')
+      )
+    )`;
+    const facetItemMatch = (itemAlias) => `(
+      ('Estacionamientos'=ANY($${facetsParameter}::text[]) AND (lower(COALESCE(${itemAlias}->>'product','')) LIKE '%estacionamiento%' OR lower(COALESCE(${itemAlias}->>'zone','')) LIKE '%estacionamiento%'))
+      OR ('Compromisos'=ANY($${facetsParameter}::text[]) AND (lower(COALESCE(${itemAlias}->>'product','')) LIKE '%compromiso%' OR lower(COALESCE(${itemAlias}->>'zone',''))='zona suites'))
+      OR ('VIP'=ANY($${facetsParameter}::text[]) AND lower(COALESCE(${itemAlias}->>'zone','')) LIKE '%vip%')
+      OR ('Preferente'=ANY($${facetsParameter}::text[]) AND (lower(COALESCE(${itemAlias}->>'zone','')) LIKE '%preferente%' OR lower(COALESCE(${itemAlias}->>'zone','')) LIKE '%premier%' OR lower(COALESCE(${itemAlias}->>'zone','')) LIKE '%planta baja%'))
+      OR ('General'=ANY($${facetsParameter}::text[]) AND lower(COALESCE(${itemAlias}->>'product','')) NOT LIKE '%compromiso%' AND lower(COALESCE(${itemAlias}->>'product','')) NOT LIKE '%estacionamiento%' AND lower(COALESCE(${itemAlias}->>'zone','')) NOT LIKE '%vip%' AND lower(COALESCE(${itemAlias}->>'zone','')) NOT LIKE '%preferente%' AND lower(COALESCE(${itemAlias}->>'zone','')) NOT LIKE '%premier%' AND lower(COALESCE(${itemAlias}->>'zone','')) NOT LIKE '%planta baja%' AND lower(COALESCE(${itemAlias}->>'zone','')) NOT LIKE '%estacionamiento%')
+    )`;
 
     const result = await this.pool.query(
       `WITH scoped_contacts AS (
@@ -806,8 +860,8 @@ export class PgCrmRepository {
        ), sales_metrics AS (
          SELECT
            count(*) FILTER (WHERE s.effective_status IN ('confirmed','reserved'))::integer AS confirmed_sales,
-           COALESCE(sum(s.effective_total_amount) FILTER (WHERE s.effective_status IN ('confirmed','reserved')), 0)::numeric AS sales_amount,
-           COALESCE(sum(COALESCE(p.paid_amount,0)) FILTER (WHERE s.effective_status IN ('confirmed','reserved')), 0)::numeric AS collected_amount,
+           COALESCE(sum(CASE WHEN $${facetsParameter}::text[] IS NULL THEN s.effective_total_amount ELSE COALESCE(i.selected_amount,0) END) FILTER (WHERE s.effective_status IN ('confirmed','reserved')), 0)::numeric AS sales_amount,
+           COALESCE(sum(CASE WHEN $${facetsParameter}::text[] IS NULL THEN COALESCE(p.paid_amount,0) ELSE LEAST(COALESCE(p.paid_amount,0),COALESCE(i.selected_amount,0)) END) FILTER (WHERE s.effective_status IN ('confirmed','reserved')), 0)::numeric AS collected_amount,
            count(DISTINCT s.effective_contact_id) FILTER (
              WHERE s.effective_status IN ('confirmed','reserved') AND s.effective_sale_type='new'
            )::integer AS sold_new_subscribers,
@@ -849,7 +903,8 @@ export class PgCrmRepository {
          ) p ON true
          LEFT JOIN LATERAL (
            SELECT
-             sum((item->>'quantity')::integer)::integer AS seat_count,
+             sum((item->>'quantity')::integer) FILTER (WHERE lower(COALESCE(item->>'product','')) NOT LIKE '%estacionamiento%' AND lower(COALESCE(item->>'zone','')) NOT LIKE '%estacionamiento%')::integer AS seat_count,
+             sum((item->>'quantity')::numeric * (item->>'unitPrice')::numeric) FILTER (WHERE ${facetItemMatch('item')})::numeric AS selected_amount,
              sum((item->>'quantity')::integer) FILTER (
                WHERE lower(COALESCE(item->>'product','')) LIKE '%compromiso%'
                   OR lower(COALESCE(item->>'zone','')) = 'zona suites'
@@ -880,17 +935,18 @@ export class PgCrmRepository {
            AND ($${fromParameter}::timestamptz IS NULL OR s.effective_sold_at >= $${fromParameter})
            AND ($${toParameter}::timestamptz IS NULL OR s.effective_sold_at <= $${toParameter})
            AND ($${seasonParameter}::text IS NULL OR s.season_code = $${seasonParameter})
+           AND ${facetMatch('s')}
        ), holder_metrics AS (
          SELECT
            count(DISTINCT ha.contact_id) FILTER (
-             WHERE es.effective_status IN ('confirmed','reserved') AND ha.segment<>'Compromisos'
+             WHERE es.effective_status IN ('confirmed','reserved')
            )::integer AS holder_current_subscribers,
            count(DISTINCT ha.contact_id) FILTER (
-             WHERE es.effective_status IN ('confirmed','reserved') AND ha.segment<>'Compromisos'
+             WHERE es.effective_status IN ('confirmed','reserved')
                AND es.effective_sale_type='new'
            )::integer AS holder_new_subscribers,
            count(DISTINCT ha.contact_id) FILTER (
-             WHERE es.effective_status IN ('confirmed','reserved') AND ha.segment<>'Compromisos'
+             WHERE es.effective_status IN ('confirmed','reserved')
                AND es.effective_sale_type='renewal'
            )::integer AS holder_renewed_subscribers,
            COALESCE(sum(ha.quantity) FILTER (
@@ -910,9 +966,10 @@ export class PgCrmRepository {
            AND ($${fromParameter}::timestamptz IS NULL OR es.effective_sold_at >= $${fromParameter})
            AND ($${toParameter}::timestamptz IS NULL OR es.effective_sold_at <= $${toParameter})
            AND ($${seasonParameter}::text IS NULL OR es.season_code = $${seasonParameter})
+           AND ${facetMatch('es')}
        )
        SELECT * FROM contact_metrics, membership_metrics, interaction_metrics, campaign_metrics, sales_metrics, holder_metrics`,
-      [...params, filters.from ?? null, filters.to ?? null, filters.season ?? null]
+      [...params, filters.from ?? null, filters.to ?? null, filters.season ?? null, filters.purchaseFacets?.length ? filters.purchaseFacets : null]
     );
     const row = result.rows[0];
     return {
@@ -1227,15 +1284,16 @@ export class PgCrmRepository {
         `INSERT INTO contacts
           (first_name,last_name,email,phone,municipality,subscriber_status,commercial_stage,
            preferred_channel,executive_id,source,acquisition_source,declared_tenure_seasons,consent_status,consent_at,privacy_notice_version,
-           summary_notes,created_by,updated_by)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$17)
+           summary_notes,commercial_segment,suite_number,created_by,updated_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$19)
          RETURNING *`,
         [data.firstName, data.lastName, data.email ?? null, data.phone ?? null,
           data.municipality ?? null, data.subscriberStatus, data.commercialStage,
           data.preferredChannel ?? null, data.executiveId ?? null, data.source ?? null,
           data.acquisitionSource ?? null, data.declaredTenureSeasons ?? null,
           data.consentStatus ?? 'unknown', data.consentAt ?? null,
-          data.privacyNoticeVersion ?? null, data.summaryNotes ?? null, actor.id]
+          data.privacyNoticeVersion ?? null, data.summaryNotes ?? null,
+          data.commercialSegment ?? null, data.suiteNumber ?? null, actor.id]
       );
       const created = contactRow(result.rows[0]);
       if (data.executiveId) {
@@ -1306,9 +1364,10 @@ export class PgCrmRepository {
         `INSERT INTO contacts
           (first_name,last_name,email,phone,municipality,subscriber_status,commercial_stage,
            preferred_channel,executive_id,source,acquisition_source,declared_tenure_seasons,
-           consent_status,consent_at,privacy_notice_version,summary_notes,created_by,updated_by)
+           consent_status,consent_at,privacy_notice_version,summary_notes,
+           commercial_segment,suite_number,created_by,updated_by)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,
-           CASE WHEN $13='unknown' THEN NULL ELSE now() END,$14,$15,$16,$16)
+           CASE WHEN $13='unknown' THEN NULL ELSE now() END,$14,$15,$16,$17,$18,$18)
          RETURNING *`,
         [data.contact.firstName, data.contact.lastName, data.contact.email ?? null,
           data.contact.phone ?? null, data.contact.municipality ?? null,
@@ -1316,7 +1375,8 @@ export class PgCrmRepository {
           data.contact.preferredChannel ?? null, data.contact.executiveId ?? null,
           data.contact.source, data.contact.acquisitionSource,
           data.contact.declaredTenureSeasons ?? null, data.consent.status,
-          data.consent.privacyNoticeVersion, data.initialObservation.notes, actor.id]
+          data.consent.privacyNoticeVersion, data.initialObservation.notes,
+          data.contact.commercialSegment ?? null, data.contact.suiteNumber ?? null, actor.id]
       );
       const contactId = contactResult.rows[0].id;
 
@@ -1444,6 +1504,7 @@ export class PgCrmRepository {
         commercialStage: 'commercial_stage', preferredChannel: 'preferred_channel',
         executiveId: 'executive_id', source: 'source', acquisitionSource: 'acquisition_source',
         consentStatus: 'consent_status',
+        commercialSegment: 'commercial_segment', suiteNumber: 'suite_number',
         declaredTenureSeasons: 'declared_tenure_seasons',
         consentAt: 'consent_at', privacyNoticeVersion: 'privacy_notice_version',
         summaryNotes: 'summary_notes'
@@ -1964,7 +2025,7 @@ export class PgCrmRepository {
                   WHERE su.holder_assignment_id=ha.id AND su.deleted_at IS NULL),'[]'::jsonb)
                 ) ORDER BY ha.is_primary DESC,ha.created_at)
                 FROM sale_holder_assignments ha WHERE ha.sale_id=s.id AND ha.deleted_at IS NULL), '[]'::jsonb) AS holder_assignments,
-              terms.commercial_category,terms.coverage_seasons,terms.suite_number,
+              terms.commercial_category,terms.coverage_seasons,terms.suite_number,terms.parking_quantity,
               count(*) OVER()::integer AS total_count
        FROM effective_sales s JOIN contacts c ON c.id=s.effective_contact_id LEFT JOIN app_users u ON u.id=s.effective_executive_id
        LEFT JOIN sale_commercial_terms terms ON terms.sale_id=s.id
@@ -2003,7 +2064,7 @@ export class PgCrmRepository {
                   WHERE su.holder_assignment_id=ha.id AND su.deleted_at IS NULL),'[]'::jsonb)
                 ) ORDER BY ha.is_primary DESC,ha.created_at)
                 FROM sale_holder_assignments ha WHERE ha.sale_id=s.id AND ha.deleted_at IS NULL), '[]'::jsonb) AS holder_assignments,
-              terms.commercial_category,terms.coverage_seasons,terms.suite_number
+              terms.commercial_category,terms.coverage_seasons,terms.suite_number,terms.parking_quantity
        FROM effective_sales s JOIN contacts c ON c.id=s.effective_contact_id LEFT JOIN app_users u ON u.id=s.effective_executive_id
        LEFT JOIN sale_commercial_terms terms ON terms.sale_id=s.id
        LEFT JOIN LATERAL (
@@ -2040,9 +2101,10 @@ export class PgCrmRepository {
       const pricing = data.pricing ? await this.resolveSubscriptionPricing(client, {
         seasonCode: data.seasonCode, ...data.pricing
       }) : null;
-      const saleItems = saleItemsFromPricing(data, pricing);
+      const saleItems = withParkingItems(saleItemsFromPricing(data, pricing), data.parkingQuantity);
       const isCommitment = saleSegment(saleItems, pricing) === 'Compromisos';
-      const soldQuantity = saleItems.reduce((sum, item) => sum + item.quantity, 0);
+      const soldQuantity = saleItems.filter((item) => !isParkingItem(item))
+        .reduce((sum, item) => sum + item.quantity, 0);
       const requestedHolders = data.holderAssignments?.length
         ? data.holderAssignments
         : [{ contactId: data.contactId, quantity: soldQuantity, isPrimary: true }];
@@ -2055,7 +2117,7 @@ export class PgCrmRepository {
         throw conflict('Uno o más titulares ya no están disponibles. Actualiza la selección e intenta nuevamente.');
       }
       const holderNames = new Map(holderContacts.rows.map((holder) => [holder.id, holder.name]));
-      const total = pricing ? moneyFromCents(pricing.netAmount)
+      const total = pricing ? moneyFromCents(pricing.netAmount) + data.parkingQuantity * PARKING_UNIT_PRICE
         : saleItems.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
       const paid = data.payments.reduce((sum, payment) => sum + payment.amount, 0);
       if (paid > total) throw conflict('Los pagos no pueden superar el total de la venta.');
@@ -2069,10 +2131,10 @@ export class PgCrmRepository {
       );
       await client.query(
         `INSERT INTO sale_commercial_terms
-          (sale_id,commercial_category,coverage_seasons,suite_number,created_by,updated_by)
-         VALUES ($1,$2,$3,$4,$5,$5)`,
+          (sale_id,commercial_category,coverage_seasons,suite_number,parking_quantity,created_by,updated_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$6)`,
         [result.rows[0].id, data.commercialCategory, data.coverageSeasons,
-          data.suiteNumber ?? null, actor.id]
+          data.suiteNumber ?? null, data.parkingQuantity, actor.id]
       );
       for (const item of saleItems) {
         await client.query(
@@ -2115,7 +2177,7 @@ export class PgCrmRepository {
         [result.rows[0].id]
       );
       const holderCount = Number(holderState.rows[0]?.holder_count ?? 0);
-      const correctedQuantity = saleItems.reduce((sum, item) => sum + item.quantity, 0);
+      const correctedQuantity = soldQuantity;
       if (holderCount > 1 && Number(holderState.rows[0].holder_quantity) !== correctedQuantity) {
         throw conflict('La orden tiene varios titulares; conserva la cantidad total o corrige primero su distribuciÃ³n.');
       }
@@ -2130,7 +2192,7 @@ export class PgCrmRepository {
         );
       }
       const targetSubscriberStatus = data.saleType === 'renewal' ? 'current_subscriber' : 'new_subscriber';
-      if (!isCommitment && contact.executiveId !== data.executiveId) {
+      if (contact.executiveId !== data.executiveId) {
         await client.query(
           'UPDATE contact_assignments SET ended_at=now() WHERE contact_id=$1 AND ended_at IS NULL',
           [data.contactId]
@@ -2141,15 +2203,18 @@ export class PgCrmRepository {
           [data.contactId, data.executiveId, actor.id]
         );
       }
-      if (!isCommitment) await client.query(
+      await client.query(
         `UPDATE contacts SET subscriber_status=$2,commercial_stage=$3,executive_id=$4,
-           updated_by=$5 WHERE id=$1`,
-        [data.contactId, targetSubscriberStatus, data.closeStage, data.executiveId, actor.id]
+           commercial_segment=$5,suite_number=$6,updated_by=$7 WHERE id=$1`,
+        [data.contactId, targetSubscriberStatus, data.closeStage, data.executiveId,
+          saleSegment(saleItems, pricing), isCommitment ? data.suiteNumber : null, actor.id]
       );
-      if (!isCommitment) await client.query(
-        `UPDATE contacts SET subscriber_status=$2,commercial_stage=$3,updated_by=$4
+      await client.query(
+        `UPDATE contacts SET subscriber_status=$2,commercial_stage=$3,
+           commercial_segment=$4,suite_number=$5,updated_by=$6
          WHERE id=ANY($1::uuid[])`,
-        [requestedHolders.map((holder) => holder.contactId), targetSubscriberStatus, data.closeStage, actor.id]
+        [requestedHolders.map((holder) => holder.contactId), targetSubscriberStatus, data.closeStage,
+          saleSegment(saleItems, pricing), isCommitment ? data.suiteNumber : null, actor.id]
       );
       if (!isCommitment && data.closeStage === 'won') {
         // Each order gets its own membership so additional purchases increase active
@@ -2180,7 +2245,8 @@ export class PgCrmRepository {
         ...result.rows[0], items: saleItems,
         commercial_category: data.commercialCategory,
         coverage_seasons: data.coverageSeasons,
-        suite_number: data.suiteNumber ?? null
+        suite_number: data.suiteNumber ?? null,
+        parking_quantity: data.parkingQuantity
       });
       await this.audit(client, context, {
         action: 'sale.created', entityType: 'sale', entityId: created.id, after: created,
@@ -2203,9 +2269,9 @@ export class PgCrmRepository {
       const pricing = data.pricing ? await this.resolveSubscriptionPricing(client, {
         seasonCode: data.seasonCode, ...data.pricing
       }) : null;
-      const saleItems = saleItemsFromPricing(data, pricing);
+      const saleItems = withParkingItems(saleItemsFromPricing(data, pricing), data.parkingQuantity);
       const isCommitment = saleSegment(saleItems, pricing) === 'Compromisos';
-      const total = pricing ? moneyFromCents(pricing.netAmount)
+      const total = pricing ? moneyFromCents(pricing.netAmount) + data.parkingQuantity * PARKING_UNIT_PRICE
         : saleItems.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
       if (before.paidAmount > total) {
         throw conflict('La corrección no puede dejar un total menor que los cobros registrados.');
@@ -2228,15 +2294,16 @@ export class PgCrmRepository {
       );
       await client.query(
         `INSERT INTO sale_commercial_terms
-          (sale_id,commercial_category,coverage_seasons,suite_number,created_by,updated_by)
-         VALUES ($1,$2,$3,$4,$5,$5)
+          (sale_id,commercial_category,coverage_seasons,suite_number,parking_quantity,created_by,updated_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$6)
          ON CONFLICT (sale_id) DO UPDATE SET
            commercial_category=EXCLUDED.commercial_category,
            coverage_seasons=EXCLUDED.coverage_seasons,
            suite_number=EXCLUDED.suite_number,
+           parking_quantity=EXCLUDED.parking_quantity,
            updated_by=EXCLUDED.updated_by`,
         [saleId, data.commercialCategory, data.coverageSeasons,
-          data.suiteNumber ?? null, actor.id]
+          data.suiteNumber ?? null, data.parkingQuantity, actor.id]
       );
       if (data.holderAssignments?.length) {
         const holderContacts = await client.query(
@@ -2289,7 +2356,8 @@ export class PgCrmRepository {
         [saleId]
       );
       const correctedHolderCount = Number(correctedHolderState.rows[0]?.holder_count ?? 0);
-      const correctedHolderQuantity = saleItems.reduce((sum, item) => sum + item.quantity, 0);
+      const correctedHolderQuantity = saleItems.filter((item) => !isParkingItem(item))
+        .reduce((sum, item) => sum + item.quantity, 0);
       if (correctedHolderCount > 1
         && Number(correctedHolderState.rows[0].holder_quantity) !== correctedHolderQuantity) {
         throw conflict('La orden tiene varios titulares; conserva la cantidad total o corrige primero su distribucion.');
@@ -2304,15 +2372,19 @@ export class PgCrmRepository {
             saleItems[0]?.zone ?? null, contact.name, actor.id]
         );
       }
-      if (!isCommitment) await client.query(
-        `UPDATE contacts SET subscriber_status=$2,commercial_stage=$3,executive_id=$4,updated_by=$5
+      await client.query(
+        `UPDATE contacts SET subscriber_status=$2,commercial_stage=$3,executive_id=$4,
+           commercial_segment=$5,suite_number=$6,updated_by=$7
          WHERE id=$1`,
-        [data.contactId, targetSubscriberStatus, data.closeStage, data.executiveId, actor.id]
+        [data.contactId, targetSubscriberStatus, data.closeStage, data.executiveId,
+          saleSegment(saleItems, pricing), isCommitment ? data.suiteNumber : null, actor.id]
       );
-      if (!isCommitment) await client.query(
-        `UPDATE contacts SET subscriber_status=$2,commercial_stage=$3,updated_by=$4
+      await client.query(
+        `UPDATE contacts SET subscriber_status=$2,commercial_stage=$3,
+           commercial_segment=$4,suite_number=$5,updated_by=$6
          WHERE id IN (SELECT contact_id FROM sale_holder_assignments WHERE sale_id=$1 AND deleted_at IS NULL)`,
-        [saleId, targetSubscriberStatus, data.closeStage, actor.id]
+        [saleId, targetSubscriberStatus, data.closeStage, saleSegment(saleItems, pricing),
+          isCommitment ? data.suiteNumber : null, actor.id]
       );
       await client.query(
         `UPDATE memberships SET membership_status='cancelled',updated_by=$2,updated_at=now(),row_version=row_version+1

@@ -10,6 +10,9 @@ La rama `feat/crm-abonados-lmp-26-27` incorpora un CRM separado de las encuestas
 públicas:
 
 - Registro y filtro de compromisos anuales de suite con número de suite, dos temporadas, butacas, valor comprometido, cobros y saldo.
+- Contactos segmentados como VIP, Preferente, General o Compromisos; las butacas capturadas en compromisos forman parte de Abonos activos.
+- Estacionamientos vinculados a la orden como cargo adicional de temporada (MXN 4,640 por lugar), incluidos en importes pero excluidos del conteo de abonos.
+- Ventas y Reporte Dirección permiten filtrar y combinar zonas, Compromisos y Estacionamientos sin duplicar titulares.
 
 - [`crm-web/`](crm-web/) — interfaz React/Vite para un proyecto independiente en Vercel.
 - [`crm-api/`](crm-api/) — API autenticada y PostgreSQL para Render.

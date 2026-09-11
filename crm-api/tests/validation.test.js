@@ -214,6 +214,9 @@ test('compromiso anual exige suite, conserva butacas e importe manual sin catál
   assert.equal(value.suiteNumber, '14');
   assert.equal(value.items[0].zone, 'Suite 14');
   assert.match(value.items[0].product, /COMPROMISO ANUAL DE SUITE · 2 TEMPORADAS/);
+  assert.equal(validateSale({ ...base, suiteNumber: '14', parkingQuantity: 2 }).parkingQuantity, 2);
+  assert.throws(() => validateSale({ ...base, suiteNumber: '14', parkingQuantity: 1.5 }), /parkingQuantity/);
+  assert.throws(() => validateSale({ ...base, suiteNumber: '14', parkingQuantity: 101 }), /parkingQuantity/);
 });
 
 test('distribución multititular conserva exactamente la cantidad de la orden', () => {
@@ -264,13 +267,16 @@ test('corrección de venta exige motivo y nunca acepta cobros nuevos', () => {
 test('segmenta listados de contactos sin aceptar valores libres', () => {
   const parsed = parseListQuery({
     segment: 'portfolio', assignment: 'unassigned', dateField: 'lastContact',
-    season: ' LMP-2026-27 ', lastChannel: 'whatsapp'
+    season: ' LMP-2026-27 ', lastChannel: 'whatsapp',
+    purchaseFacets: ['VIP', 'Estacionamientos']
   });
   assert.equal(parsed.segment, 'portfolio');
   assert.equal(parsed.assignment, 'unassigned');
   assert.equal(parsed.dateField, 'lastContact');
   assert.equal(parsed.season, 'LMP-2026-27');
   assert.equal(parsed.lastChannel, 'whatsapp');
+  assert.deepEqual(parsed.purchaseFacets, ['VIP', 'Estacionamientos']);
+  assert.throws(() => parseListQuery({ purchaseFacets: ['Palcos'] }), /purchaseFacets/);
   assert.throws(() => parseListQuery({ segment: 'all-records' }), /segment/);
   assert.throws(() => parseListQuery({ assignment: 'anyone' }), /assignment/);
   assert.throws(() => parseListQuery({ dateField: 'raw_sql' }), /dateField/);

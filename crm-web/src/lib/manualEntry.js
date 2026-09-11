@@ -36,6 +36,8 @@ export function buildManualRegistrationPayload(draft, { actorId, mayAssignContac
     executiveId: mayAssignContact ? optional(draft.executiveId) : actorId,
     businessSource: draft.businessSource,
     declaredTenureSeasons: declaredTenure,
+    commercialSegment: optional(draft.commercialSegment),
+    suiteNumber: draft.commercialSegment === 'Compromisos' ? optional(draft.suiteNumber) : undefined,
   }
   const membership = hasMembership ? {
     seatCount: Number(draft.seatCount),

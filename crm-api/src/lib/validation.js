@@ -13,6 +13,8 @@ export const CONTACT_ASSIGNMENTS = Object.freeze(['assigned', 'unassigned']);
 export const CONTACT_DATE_FIELDS = Object.freeze(['updatedAt', 'lastContact', 'nextFollowUp']);
 export const SEASON_CODES = Object.freeze(['LMP-2026-27']);
 export const MEMBERSHIP_SECTIONS = Object.freeze(['VIP', 'Preferente', 'General']);
+export const COMMERCIAL_SEGMENTS = Object.freeze(['VIP', 'Preferente', 'General', 'Compromisos']);
+export const PURCHASE_FACETS = Object.freeze([...COMMERCIAL_SEGMENTS, 'Estacionamientos']);
 export const CRM_PRIVACY_NOTICE_VERSION = '2026-08-01';
 export const ACQUISITION_SOURCES = Object.freeze([
   'season_ticket_database', 'referral', 'box_office', 'digital', 'event', 'outbound', 'other'
@@ -72,6 +74,18 @@ function enumValue(value, values, field, { required = false } = {}) {
     throw badRequest(`${field} contiene un valor no permitido.`, { allowed: values });
   }
   return value;
+}
+
+function enumList(value, values, field) {
+  if (value === undefined || value === null || value === '') return undefined;
+  const entries = (Array.isArray(value) ? value : [value])
+    .flatMap((entry) => String(entry).split(','))
+    .map((entry) => entry.trim()).filter(Boolean);
+  const unique = [...new Set(entries)];
+  if (unique.some((entry) => !values.includes(entry))) {
+    throw badRequest(`${field} contiene un valor no permitido.`, { allowed: values });
+  }
+  return unique.length ? unique : undefined;
 }
 
 function canonicalSeason(value, { required = false, field = 'seasonCode' } = {}) {
@@ -169,8 +183,21 @@ export function validateContact(input, { partial = false } = {}) {
     consentStatus: input.consentStatus === undefined ? undefined : enumValue(input.consentStatus, CONSENT_STATUSES, 'consentStatus'),
     consentAt: isoDate(input.consentAt, 'consentAt'),
     privacyNoticeVersion: cleanString(input.privacyNoticeVersion, { max: 80, field: 'privacyNoticeVersion' }),
-    summaryNotes: cleanString(input.summaryNotes, { max: 4000, field: 'summaryNotes' })
+    summaryNotes: cleanString(input.summaryNotes, { max: 4000, field: 'summaryNotes' }),
+    commercialSegment: input.commercialSegment === null
+      ? null : enumValue(input.commercialSegment, COMMERCIAL_SEGMENTS, 'commercialSegment'),
+    suiteNumber: cleanString(input.suiteNumber, { max: 40, field: 'suiteNumber' })
   });
+
+  if (result.commercialSegment !== undefined || result.suiteNumber !== undefined) {
+    const segment = result.commercialSegment ?? input.commercialSegment;
+    if (result.suiteNumber && segment !== 'Compromisos') {
+      throw badRequest('suiteNumber solo aplica al segmento Compromisos.');
+    }
+    if (segment === 'Compromisos' && !result.suiteNumber && !partial) {
+      throw badRequest('suiteNumber es obligatorio para el segmento Compromisos.');
+    }
+  }
 
   if (partial && Object.keys(result).length === 0) {
     throw badRequest('No se proporcionaron campos editables.');
@@ -336,7 +363,8 @@ export function validateManualRegistration(input, { defaultAssigneeId }) {
   if (!isObject(input.contact)) throw badRequest('contact es obligatorio.');
   rejectUnknownKeys(input.contact, new Set([
     'firstName', 'lastName', 'email', 'phone', 'municipality', 'subscriberStatus',
-    'commercialStage', 'preferredChannel', 'executiveId', 'declaredTenureSeasons', 'businessSource'
+    'commercialStage', 'preferredChannel', 'executiveId', 'declaredTenureSeasons', 'businessSource',
+    'commercialSegment', 'suiteNumber'
   ]), 'contact');
 
   const businessSource = enumValue(
@@ -462,6 +490,7 @@ export function validateSale(input) {
     commercialCategory: enumValue(input.commercialCategory ?? 'subscription', ['subscription', 'commitment'], 'commercialCategory', { required: true }),
     coverageSeasons: integer(input.coverageSeasons ?? (input.commercialCategory === 'commitment' ? 2 : 1), 'coverageSeasons', { min: 1, max: 10, required: true }),
     suiteNumber: cleanString(input.suiteNumber, { max: 40, field: 'suiteNumber' }),
+    parkingQuantity: integer(input.parkingQuantity ?? 0, 'parkingQuantity', { min: 0, max: 100, required: true }),
     saleType: enumValue(input.saleType, ['new', 'renewal'], 'saleType', { required: true }),
     closeStage: enumValue(input.closeStage ?? (input.status === 'reserved' ? 'reserved' : 'won'), ['reserved', 'won'], 'closeStage', { required: true }),
     contactId: uuid(input.contactId, 'contactId', { required: true }),
@@ -573,7 +602,7 @@ export function validateDashboardPdfEvent(input) {
     throw badRequest('El evento de PDF debe incluir filters.');
   }
   const allowedRoot = new Set(['filters']);
-  const allowedFilters = new Set(['season', 'executiveId', 'from', 'to']);
+  const allowedFilters = new Set(['season', 'executiveId', 'from', 'to', 'purchaseFacets']);
   if (Object.keys(input).some((key) => !allowedRoot.has(key))
     || Object.keys(input.filters).some((key) => !allowedFilters.has(key))) {
     throw badRequest('El evento de PDF contiene campos no permitidos.');
@@ -583,7 +612,8 @@ export function validateDashboardPdfEvent(input) {
       season: canonicalSeason(input.filters.season, { field: 'season' }),
       executiveId: input.filters.executiveId ? uuid(input.filters.executiveId, 'executiveId') : undefined,
       from: input.filters.from ? isoDate(input.filters.from, 'from') : undefined,
-      to: input.filters.to ? isoDate(input.filters.to, 'to') : undefined
+      to: input.filters.to ? isoDate(input.filters.to, 'to') : undefined,
+      purchaseFacets: enumList(input.filters.purchaseFacets, PURCHASE_FACETS, 'purchaseFacets')
     })
   };
 }
@@ -607,6 +637,7 @@ export function parseListQuery(query = {}) {
     season: canonicalSeason(query.season, { field: 'season' }),
     search: cleanString(query.search, { max: 160, field: 'search' }),
     segment: query.segment ? enumValue(query.segment, CONTACT_SEGMENTS, 'segment') : undefined,
+    purchaseFacets: enumList(query.purchaseFacets, PURCHASE_FACETS, 'purchaseFacets'),
     assignment: query.assignment ? enumValue(query.assignment, CONTACT_ASSIGNMENTS, 'assignment') : undefined,
     dateField: query.dateField
       ? enumValue(query.dateField, CONTACT_DATE_FIELDS, 'dateField')

@@ -105,6 +105,8 @@ export function fromApiContact(contact) {
     note: contact.summaryNotes || '',
     consent: consentLabels[contact.consentStatus] || 'No consta',
     businessSourceLabel: businessSourceLabels[contact.businessSource || contact.acquisitionSource] || 'No consta',
+    commercialSegment: contact.commercialSegment || '',
+    suiteNumber: contact.suiteNumber || '',
     kind: contact.subscriberStatus === 'prospect' ? 'prospect' : 'portfolio',
     ...(hasMembershipSummary ? { currentMembership } : {}),
   }
@@ -190,6 +192,8 @@ export function toApiContactPayload(form) {
     consentStatus: consentCodes[form.consent] || 'unknown',
     source: form.source || 'crm_manual',
     summaryNotes: form.note.trim() || null,
+    commercialSegment: form.commercialSegment || null,
+    suiteNumber: form.commercialSegment === 'Compromisos' ? (form.suiteNumber?.trim() || null) : null,
   }
 }
 
@@ -210,7 +214,8 @@ export function fromApiTask(task) {
 
 export function fromApiSale(sale) {
   if (sale.contact) return sale
-  const seats = (sale.items || []).reduce((sum, item) => sum + Number(item.quantity || item.seatCount || 0), 0)
+  const isParking = (item) => /estacionamiento/i.test(`${item?.product || ''} ${item?.zone || ''}`)
+  const seats = (sale.items || []).filter((item) => !isParking(item)).reduce((sum, item) => sum + Number(item.quantity || item.seatCount || 0), 0)
   const total = Number(sale.totalAmount || 0)
   const paid = Number(sale.paidAmount || 0)
   const paymentStatus = paid <= 0 ? 'Pendiente' : paid < total ? 'Parcial' : 'Pagado'
@@ -234,9 +239,11 @@ export function fromApiSale(sale) {
     kind: sale.saleType === 'renewal' ? 'Renovación' : sale.saleType === 'new' ? 'Nuevo' : movementKind,
     zone: promotion ? `${rawZone} · ${promotion}` : rawZone,
     segment: sale.segment || (isCommitment ? 'Compromisos' : rawZone.match(/vip|suite/i) ? 'VIP' : rawZone.match(/preferente|premier|planta baja/i) ? 'Preferente' : 'General'),
+    purchaseFacets: sale.purchaseFacets || [sale.segment || (isCommitment ? 'Compromisos' : rawZone.match(/vip|suite/i) ? 'VIP' : rawZone.match(/preferente|premier|planta baja/i) ? 'Preferente' : 'General'), ...((sale.items || []).some(isParking) ? ['Estacionamientos'] : [])],
     commercialCategory: isCommitment ? 'commitment' : 'subscription',
     coverageSeasons: isCommitment ? Number(sale.coverageSeasons || coverageMatch?.[1] || 2) : 1,
     suiteNumber: sale.suiteNumber || (suiteZone ? suiteZone.replace(/^suite\s+/i, '').trim() : ''),
+    parkingQuantity: Number(sale.parkingQuantity ?? (sale.items || []).filter(isParking).reduce((sum, item) => sum + Number(item.quantity || 0), 0)),
     coverageLabel: isCommitment ? 'Anual · 2 temporadas' : 'Temporada LMP 2026–2027',
     promotion,
     seats,
