@@ -459,6 +459,9 @@ export function validateSale(input) {
   if (!items.length) throw badRequest('La venta requiere al menos un concepto.');
   const result = {
     externalOrderNumber: cleanString(input.externalOrderNumber, { required: true, max: 80, field: 'externalOrderNumber' }),
+    commercialCategory: enumValue(input.commercialCategory ?? 'subscription', ['subscription', 'commitment'], 'commercialCategory', { required: true }),
+    coverageSeasons: integer(input.coverageSeasons ?? (input.commercialCategory === 'commitment' ? 2 : 1), 'coverageSeasons', { min: 1, max: 10, required: true }),
+    suiteNumber: cleanString(input.suiteNumber, { max: 40, field: 'suiteNumber' }),
     saleType: enumValue(input.saleType, ['new', 'renewal'], 'saleType', { required: true }),
     closeStage: enumValue(input.closeStage ?? (input.status === 'reserved' ? 'reserved' : 'won'), ['reserved', 'won'], 'closeStage', { required: true }),
     contactId: uuid(input.contactId, 'contactId', { required: true }),
@@ -501,6 +504,19 @@ export function validateSale(input) {
   };
   if (!/^[A-Za-z0-9][A-Za-z0-9._\-/]{0,79}$/.test(result.externalOrderNumber)) {
     throw badRequest('externalOrderNumber contiene caracteres no permitidos.');
+  }
+  if (result.commercialCategory === 'commitment') {
+    if (result.pricing) throw badRequest('Los compromisos de suite usan importe manual, no catálogo de abonos.');
+    if (!result.suiteNumber) throw badRequest('suiteNumber es obligatorio para un compromiso de suite.');
+    result.items = result.items.map((item) => ({
+      ...item,
+      product: `COMPROMISO ANUAL DE SUITE · ${result.coverageSeasons} TEMPORADAS`,
+      zone: `Suite ${result.suiteNumber}`
+    }));
+  } else if (result.coverageSeasons !== 1) {
+    throw badRequest('Un abono de temporada debe cubrir exactamente una temporada.');
+  } else {
+    result.suiteNumber = null;
   }
   if (result.status === 'confirmed' && !result.soldAt) {
     throw badRequest('soldAt es obligatoria para confirmar una venta.');

@@ -118,6 +118,18 @@ describe('adaptadores de contacto', () => {
     expect(sale.zone).toContain('Promoción 2x1')
   })
 
+  it('identifica compromisos históricos como anuales y extrae el número de suite', () => {
+    const sale = fromApiSale({
+      id: 'suite-sale', contactName: 'Empresa', status: 'reserved',
+      totalAmount: 250000, paidAmount: 50000,
+      items: [{ product: 'COMPROMISO ANUAL DE SUITE · 2 TEMPORADAS', quantity: 10, unitPrice: 25000, zone: 'Suite 14' }],
+    })
+    expect(sale.segment).toBe('Compromisos')
+    expect(sale.coverageLabel).toBe('Anual · 2 temporadas')
+    expect(sale.suiteNumber).toBe('14')
+    expect(sale.seats).toBe(10)
+  })
+
   it('marca como vencida una tarea abierta cuya fecha ya pasó', () => {
     const task = fromApiTask({
       id: 'task-1', status: 'pending', dueAt: '2020-01-01T00:00:00.000Z',

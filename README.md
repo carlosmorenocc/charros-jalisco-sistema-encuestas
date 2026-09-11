@@ -9,6 +9,8 @@ Landing page oficial para capturar opiniones y datos de aficionados de Charros d
 La rama `feat/crm-abonados-lmp-26-27` incorpora un CRM separado de las encuestas
 públicas:
 
+- Registro y filtro de compromisos anuales de suite con número de suite, dos temporadas, butacas, valor comprometido, cobros y saldo.
+
 - [`crm-web/`](crm-web/) — interfaz React/Vite para un proyecto independiente en Vercel.
 - [`crm-api/`](crm-api/) — API autenticada y PostgreSQL para Render.
 - [`crm-import/`](crm-import/) — auditor e importador controlado del Excel histórico.

@@ -193,6 +193,12 @@ function membershipUnitRow(row) {
 
 function saleRow(row) {
   const totalAmount = Number(row.effective_total_amount ?? row.total_amount);
+  const items = row.effective_items ?? row.items ?? [];
+  const inferredSegment = saleSegment(items, null);
+  const segment = row.commercial_category === 'commitment' ? 'Compromisos' : inferredSegment;
+  const itemText = items.map((item) => `${item.product ?? ''} ${item.zone ?? ''}`).join(' ');
+  const coverageMatch = itemText.match(/(\d+)\s+TEMPORADAS?/i);
+  const suiteZone = items.map((item) => item.zone).find((zone) => /^suite\s+/i.test(String(zone ?? '')));
   return {
     id: row.id,
     externalOrderNumber: row.effective_external_order_number ?? row.external_order_number,
@@ -212,7 +218,11 @@ function saleRow(row) {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     rowVersion: Number(row.row_version),
-    items: row.effective_items ?? row.items ?? [],
+    items,
+    segment,
+    commercialCategory: row.commercial_category ?? (segment === 'Compromisos' ? 'commitment' : 'subscription'),
+    coverageSeasons: Number(row.coverage_seasons ?? (segment === 'Compromisos' ? coverageMatch?.[1] ?? 2 : 1)),
+    suiteNumber: row.suite_number ?? (suiteZone ? suiteZone.replace(/^suite\s+/i, '').trim() : null),
     correctionId: row.correction_id ?? null,
     correctionReason: row.correction_reason ?? null,
     correctedAt: row.corrected_at ?? null,
@@ -1954,8 +1964,10 @@ export class PgCrmRepository {
                   WHERE su.holder_assignment_id=ha.id AND su.deleted_at IS NULL),'[]'::jsonb)
                 ) ORDER BY ha.is_primary DESC,ha.created_at)
                 FROM sale_holder_assignments ha WHERE ha.sale_id=s.id AND ha.deleted_at IS NULL), '[]'::jsonb) AS holder_assignments,
+              terms.commercial_category,terms.coverage_seasons,terms.suite_number,
               count(*) OVER()::integer AS total_count
        FROM effective_sales s JOIN contacts c ON c.id=s.effective_contact_id LEFT JOIN app_users u ON u.id=s.effective_executive_id
+       LEFT JOIN sale_commercial_terms terms ON terms.sale_id=s.id
        LEFT JOIN LATERAL (
          SELECT sum(p.amount + COALESCE(a.amount,0)) AS paid_amount
          FROM payments p
@@ -1990,8 +2002,10 @@ export class PgCrmRepository {
                   ORDER BY su.unit_number) FROM sale_seat_units su
                   WHERE su.holder_assignment_id=ha.id AND su.deleted_at IS NULL),'[]'::jsonb)
                 ) ORDER BY ha.is_primary DESC,ha.created_at)
-                FROM sale_holder_assignments ha WHERE ha.sale_id=s.id AND ha.deleted_at IS NULL), '[]'::jsonb) AS holder_assignments
+                FROM sale_holder_assignments ha WHERE ha.sale_id=s.id AND ha.deleted_at IS NULL), '[]'::jsonb) AS holder_assignments,
+              terms.commercial_category,terms.coverage_seasons,terms.suite_number
        FROM effective_sales s JOIN contacts c ON c.id=s.effective_contact_id LEFT JOIN app_users u ON u.id=s.effective_executive_id
+       LEFT JOIN sale_commercial_terms terms ON terms.sale_id=s.id
        LEFT JOIN LATERAL (
          SELECT sum(p.amount + COALESCE(a.amount,0)) AS paid_amount,
            jsonb_agg(jsonb_build_object('id',p.id,'amount',p.amount + COALESCE(a.amount,0),'method',p.method,
@@ -2027,6 +2041,7 @@ export class PgCrmRepository {
         seasonCode: data.seasonCode, ...data.pricing
       }) : null;
       const saleItems = saleItemsFromPricing(data, pricing);
+      const isCommitment = saleSegment(saleItems, pricing) === 'Compromisos';
       const soldQuantity = saleItems.reduce((sum, item) => sum + item.quantity, 0);
       const requestedHolders = data.holderAssignments?.length
         ? data.holderAssignments
@@ -2051,6 +2066,13 @@ export class PgCrmRepository {
         [data.externalOrderNumber, data.saleType, data.contactId, data.executiveId,
           data.seasonCode, data.status, data.soldAt ?? null, data.currency, total, paid,
           data.notes ?? null, actor.id]
+      );
+      await client.query(
+        `INSERT INTO sale_commercial_terms
+          (sale_id,commercial_category,coverage_seasons,suite_number,created_by,updated_by)
+         VALUES ($1,$2,$3,$4,$5,$5)`,
+        [result.rows[0].id, data.commercialCategory, data.coverageSeasons,
+          data.suiteNumber ?? null, actor.id]
       );
       for (const item of saleItems) {
         await client.query(
@@ -2108,7 +2130,7 @@ export class PgCrmRepository {
         );
       }
       const targetSubscriberStatus = data.saleType === 'renewal' ? 'current_subscriber' : 'new_subscriber';
-      if (contact.executiveId !== data.executiveId) {
+      if (!isCommitment && contact.executiveId !== data.executiveId) {
         await client.query(
           'UPDATE contact_assignments SET ended_at=now() WHERE contact_id=$1 AND ended_at IS NULL',
           [data.contactId]
@@ -2119,17 +2141,17 @@ export class PgCrmRepository {
           [data.contactId, data.executiveId, actor.id]
         );
       }
-      await client.query(
+      if (!isCommitment) await client.query(
         `UPDATE contacts SET subscriber_status=$2,commercial_stage=$3,executive_id=$4,
            updated_by=$5 WHERE id=$1`,
         [data.contactId, targetSubscriberStatus, data.closeStage, data.executiveId, actor.id]
       );
-      await client.query(
+      if (!isCommitment) await client.query(
         `UPDATE contacts SET subscriber_status=$2,commercial_stage=$3,updated_by=$4
          WHERE id=ANY($1::uuid[])`,
         [requestedHolders.map((holder) => holder.contactId), targetSubscriberStatus, data.closeStage, actor.id]
       );
-      if (data.closeStage === 'won') {
+      if (!isCommitment && data.closeStage === 'won') {
         // Each order gets its own membership so additional purchases increase active
         // seats instead of merely reactivating the contact's previous membership.
         const primaryItem = saleItems[0];
@@ -2154,14 +2176,19 @@ export class PgCrmRepository {
           }
         }
       }
-      const created = saleRow(result.rows[0]);
+      const created = saleRow({
+        ...result.rows[0], items: saleItems,
+        commercial_category: data.commercialCategory,
+        coverage_seasons: data.coverageSeasons,
+        suite_number: data.suiteNumber ?? null
+      });
       await this.audit(client, context, {
         action: 'sale.created', entityType: 'sale', entityId: created.id, after: created,
         metadata: { itemCount: saleItems.length, paymentCount: data.payments.length,
           externalOrderNumber: data.externalOrderNumber, saleType: data.saleType,
           closeStage: data.closeStage }
       });
-      return { ...created, items: saleItems, payments: data.payments };
+      return { ...created, payments: data.payments };
     });
   }
 
@@ -2177,6 +2204,7 @@ export class PgCrmRepository {
         seasonCode: data.seasonCode, ...data.pricing
       }) : null;
       const saleItems = saleItemsFromPricing(data, pricing);
+      const isCommitment = saleSegment(saleItems, pricing) === 'Compromisos';
       const total = pricing ? moneyFromCents(pricing.netAmount)
         : saleItems.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
       if (before.paidAmount > total) {
@@ -2197,6 +2225,18 @@ export class PgCrmRepository {
         [saleId, data.externalOrderNumber, data.saleType, data.contactId, data.executiveId,
           data.status, data.soldAt ?? null, total, data.notes ?? null, JSON.stringify(saleItems),
           data.reason, actor.id]
+      );
+      await client.query(
+        `INSERT INTO sale_commercial_terms
+          (sale_id,commercial_category,coverage_seasons,suite_number,created_by,updated_by)
+         VALUES ($1,$2,$3,$4,$5,$5)
+         ON CONFLICT (sale_id) DO UPDATE SET
+           commercial_category=EXCLUDED.commercial_category,
+           coverage_seasons=EXCLUDED.coverage_seasons,
+           suite_number=EXCLUDED.suite_number,
+           updated_by=EXCLUDED.updated_by`,
+        [saleId, data.commercialCategory, data.coverageSeasons,
+          data.suiteNumber ?? null, actor.id]
       );
       if (data.holderAssignments?.length) {
         const holderContacts = await client.query(
@@ -2264,12 +2304,12 @@ export class PgCrmRepository {
             saleItems[0]?.zone ?? null, contact.name, actor.id]
         );
       }
-      await client.query(
+      if (!isCommitment) await client.query(
         `UPDATE contacts SET subscriber_status=$2,commercial_stage=$3,executive_id=$4,updated_by=$5
          WHERE id=$1`,
         [data.contactId, targetSubscriberStatus, data.closeStage, data.executiveId, actor.id]
       );
-      await client.query(
+      if (!isCommitment) await client.query(
         `UPDATE contacts SET subscriber_status=$2,commercial_stage=$3,updated_by=$4
          WHERE id IN (SELECT contact_id FROM sale_holder_assignments WHERE sale_id=$1 AND deleted_at IS NULL)`,
         [saleId, targetSubscriberStatus, data.closeStage, actor.id]
@@ -2279,7 +2319,7 @@ export class PgCrmRepository {
          WHERE deleted_at IS NULL AND product LIKE $1`,
         [`%· ORDEN ${before.externalOrderNumber}`, actor.id]
       );
-      if (data.closeStage === 'won') {
+      if (!isCommitment && data.closeStage === 'won') {
         const primaryItem = saleItems[0];
         const membershipProduct = `${primaryItem.product} · ORDEN ${data.externalOrderNumber}`;
         const segment = saleSegment(saleItems, pricing);

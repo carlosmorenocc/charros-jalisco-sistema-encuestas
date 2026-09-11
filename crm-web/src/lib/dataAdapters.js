@@ -217,6 +217,10 @@ export function fromApiSale(sale) {
   const commercialStatus = ({ draft: 'Borrador', reserved: 'Apartada', confirmed: 'Confirmada', cancelled: 'Cancelada', refunded: 'Reembolsada' })[sale.status] || sale.status || 'Sin definir'
   const product = String(sale.items?.[0]?.product || '').toUpperCase()
   const rawZone = sale.items?.[0]?.zone || sale.items?.[0]?.zoneName || 'Sin definir'
+  const itemText = (sale.items || []).map((item) => `${item.product || ''} ${item.zone || ''}`).join(' ')
+  const isCommitment = sale.commercialCategory === 'commitment' || /compromiso|zona suites|^suite\s/im.test(itemText)
+  const coverageMatch = itemText.match(/(\d+)\s+TEMPORADAS?/i)
+  const suiteZone = (sale.items || []).map((item) => item.zone).find((zone) => /^suite\s+/i.test(String(zone || '')))
   const explicitTwoForOne = (sale.items || []).some((item) => String(item.product || '').toUpperCase().includes('2X1'))
   const inferredLegacyTwoForOne = /LATERAL.*1.*3/i.test(rawZone)
     && (sale.items || []).length === 1
@@ -229,6 +233,11 @@ export function fromApiSale(sale) {
     contact: sale.contactName || 'Contacto',
     kind: sale.saleType === 'renewal' ? 'Renovación' : sale.saleType === 'new' ? 'Nuevo' : movementKind,
     zone: promotion ? `${rawZone} · ${promotion}` : rawZone,
+    segment: sale.segment || (isCommitment ? 'Compromisos' : rawZone.match(/vip|suite/i) ? 'VIP' : rawZone.match(/preferente|premier|planta baja/i) ? 'Preferente' : 'General'),
+    commercialCategory: isCommitment ? 'commitment' : 'subscription',
+    coverageSeasons: isCommitment ? Number(sale.coverageSeasons || coverageMatch?.[1] || 2) : 1,
+    suiteNumber: sale.suiteNumber || (suiteZone ? suiteZone.replace(/^suite\s+/i, '').trim() : ''),
+    coverageLabel: isCommitment ? 'Anual · 2 temporadas' : 'Temporada LMP 2026–2027',
     promotion,
     seats,
     total,

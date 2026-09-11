@@ -1,7 +1,7 @@
 import React from 'react'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
-import App, { buildSaleItems, contactMatchesPatch, LoadingScreen, LoginScreen, revokeSessionSafely, salesForDashboard, updateContactWithVerification, verifyPersistedContactPatch } from './App'
+import App, { buildCommitmentItems, buildSaleItems, contactMatchesPatch, LoadingScreen, LoginScreen, revokeSessionSafely, salesForDashboard, updateContactWithVerification, verifyPersistedContactPatch } from './App'
 
 describe('CRM web en modo demostración', () => {
   it('calcula 2x1 con precio oficial, unidades con cargo y bonificadas', () => {
@@ -9,6 +9,14 @@ describe('CRM web en modo demostración', () => {
       { product: 'ABONO NUEVO · PROMOCIÓN 2X1 (CON CARGO)', zone: 'Lateral 1a-3a', quantity: 2, unitPrice: 7480 },
       { product: 'ABONO NUEVO · PROMOCIÓN 2X1 (BONIFICADO)', zone: 'Lateral 1a-3a', quantity: 1, unitPrice: 0 },
     ])
+  })
+
+  it('distribuye el valor anual de una suite entre butacas sin perder centavos', () => {
+    const items = buildCommitmentItems({ suiteNumber: '14', quantity: 3, totalAmount: 100000, coverageSeasons: 2 })
+    expect(items.reduce((sum, item) => sum + item.quantity, 0)).toBe(3)
+    expect(items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0)).toBe(100000)
+    expect(items.every((item) => item.zone === 'Suite 14')).toBe(true)
+    expect(items.every((item) => item.product.includes('2 TEMPORADAS'))).toBe(true)
   })
 
   it('muestra la marca y el mensaje acordado durante la recarga', () => {
