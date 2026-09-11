@@ -198,6 +198,24 @@ test('venta confirmada exige fecha y los pagos deben ser positivos', () => {
   assert.equal(validatePayment({ amount: 500, method: 'card' }).amount, 500);
 });
 
+test('compromiso anual exige suite, conserva butacas e importe manual sin catálogo', () => {
+  const base = {
+    externalOrderNumber: 'SUITE-2026-01', commercialCategory: 'commitment', coverageSeasons: 2,
+    saleType: 'new', closeStage: 'reserved', contactId: UUID, executiveId: UUID,
+    seasonCode: 'LMP-2026-27', status: 'reserved', soldAt: '2026-09-11T12:00:00.000Z',
+    items: [{ product: 'captura manual', zone: 'temporal', quantity: 8, unitPrice: 12500 }]
+  };
+  assert.throws(() => validateSale(base), /suiteNumber/);
+  assert.throws(() => validateSale({ ...base, suiteNumber: '14', pricing: {
+    localityCode: 'vip', discountCode: 'regular', seatCount: 8
+  } }), /importe manual/);
+  const value = validateSale({ ...base, suiteNumber: '14' });
+  assert.equal(value.coverageSeasons, 2);
+  assert.equal(value.suiteNumber, '14');
+  assert.equal(value.items[0].zone, 'Suite 14');
+  assert.match(value.items[0].product, /COMPROMISO ANUAL DE SUITE · 2 TEMPORADAS/);
+});
+
 test('distribución multititular conserva exactamente la cantidad de la orden', () => {
   const secondary = '00000000-0000-4000-8000-000000000002';
   const base = {

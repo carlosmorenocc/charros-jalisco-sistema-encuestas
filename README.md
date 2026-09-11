@@ -15,6 +15,10 @@ Landing page oficial para capturar opiniones y datos de aficionados de Charros d
 - ✓ Mock submit para pruebas locales
 - ✓ Tests unitarios incluidos
 
+### CRM de abonados
+
+- Registro y filtro de compromisos anuales de suite con número de suite, dos temporadas, butacas, valor comprometido, cobros y saldo.
+
 ## 🚀 Quick Start
 
 ### 1. Instala dependencias
