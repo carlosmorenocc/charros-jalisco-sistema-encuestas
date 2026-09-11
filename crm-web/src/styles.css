@@ -368,6 +368,8 @@ select:focus, input:focus, textarea:focus { outline: 0; border-color: var(--blue
 .search-field input { width: 100%; height: 37px; padding: 0 12px 0 37px; font-size: 11px; }
 .toolbar-filters { display: flex; align-items: center; gap: 7px; margin-left: auto; }
 .toolbar-filters select { height: 37px; min-width: 123px; padding: 0 30px 0 10px; font-size: 10px; font-weight: 600; }
+.filter-multiselect--toolbar { min-width: 145px; }
+.filter-multiselect--toolbar > summary { height: 37px; font-size: 10px; }
 .filter-button { display: inline-flex; align-items: center; gap: 6px; height: 37px; padding: 0 10px; color: #4c586b; background: white; border: 1px solid var(--line-dark); border-radius: 7px; font-size: 10px; font-weight: 600; }
 .filter-count { display: grid; place-items: center; width: 16px; height: 16px; color: white; background: var(--blue-700); border-radius: 50%; font-size: 8px; }
 .active-filters { display: flex; align-items: center; gap: 6px; min-height: 40px; padding: 6px 16px; background: #fafbfc; border-top: 1px solid #eef1f4; border-bottom: 1px solid var(--line); overflow-x: auto; }

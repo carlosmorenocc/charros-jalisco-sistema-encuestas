@@ -4723,25 +4723,48 @@ function SalesPage({
               <option>Parcial</option>
               <option>Pagado</option>
             </select>
-            <select
-              multiple
-              size="5"
-              aria-label="Tipos de compra"
-              value={segments}
-              onChange={(event) =>
-                setSegments(
-                  [...event.target.selectedOptions].map(
-                    (option) => option.value,
-                  ),
-                )
-              }
-            >
-              <option>VIP</option>
-              <option>Preferente</option>
-              <option>General</option>
-              <option>Compromisos</option>
-              <option>Estacionamientos</option>
-            </select>
+            <details className="filter-multiselect filter-multiselect--toolbar">
+              <summary aria-label="Tipos de compra">
+                {segments.length === 1
+                  ? segments[0]
+                  : segments.length
+                    ? `${segments.length} seleccionados`
+                    : "Todos los tipos"}
+              </summary>
+              <div className="filter-multiselect__menu">
+                <button
+                  type="button"
+                  className={!segments.length ? "active" : ""}
+                  onClick={(event) => {
+                    setSegments([]);
+                    event.currentTarget.closest("details")?.removeAttribute("open");
+                  }}
+                >
+                  Todos los tipos
+                </button>
+                {["VIP", "Preferente", "General", "Compromisos", "Estacionamientos"].map(
+                  (facet) => {
+                    const selected = segments.includes(facet);
+                    return (
+                      <label key={facet}>
+                        <input
+                          type="checkbox"
+                          checked={selected}
+                          onChange={() =>
+                            setSegments(
+                              selected
+                                ? segments.filter((item) => item !== facet)
+                                : [...segments, facet],
+                            )
+                          }
+                        />
+                        <span>{facet}</span>
+                      </label>
+                    );
+                  },
+                )}
+              </div>
+            </details>
             <select
               aria-label="Ejecutivo"
               value={owner}
