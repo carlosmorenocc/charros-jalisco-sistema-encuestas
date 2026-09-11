@@ -2254,30 +2254,6 @@ function GlobalFilters({
         />
       </label>
       <label>
-        <span>Tipo de compra</span>
-        <select
-          multiple
-          size="5"
-          disabled={disabled}
-          value={filters.purchaseFacets || []}
-          onChange={(event) =>
-            onChange({
-              ...filters,
-              purchaseFacets: [...event.target.selectedOptions].map(
-                (option) => option.value,
-              ),
-            })
-          }
-        >
-          <option>VIP</option>
-          <option>Preferente</option>
-          <option>General</option>
-          <option>Compromisos</option>
-          <option>Estacionamientos</option>
-        </select>
-        <small>Ctrl/Cmd permite combinar opciones.</small>
-      </label>
-      <label>
         <span>Hasta</span>
         <input
           disabled={disabled}
@@ -2293,6 +2269,56 @@ function GlobalFilters({
           }
         />
       </label>
+      <div className="global-filter-field">
+        <span>Tipo de compra</span>
+        <details className="filter-multiselect">
+          <summary
+            aria-label="Tipo de compra"
+            aria-disabled={disabled}
+            onClick={(event) => disabled && event.preventDefault()}
+          >
+            {filters.purchaseFacets?.length
+              ? filters.purchaseFacets.length === 1
+                ? filters.purchaseFacets[0]
+                : `${filters.purchaseFacets.length} seleccionados`
+              : "Todos"}
+          </summary>
+          <div className="filter-multiselect__menu">
+            <button
+              type="button"
+              className={!filters.purchaseFacets?.length ? "active" : ""}
+              onClick={(event) => {
+                onChange({ ...filters, purchaseFacets: [] });
+                event.currentTarget.closest("details")?.removeAttribute("open");
+              }}
+            >
+              Todos
+            </button>
+            {["VIP", "Preferente", "General", "Compromisos", "Estacionamientos"].map(
+              (facet) => {
+                const selected = (filters.purchaseFacets || []).includes(facet);
+                return (
+                  <label key={facet}>
+                    <input
+                      type="checkbox"
+                      checked={selected}
+                      onChange={() =>
+                        onChange({
+                          ...filters,
+                          purchaseFacets: selected
+                            ? filters.purchaseFacets.filter((item) => item !== facet)
+                            : [...(filters.purchaseFacets || []), facet],
+                        })
+                      }
+                    />
+                    <span>{facet}</span>
+                  </label>
+                );
+              },
+            )}
+          </div>
+        </details>
+      </div>
       <label>
         <span>Ejecutivo</span>
         <select
