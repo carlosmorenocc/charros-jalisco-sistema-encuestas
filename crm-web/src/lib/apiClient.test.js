@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import { readFileSync } from 'node:fs'
 import { createApiClient, encodeQuery, resolveApiBaseUrl } from './apiClient'
 
 function jsonResponse(body, status = 200) {
@@ -6,6 +7,12 @@ function jsonResponse(body, status = 200) {
 }
 
 describe('apiClient', () => {
+  it('mantiene el fallback SPA fuera de las rutas del API en Vercel', () => {
+    const config = JSON.parse(readFileSync('vercel.json', 'utf8'))
+    expect(config.rewrites[0].source).toBe('/api/v1/:path*')
+    expect(config.rewrites[1].source).toContain('(?!api/v1')
+  })
+
   it('serializa filtros sin valores vacíos', () => {
     expect(encodeQuery({ search: 'Mariana', page: 2, empty: '', status: ['renewing', 'prospect'], lastChannel: 'whatsapp', sort: 'lastContact', order: 'desc' }))
       .toBe('?search=Mariana&page=2&status=renewing&status=prospect&lastChannel=whatsapp&sort=lastContact&order=desc')

@@ -5,7 +5,7 @@
   "outputDirectory": "dist",
   "rewrites": [
     { "source": "/api/v1/:path*", "destination": "https://charros-crm-api-staging.onrender.com/api/v1/:path*" },
-    { "source": "/(.*)", "destination": "/index.html" }
+    { "source": "/((?!api/v1(?:/|$)).*)", "destination": "/index.html" }
   ],
   "headers": [
     {
