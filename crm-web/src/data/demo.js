@@ -112,6 +112,15 @@ export const demoContacts = [
     seasons: 4,
     seats: 2,
     zone: 'Central preferente',
+    associatedOrders: [{
+      saleId: 'DEMO-SALE-001', orderNumber: '15420001', quantity: 2,
+      segment: 'Preferente', section: 'Preferente', localityName: 'Central preferente',
+      status: 'confirmed', isPrimary: true, soldAt: '2026-08-20T18:00:00.000Z',
+      seatDetails: [
+        { id: 'DEMO-SEAT-001', unitNumber: 1, seatIdentifier: 'P-A-12' },
+        { id: 'DEMO-SEAT-002', unitNumber: 2, seatIdentifier: 'P-A-13' },
+      ],
+    }],
     currentMembership: demoMembership('DEMO-001', 'active', 'Preferente', ['P-A-12', 'P-A-13']),
     lastContact: '21 ago 2026 · 09:40',
     nextTask: 'Hoy · 13:00',

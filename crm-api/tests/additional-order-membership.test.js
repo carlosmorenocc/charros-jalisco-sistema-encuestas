@@ -58,4 +58,5 @@ test('detalle de contacto conserva verdad comercial, importes y butacas de la or
   assert.match(repository, /'discountName',terms\.discount_name/);
   assert.match(repository, /LEFT JOIN sale_commercial_terms terms ON terms\.sale_id=es\.id/);
   assert.match(repository, /payment_adjustments pa WHERE pa\.payment_id=p\.id/);
+  assert.match(repository, /async listContacts[\s\S]*'localityName',terms\.locality_name[\s\S]*sale_seat_units su/);
 });

@@ -1405,6 +1405,8 @@ function App() {
         membership,
         kind: contact.kind,
         focusMembership: Boolean(options.focusMembership),
+        initialPanel: options.initialPanel || "contact",
+        orderNumber: options.orderNumber || null,
       });
     } catch (error) {
       if (requestId !== latestDrawerRequest.current) return;
@@ -3656,7 +3658,7 @@ function ContactRow({ contact, isPortfolio, onEdit }) {
       </td>
       {isPortfolio && (
         <td>
-          <MembershipCell contact={contact} onEdit={onEdit} />
+          <OrderSummaryCell contact={contact} onEdit={onEdit} />
         </td>
       )}
       <td>
@@ -3715,6 +3717,25 @@ function ContactRow({ contact, isPortfolio, onEdit }) {
         </button>
       </td>
     </tr>
+  );
+}
+
+function OrderSummaryCell({ contact, onEdit }) {
+  const orders = contact.associatedOrders || [];
+  if (!orders.length) return <div className="membership-cell"><strong>Sin orden asignada</strong><small>No contabiliza abonos vendidos</small></div>;
+  const totalSeats = orders.reduce((sum, order) => sum + Number(order.quantity || 0), 0);
+  return (
+    <div className="membership-cell order-summary-cell">
+      <strong>{totalSeats} {totalSeats === 1 ? "abono" : "abonos"} en {orders.length} {orders.length === 1 ? "orden" : "órdenes"}</strong>
+      {orders.map((order) => {
+        const seats = (order.seatDetails || []).map((seat) => seat.seatIdentifier).filter(Boolean);
+        return <button key={order.saleId || order.orderNumber} type="button" className="order-summary-link" onClick={() => onEdit(contact, { initialPanel: "orders", orderNumber: order.orderNumber })}>
+          <span>Orden {order.orderNumber}</span>
+          <small>{order.section || order.segment || "Sin zona"}{order.localityName || order.zone ? ` · ${order.localityName || order.zone}` : ""}</small>
+          <small title={seats.join(", ") || undefined}>{seats.length ? seats.join(", ") : "Butacas pendientes"}</small>
+        </button>;
+      })}
+    </div>
   );
 }
 
@@ -6031,7 +6052,7 @@ function ContactDrawer({
   const [membershipSaving, setMembershipSaving] = useState(false);
   const [actionSaving, setActionSaving] = useState("");
   const [actionError, setActionError] = useState("");
-  const [activePanel, setActivePanel] = useState("contact");
+  const [activePanel, setActivePanel] = useState(drawer.initialPanel || "contact");
   const headingRef = useRef(null);
   const [interactionDraft, setInteractionDraft] = useState({
     channel: "phone",
@@ -6591,14 +6612,20 @@ function ContactDrawer({
               >
                 <div className="membership-orders-heading">
                   <div>
-                    <span className="eyebrow">Fuente comercial</span>
+                    <span className="eyebrow">Detalle operativo</span>
                     <h3 id="associated-sales-title">Órdenes asociadas</h3>
                   </div>
+                  {mayManageMembership && (
+                    <button type="button" className="button button--secondary" onClick={() => onRequestSaleClosure(existing, "Apartado")}>
+                      <Icon name="plus" size={16} />
+                      Registrar otra orden
+                    </button>
+                  )}
                 </div>
                 {existing.associatedOrders?.length ? (
                   <div className="associated-sales-list">
                     {existing.associatedOrders.map((order) => (
-                      <article key={`${order.saleId}-${order.orderNumber}`}>
+                      <article key={`${order.saleId}-${order.orderNumber}`} className={String(order.orderNumber) === String(drawer.orderNumber) ? "associated-order--target" : ""}>
                         <div>
                           <strong>Orden {order.orderNumber}</strong>
                           <StatusPill>
@@ -6639,7 +6666,7 @@ function ContactDrawer({
                 )}
               </section>
             )}
-            {editing && membershipStatusForContact(existing) && (
+            {false && editing && membershipStatusForContact(existing) && (
               <section
                 className="membership-orders order-panel-section"
                 aria-labelledby="membership-orders-title"

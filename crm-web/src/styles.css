@@ -428,6 +428,11 @@ select:focus, input:focus, textarea:focus { outline: 0; border-color: var(--blue
 .membership-commercial-value { max-width: 210px; color: #657186; font-size: 7.5px; line-height: 1.35; }
 .membership-commercial-value { color: #2f765a; font-size: 8px; font-weight: 800; white-space: nowrap; }
 .membership-cell button { padding: 2px 0; color: var(--blue-700); background: transparent; border: 0; font-size: 8px; font-weight: 800; text-decoration: underline; text-underline-offset: 2px; }
+.order-summary-cell { gap: 6px; }
+.membership-cell .order-summary-link { display: grid; width: 100%; gap: 2px; padding: 6px 7px; color: var(--blue-800); background: #f7fafd; border: 1px solid #e2eaf3; border-radius: 6px; text-align: left; text-decoration: none; }
+.membership-cell .order-summary-link:hover { background: var(--blue-50); border-color: #bad0e6; }
+.membership-cell .order-summary-link span { font-size: 8.5px; }
+.membership-cell .order-summary-link small { max-width: 200px; font-weight: 500; }
 .muted { color: #87909e; }
 .danger-text { color: var(--red-700) !important; }
 .owner-cell { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
@@ -629,6 +634,7 @@ select:focus, input:focus, textarea:focus { outline: 0; border-color: var(--blue
 .associated-order-seats li { display: flex; justify-content: space-between; gap: 8px; padding: 7px 8px; border-radius: 6px; background: #fff; color: var(--muted); font-size: 9px; }
 .associated-order-seats li b { color: var(--blue-900); text-align: right; }
 .associated-order-seats p { margin: 6px 0 0; color: var(--muted); font-size: 9px; }
+.associated-sales-list article.associated-order--target { border-color: #75a7d4; box-shadow: 0 0 0 2px rgba(24,104,173,.12); }
 .contact-personalization > p { margin: 0 0 12px; color: var(--muted); font-size: 10px; line-height: 1.5; }
 .contact-personalization > details { margin-bottom: 9px; border: 1px solid var(--line); border-radius: 9px; }
 .contact-personalization > details > summary { padding: 11px 12px; color: var(--blue-900); cursor: pointer; font-size: 10px; font-weight: 800; }

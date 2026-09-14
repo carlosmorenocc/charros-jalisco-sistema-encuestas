@@ -1089,8 +1089,15 @@ export class PgCrmRepository {
                  'saleId',es.id,'orderNumber',es.effective_external_order_number,
                  'quantity',ha.quantity,'segment',ha.segment,'zone',ha.zone,
                  'status',es.effective_status,'isPrimary',ha.is_primary,
-                 'soldAt',es.effective_sold_at) ORDER BY es.effective_sold_at DESC)
+                 'soldAt',es.effective_sold_at,'section',terms.section,
+                 'localityName',terms.locality_name,
+                 'seatDetails',COALESCE((SELECT jsonb_agg(jsonb_build_object(
+                   'id',su.id,'unitNumber',su.unit_number,'seatIdentifier',su.seat_identifier
+                 ) ORDER BY su.unit_number) FROM sale_seat_units su
+                 WHERE su.holder_assignment_id=ha.id AND su.deleted_at IS NULL),'[]'::jsonb)
+                 ) ORDER BY es.effective_sold_at DESC)
                  FROM sale_holder_assignments ha JOIN effective_sales es ON es.id=ha.sale_id
+                 LEFT JOIN sale_commercial_terms terms ON terms.sale_id=es.id
                  WHERE ha.contact_id=c.id AND ha.deleted_at IS NULL AND es.deleted_at IS NULL), '[]'::jsonb) AS associated_orders,
                ${SELECTED_MEMBERSHIP_COLUMNS},
                count(*) OVER()::integer AS total_count

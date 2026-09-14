@@ -74,29 +74,26 @@ describe('CRM web en modo demostración', () => {
     expect(await screen.findByText(/La interacción se registró correctamente/i)).toBeInTheDocument()
   })
 
-  it('agrega la columna de abonos y edita sección y butacas desde la ficha', async () => {
+  it('resume abonos desde órdenes y abre directamente su detalle operativo', async () => {
     render(<App />)
     fireEvent.click(await screen.findByRole('button', { name: /Cartera y Renovaciones/i }))
 
     expect(await screen.findByRole('columnheader', { name: 'Abonos' })).toBeInTheDocument()
-    expect(await screen.findByText('Preferente · 2 abonos')).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Editar abonos de Mariana López' }))
+    expect(await screen.findByText('2 abonos en 1 orden')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /Orden 15420001/ }))
     expect(await screen.findByRole('dialog')).toBeInTheDocument()
-    expect(screen.getByLabelText(/Sección/)).toHaveValue('Preferente')
-    fireEvent.change(screen.getByLabelText(/Butaca 1/), { target: { value: 'P-A-99' } })
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Guardar abonos' })).toBeEnabled())
-    fireEvent.click(screen.getByRole('button', { name: 'Guardar abonos' }))
-
-    expect(await screen.findByText('Los abonos y butacas se actualizaron correctamente.')).toBeInTheDocument()
-    expect(screen.getByDisplayValue('P-A-99')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Orden', pressed: true })).toBeInTheDocument()
+    expect(screen.getByText('Detalle operativo')).toBeInTheDocument()
+    expect(screen.getAllByText('P-A-12').length).toBeGreaterThan(0)
+    expect(screen.queryByText('Abonos del contacto')).not.toBeInTheDocument()
   })
 
   it('inicia una orden adicional desde Ventas sin fabricar una membresía aislada', async () => {
     render(<App />)
     fireEvent.click(await screen.findByRole('button', { name: /Cartera y Renovaciones/i }))
-    fireEvent.click(screen.getByRole('button', { name: 'Editar abonos de Mariana López' }))
+    fireEvent.click(screen.getByRole('button', { name: /Orden 15420001/ }))
 
-    expect(await screen.findByText('1 orden registrada para la temporada actual.')).toBeInTheDocument()
+    expect(await screen.findByText('Detalle operativo')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Registrar otra orden' }))
 
     expect(await screen.findByRole('heading', { name: 'Nueva venta' })).toBeInTheDocument()
