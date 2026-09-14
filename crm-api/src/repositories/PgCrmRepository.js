@@ -1124,7 +1124,15 @@ export class PgCrmRepository {
                  'saleId',es.id,'orderNumber',es.effective_external_order_number,
                  'quantity',ha.quantity,'segment',ha.segment,'zone',ha.zone,
                  'status',es.effective_status,'isPrimary',ha.is_primary,
-                 'soldAt',es.effective_sold_at) ORDER BY es.effective_sold_at DESC)
+                 'soldAt',es.effective_sold_at,
+                 'totalAmount',es.effective_total_amount,
+                 'paidAmount',COALESCE((SELECT sum(p.amount) FROM payments p WHERE p.sale_id=es.id AND p.voided_at IS NULL),0),
+                 'seatDetails',COALESCE((SELECT jsonb_agg(jsonb_build_object(
+                   'id',su.id,'rowVersion',su.row_version,'unitNumber',su.unit_number,
+                   'seatIdentifier',su.seat_identifier,'jerseySize',su.jersey_size,
+                   'personalization',su.seat_personalization) ORDER BY su.unit_number)
+                   FROM sale_seat_units su WHERE su.holder_assignment_id=ha.id AND su.deleted_at IS NULL),'[]'::jsonb)
+                 ) ORDER BY es.effective_sold_at DESC)
                  FROM sale_holder_assignments ha JOIN effective_sales es ON es.id=ha.sale_id
                  WHERE ha.contact_id=c.id AND ha.deleted_at IS NULL AND es.deleted_at IS NULL), '[]'::jsonb) AS associated_orders,
                ${SELECTED_MEMBERSHIP_COLUMNS}
@@ -1152,6 +1160,43 @@ export class PgCrmRepository {
       [id]
     );
     return membershipRow(result.rows[0]);
+  }
+
+  async updateContactSeatCustomization(contactId, seatUnitId, data, actor, context, expectedVersion) {
+    return withTransaction(this.pool, async (client) => {
+      const locked = await client.query(
+        `SELECT su.* FROM sale_seat_units su
+         JOIN sale_holder_assignments ha ON ha.id=su.holder_assignment_id AND ha.deleted_at IS NULL
+         JOIN effective_sales es ON es.id=ha.sale_id AND es.deleted_at IS NULL
+         WHERE su.id=$1 AND ha.contact_id=$2 AND su.deleted_at IS NULL FOR UPDATE OF su`,
+        [seatUnitId, contactId]
+      );
+      const before = locked.rows[0];
+      if (!before) throw notFound('Butaca asociada');
+      if (Number(before.row_version) !== expectedVersion) {
+        throw conflict('La personalización cambió desde que abriste el contacto. Actualiza la vista.');
+      }
+      const combined = data.personalizationName
+        ? `${data.personalizationName}${data.personalizationNumber ? ` - ${data.personalizationNumber}` : ''}`
+        : null;
+      const result = await client.query(
+        `UPDATE sale_seat_units SET jersey_size=$1,seat_personalization=$2,
+           updated_by=$3,row_version=row_version+1
+         WHERE id=$4 AND row_version=$5 RETURNING *`,
+        [data.jerseySize, combined, actor.id, seatUnitId, expectedVersion]
+      );
+      if (!result.rows[0]) throw conflict('La personalización cambió desde que abriste el contacto. Actualiza la vista.');
+      const after = result.rows[0];
+      await this.audit(client, context, {
+        action: 'contact.seat_customization_updated', entityType: 'sale_seat_unit', entityId: seatUnitId,
+        before, after, metadata: { contactId }
+      });
+      return {
+        id: after.id, rowVersion: Number(after.row_version), unitNumber: Number(after.unit_number),
+        seatIdentifier: after.seat_identifier, jerseySize: after.jersey_size,
+        personalization: after.seat_personalization
+      };
+    });
   }
 
   async getInteraction(id, { client = this.pool } = {}) {

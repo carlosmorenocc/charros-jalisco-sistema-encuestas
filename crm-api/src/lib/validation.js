@@ -580,6 +580,26 @@ export function validateSaleCorrection(input) {
   return { ...sale, payments: [], reason };
 }
 
+export function validateSeatCustomization(input) {
+  if (!isObject(input)) throw badRequest('La personalización debe ser un objeto.');
+  const rawName = cleanString(input.personalizationName, { max: 10, field: 'personalizationName' });
+  const personalizationName = rawName ? rawName.toLocaleUpperCase('es-MX') : null;
+  if (personalizationName && !/^[\p{L} ]{1,10}$/u.test(personalizationName)) {
+    throw badRequest('personalizationName admite de 1 a 10 letras y espacios.');
+  }
+  const personalizationNumber = cleanString(input.personalizationNumber, { max: 2, field: 'personalizationNumber' });
+  if (personalizationNumber && !/^(0[1-9]|[1-9][0-9])$/.test(personalizationNumber)) {
+    throw badRequest('personalizationNumber debe estar entre 01 y 99 con dos dígitos.');
+  }
+  if (personalizationNumber && !personalizationName) {
+    throw badRequest('Captura el nombre para guardar un número de personalización.');
+  }
+  const jerseySize = input.jerseySize
+    ? enumValue(input.jerseySize, ['S', 'M', 'L', 'XL', '2XL'], 'jerseySize')
+    : null;
+  return { personalizationName, personalizationNumber, jerseySize };
+}
+
 export function validateSaleCancellation(input) {
   if (!isObject(input)) throw badRequest('El cuerpo de la anulación debe ser un objeto.');
   const reason = cleanString(input.reason, { required: true, max: 500, field: 'reason' });

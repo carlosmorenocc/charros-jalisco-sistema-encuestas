@@ -132,6 +132,7 @@ export function createApiClient({
     membershipPricingQuote: (params) => request(`/pricing/subscriptions/quote${encodeQuery(params)}`),
     createMembership: (id, payload) => request(`/contacts/${encodeURIComponent(id)}/memberships`, { method: 'POST', body: payload }),
     updateMembership: (id, payload, rowVersion) => request(`/memberships/${encodeURIComponent(id)}`, { method: 'PATCH', headers: rowVersion == null ? {} : { 'If-Match': String(rowVersion) }, body: payload }),
+    updateSeatCustomization: (contactId, seatUnitId, payload, rowVersion) => request(`/contacts/${encodeURIComponent(contactId)}/order-seats/${encodeURIComponent(seatUnitId)}`, { method: 'PATCH', headers: { 'If-Match': String(rowVersion) }, body: payload }),
     tasks: (filters) => request(`/tasks${encodeQuery(filters)}`),
     updateTask: (id, payload, rowVersion) => request(`/tasks/${encodeURIComponent(id)}`, { method: 'PATCH', headers: rowVersion == null ? {} : { 'If-Match': String(rowVersion) }, body: payload }),
     sales: (filters) => request(`/sales${encodeQuery(filters)}`),

@@ -614,6 +614,28 @@ select:focus, input:focus, textarea:focus { outline: 0; border-color: var(--blue
 .large-avatar { width: 43px; height: 43px; font-size: 12px; }
 .contact-summary > div { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
 .contact-summary > div > span:last-child { display: flex; align-items: center; gap: 5px; color: #718095; font-size: 9px; }
+.contact-panel-tabs { position: sticky; z-index: 5; top: -18px; display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 7px; padding: 8px 0 14px; margin-bottom: 14px; background: white; }
+.contact-panel-tabs button { display: flex; align-items: center; justify-content: center; gap: 7px; min-height: 42px; padding: 7px; color: #627086; background: #f8fafc; border: 1px solid var(--line); border-radius: 9px; font-size: 9px; font-weight: 700; }
+.contact-panel-tabs button.active { color: var(--blue-800); background: var(--blue-50); border-color: #b9cee4; box-shadow: 0 2px 8px rgba(18,76,132,.08); }
+.contact-drawer-form .contact-panel-section, .contact-drawer-form .order-panel-section, .contact-drawer-form .personalization-panel-section, .contact-drawer-form .inseason-panel-section { display: none; }
+.contact-drawer-form[data-active-panel='contact'] .contact-panel-section, .contact-drawer-form[data-active-panel='orders'] .order-panel-section, .contact-drawer-form[data-active-panel='personalization'] .personalization-panel-section, .contact-drawer-form[data-active-panel='inseason'] .inseason-panel-section { display: block; }
+.associated-order-detail { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 6px; margin: 10px 0 0; }
+.associated-order-detail div { display: grid; gap: 2px; padding: 7px; background: #f8fafc; border-radius: 6px; }
+.associated-order-detail dt { color: var(--muted); font-size: 8px; font-weight: 700; text-transform: uppercase; }
+.associated-order-detail dd { margin: 0; color: var(--ink); font-size: 10px; font-weight: 700; }
+.contact-personalization > p { margin: 0 0 12px; color: var(--muted); font-size: 10px; line-height: 1.5; }
+.contact-personalization > details { margin-bottom: 9px; border: 1px solid var(--line); border-radius: 9px; }
+.contact-personalization > details > summary { padding: 11px 12px; color: var(--blue-900); cursor: pointer; font-size: 10px; font-weight: 800; }
+.personalization-seat-list { display: grid; gap: 9px; padding: 0 10px 10px; }
+.personalization-seat-list article { padding: 11px; background: #f8fafc; border: 1px solid #edf1f5; border-radius: 8px; }
+.personalization-seat-list article > header { display: flex; justify-content: space-between; gap: 10px; margin-bottom: 9px; color: var(--muted); font-size: 9px; }
+.personalization-seat-list article > header strong { color: var(--blue-900); }
+.personalization-fields { display: grid; grid-template-columns: 1.4fr .75fr 1fr auto; align-items: end; gap: 8px; }
+.personalization-fields .button { height: 38px; }
+.future-inseason { padding: 34px 20px; border: 1px dashed #c9d7e7; border-radius: 12px; background: linear-gradient(145deg,#f7fbff,#fffaf0); text-align: center; }
+.future-inseason__icon { display: block; margin-bottom: 10px; font-size: 32px; }
+.future-inseason h3 { margin: 0 0 7px; color: var(--blue-900); font-size: 15px; }
+.future-inseason p { max-width: 430px; margin: 0 auto; color: var(--muted); font-size: 10px; line-height: 1.55; }
 .drawer fieldset { padding: 0; margin: 0 0 22px; border: 0; }
 .drawer fieldset:disabled { opacity: .68; }
 .drawer legend { width: 100%; padding-bottom: 8px; margin-bottom: 12px; color: #25334a; border-bottom: 1px solid var(--line); font-size: 11px; font-weight: 800; }
@@ -716,6 +738,8 @@ select:focus, input:focus, textarea:focus { outline: 0; border-color: var(--blue
 }
 
 @media (max-width: 720px) {
+  .contact-panel-tabs { grid-template-columns: repeat(2,1fr); }
+  .personalization-fields, .associated-order-detail { grid-template-columns: 1fr 1fr; }
   .demo-banner { justify-content: flex-start; padding-left: 14px; font-size: 10px; }
   .topbar { padding: 0 12px; }
   .brand-copy strong { font-size: 12px; }

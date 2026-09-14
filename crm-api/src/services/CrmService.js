@@ -90,6 +90,14 @@ export class CrmService {
     return this.repository.updateContact(id, data, actor, context, expectedVersion);
   }
 
+  async updateSeatCustomization(actor, contactId, seatUnitId, data, context, expectedVersion) {
+    requirePermission(actor, PERMISSIONS.MEMBERSHIP_WRITE);
+    await this.getContact(actor, contactId);
+    return this.repository.updateContactSeatCustomization(
+      contactId, seatUnitId, data, actor, context, expectedVersion
+    );
+  }
+
   async deleteContact(actor, id, reason, context, expectedVersion) {
     requirePermission(actor, PERMISSIONS.CONTACT_DELETE);
     if (!reason || reason.trim().length < 5) throw badRequest('La eliminación requiere un motivo de al menos 5 caracteres.');

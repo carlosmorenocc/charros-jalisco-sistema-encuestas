@@ -42,3 +42,11 @@ test('ventas usa el titular conciliado y conserva zona y descuento estructurados
   assert.match(migration, /ADD COLUMN locality_code/);
   assert.match(migration, /ADD COLUMN discount_code/);
 });
+
+test('contacto expone y actualiza personalización conservando la orden propietaria', async () => {
+  const repository = await readFile(repositoryUrl, 'utf8');
+  assert.match(repository, /'seatDetails'.*sale_seat_units/s);
+  assert.match(repository, /updateContactSeatCustomization/);
+  assert.match(repository, /ha\.contact_id=\$2/);
+  assert.match(repository, /contact\.seat_customization_updated/);
+});

@@ -13,6 +13,7 @@ import {
   validateSale,
   validateSaleCorrection,
   validateSaleCancellation,
+  validateSeatCustomization,
   validatePayment,
   validateTask,
   validateUuid
@@ -172,6 +173,19 @@ export function createApiRouter({ service, config }) {
       req.actor,
       validateUuid(req.params.id),
       validateMembershipSeatAssignment(req.body),
+      req.auditContext,
+      requireRowVersion(req)
+    );
+    res.setHeader('etag', `"${updated.rowVersion}"`);
+    data(res, updated);
+  }));
+
+  router.patch('/contacts/:contactId/order-seats/:seatUnitId', asyncHandler(async (req, res) => {
+    const updated = await service.updateSeatCustomization(
+      req.actor,
+      validateUuid(req.params.contactId),
+      validateUuid(req.params.seatUnitId),
+      validateSeatCustomization(req.body),
       req.auditContext,
       requireRowVersion(req)
     );

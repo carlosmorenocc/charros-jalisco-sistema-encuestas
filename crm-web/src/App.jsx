@@ -7,6 +7,7 @@ import React, {
 } from "react";
 import ManualContactDrawer from "./ManualContactDrawer";
 import MembershipEditor from "./MembershipEditor";
+import ContactPersonalizationPanel from "./ContactPersonalizationPanel";
 import { authClient } from "./auth/authClient";
 import { createApiClient, resolveApiBaseUrl } from "./lib/apiClient";
 import { loadDemoModule } from "./data/demoLoader";
@@ -1415,6 +1416,23 @@ function App() {
     await openContact(id);
   }
 
+  async function saveSeatCustomization(contact, seat, payload) {
+    if (authClient.isDemo) return { ...seat, ...payload, rowVersion: Number(seat.rowVersion || 0) + 1 };
+    try {
+      const response = await api.updateSeatCustomization(contact.id, seat.id, {
+        personalizationName: payload.personalizationName,
+        personalizationNumber: payload.personalizationNumber,
+        jerseySize: payload.jerseySize,
+      }, payload.rowVersion);
+      setContactRevision((current) => current + 1);
+      setToast("La personalización de la butaca se guardó correctamente.");
+      return response.data;
+    } catch (error) {
+      setToast(error.message || "No fue posible guardar la personalización.");
+      throw error;
+    }
+  }
+
   async function saveMembership(contact, membership, draft) {
     const membershipStatus = membershipStatusForContact(contact);
     if (!membershipStatus)
@@ -2034,6 +2052,7 @@ function App() {
           onCreateTask={createTask}
           onRequestSaleClosure={context.onRequestSaleClosure}
           onSaveMembership={saveMembership}
+          onSaveSeatCustomization={saveSeatCustomization}
           pricingCatalog={membershipPricingCatalog}
           onQuoteMembershipPricing={quoteMembershipPricing}
           executiveOptions={availableExecutives}
@@ -4316,27 +4335,6 @@ function SalesPage({
     setEditingSale(null);
     onClearSaleClosure();
   }
-  function updateSaleSeatDetail(index, field, value) {
-    setSaleDraft((current) => {
-      const quantity = Math.max(1, Number(current.quantity || 1));
-      const seatDetails = Array.from(
-        { length: quantity },
-        (_, itemIndex) =>
-          current.seatDetails[itemIndex] || {
-            unitNumber: itemIndex + 1,
-            seatIdentifier: "",
-            jerseySize: "",
-            personalization: "",
-          },
-      );
-      seatDetails[index] = {
-        ...seatDetails[index],
-        unitNumber: index + 1,
-        [field]: value,
-      };
-      return { ...current, seatDetails };
-    });
-  }
   function openSaleCorrection(sale) {
     const items = Array.isArray(sale.items) ? sale.items : [];
     const subscriptionItems = items.filter(
@@ -5697,90 +5695,6 @@ function SalesPage({
                       </label>
                     </>
                   )}
-                  <details className="field field--full seat-secondary-details">
-                    <summary>
-                      {isCommitmentDraft
-                        ? "Identificadores de las butacas de la suite"
-                        : "Datos secundarios por butaca"}
-                    </summary>
-                    <p>
-                      {isCommitmentDraft
-                        ? "Opcional. Registra una referencia por lugar si ya cuentas con ella."
-                        : "Opcional. Puedes guardar la orden sin completar butaca, talla o personalización."}
-                    </p>
-                    <div className="seat-secondary-grid">
-                      {Array.from(
-                        {
-                          length: Math.max(1, Number(saleDraft.quantity || 1)),
-                        },
-                        (_, index) => {
-                          const detail = saleDraft.seatDetails[index] || {};
-                          return (
-                            <fieldset key={`sale-seat-${index + 1}`}>
-                              <legend>
-                                {isCommitmentDraft ? "Butaca" : "Abono"}{" "}
-                                {index + 1}
-                              </legend>
-                              <label className="field">
-                                <span>Butaca</span>
-                                <input
-                                  maxLength="100"
-                                  value={detail.seatIdentifier || ""}
-                                  onChange={(event) =>
-                                    updateSaleSeatDetail(
-                                      index,
-                                      "seatIdentifier",
-                                      event.target.value,
-                                    )
-                                  }
-                                  placeholder="Ej. Lugar 1"
-                                />
-                              </label>
-                              {!isCommitmentDraft && (
-                                <>
-                                  <label className="field">
-                                    <span>Talla de jersey</span>
-                                    <select
-                                      value={detail.jerseySize || ""}
-                                      onChange={(event) =>
-                                        updateSaleSeatDetail(
-                                          index,
-                                          "jerseySize",
-                                          event.target.value,
-                                        )
-                                      }
-                                    >
-                                      <option value="">Sin definir</option>
-                                      <option>S</option>
-                                      <option>M</option>
-                                      <option>L</option>
-                                      <option>XL</option>
-                                      <option>2XL</option>
-                                    </select>
-                                  </label>
-                                  <label className="field field--full">
-                                    <span>Personalización-butaca</span>
-                                    <input
-                                      maxLength="120"
-                                      value={detail.personalization || ""}
-                                      onChange={(event) =>
-                                        updateSaleSeatDetail(
-                                          index,
-                                          "personalization",
-                                          event.target.value,
-                                        )
-                                      }
-                                      placeholder="Opcional"
-                                    />
-                                  </label>
-                                </>
-                              )}
-                            </fieldset>
-                          );
-                        },
-                      )}
-                    </div>
-                  </details>
                   {!editingSale && (
                     <>
                       <label className="field">
@@ -6090,6 +6004,7 @@ function ContactDrawer({
   onCreateTask,
   onRequestSaleClosure,
   onSaveMembership,
+  onSaveSeatCustomization,
   pricingCatalog,
   onQuoteMembershipPricing,
   executiveOptions = [],
@@ -6116,6 +6031,7 @@ function ContactDrawer({
   const [membershipSaving, setMembershipSaving] = useState(false);
   const [actionSaving, setActionSaving] = useState("");
   const [actionError, setActionError] = useState("");
+  const [activePanel, setActivePanel] = useState("contact");
   const headingRef = useRef(null);
   const [interactionDraft, setInteractionDraft] = useState({
     channel: "phone",
@@ -6380,7 +6296,7 @@ function ContactDrawer({
             <Icon name="close" size={21} />
           </button>
         </header>
-        <form onSubmit={submit}>
+        <form onSubmit={submit} className="contact-drawer-form" data-active-panel={activePanel}>
           <div className="drawer-body">
             {editing && (
               <div className="contact-summary">
@@ -6396,6 +6312,14 @@ function ContactDrawer({
                 </div>
               </div>
             )}
+            {editing && <nav className="contact-panel-tabs" aria-label="Secciones del contacto">
+              {[
+                ["contact", "people", "Contacto"],
+                ["orders", "wallet", "Orden"],
+                ["personalization", "edit", "Personalización"],
+                ["inseason", "star", "In-season"],
+              ].map(([id, icon, label]) => <button key={id} type="button" className={activePanel === id ? "active" : ""} aria-pressed={activePanel === id} onClick={() => setActivePanel(id)}><Icon name={icon} size={17} /><span>{label}</span></button>)}
+            </nav>}
             {deleted && (
               <div className="notice notice--important">
                 <Icon name="trash" />
@@ -6420,7 +6344,7 @@ function ContactDrawer({
                 </div>
               </div>
             )}
-            <fieldset disabled={!mayEdit}>
+            <fieldset className="contact-panel-section" disabled={!mayEdit}>
               <legend>Datos del contacto</legend>
               <div className="form-grid">
                 <label className="field">
@@ -6487,7 +6411,7 @@ function ContactDrawer({
                 </label>
               </div>
             </fieldset>
-            <fieldset disabled={!mayEdit}>
+            <fieldset className="contact-panel-section" disabled={!mayEdit}>
               <legend>Clasificación comercial</legend>
               <div className="form-grid">
                 <label className="field">
@@ -6662,7 +6586,7 @@ function ContactDrawer({
             </fieldset>
             {editing && (
               <section
-                className="associated-sales"
+                className="associated-sales order-panel-section"
                 aria-labelledby="associated-sales-title"
               >
                 <div className="membership-orders-heading">
@@ -6691,23 +6615,23 @@ function ContactDrawer({
                           {order.segment || order.zone || "Sin segmento"}
                           {order.isPrimary ? " · Titular principal" : ""}
                         </span>
+                        <dl className="associated-order-detail">
+                          <div><dt>Fecha</dt><dd>{order.soldAt ? new Date(order.soldAt).toLocaleDateString("es-MX") : "Sin fecha"}</dd></div>
+                          <div><dt>Total</dt><dd>{currency.format(order.totalAmount || 0)}</dd></div>
+                          <div><dt>Cobrado</dt><dd>{currency.format(order.paidAmount || 0)}</dd></div>
+                          <div><dt>Saldo</dt><dd>{currency.format(Math.max(0, (order.totalAmount || 0) - (order.paidAmount || 0)))}</dd></div>
+                        </dl>
                       </article>
                     ))}
                   </div>
                 ) : (
-                  <div className="manual-inline-note">
-                    <strong>Sin orden de venta asociada</strong>
-                    <span>
-                      Este contacto no modifica los indicadores de venta hasta
-                      registrar una orden.
-                    </span>
-                  </div>
+                  <div className="manual-inline-note"><strong>Aún no tiene una orden asignada</strong><span>Este contacto no modifica los indicadores de venta hasta registrar una orden.</span></div>
                 )}
               </section>
             )}
             {editing && membershipStatusForContact(existing) && (
               <section
-                className="membership-orders"
+                className="membership-orders order-panel-section"
                 aria-labelledby="membership-orders-title"
               >
                 <div className="membership-orders-heading">
@@ -6788,7 +6712,12 @@ function ContactDrawer({
                 )}
               </section>
             )}
-            <fieldset disabled={!mayEdit}>
+            {editing && <section className="personalization-panel-section" aria-labelledby="personalization-title">
+              <div className="membership-orders-heading"><div><span className="eyebrow">Datos del abonado</span><h3 id="personalization-title">Personalización por butaca</h3></div></div>
+              <ContactPersonalizationPanel orders={existing.associatedOrders || []} canEdit={mayManageMembership} onSave={(seat, payload) => onSaveSeatCustomization(existing, seat, payload)} />
+            </section>}
+            {editing && <section className="inseason-panel-section future-inseason"><span className="future-inseason__icon">🎉</span><h3>Seguimiento In-season para recompensas</h3><p>Este módulo se desarrollará próximamente para concentrar recompensas y seguimiento durante la temporada.</p></section>}
+            <fieldset className="contact-panel-section" disabled={!mayEdit}>
               <legend>Seguimiento</legend>
               <label className="field">
                 <span>Observación resumida</span>
@@ -6804,7 +6733,7 @@ function ContactDrawer({
             </fieldset>
             {(mayLogInteraction || mayCreateTask) && (
               <section
-                className="contact-actions"
+                className="contact-actions contact-panel-section"
                 aria-labelledby="contact-actions-title"
               >
                 <div className="contact-actions-heading">
@@ -7065,7 +6994,7 @@ function ContactDrawer({
               >
                 Cancelar
               </SecondaryButton>
-              {mayEdit && (
+              {mayEdit && activePanel === "contact" && (
                 <PrimaryButton
                   type="submit"
                   icon="check"

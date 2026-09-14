@@ -13,10 +13,20 @@ import {
   validatePayment,
   validateSale,
   validateSaleCorrection,
-  validateSaleCancellation
+  validateSaleCancellation,
+  validateSeatCustomization
 } from '../src/lib/validation.js';
 
 const UUID = '00000000-0000-4000-8000-000000000001';
+
+test('personalización de butaca normaliza nombre, número y jersey', () => {
+  assert.deepEqual(validateSeatCustomization({ personalizationName: 'martínez', personalizationNumber: '22', jerseySize: 'XL' }), {
+    personalizationName: 'MARTÍNEZ', personalizationNumber: '22', jerseySize: 'XL'
+  });
+  assert.throws(() => validateSeatCustomization({ personalizationName: 'NOMBREDEMASIADO' }), /10/);
+  assert.throws(() => validateSeatCustomization({ personalizationName: 'ANA', personalizationNumber: '00' }), /01 y 99/);
+  assert.throws(() => validateSeatCustomization({ personalizationNumber: '12' }), /nombre/);
+});
 
 test('anulación de venta exige un motivo auditable', () => {
   assert.throws(() => validateSaleCancellation({ reason: 'dup' }), /5 caracteres/);
