@@ -423,6 +423,54 @@ export class PgCrmRepository {
     this.exportRowLimit = exportRowLimit;
   }
 
+  async reconcileContactSaleState(client, contactIds, actorId) {
+    const ids = [...new Set((contactIds || []).filter(Boolean))];
+    if (!ids.length) return;
+
+    // Effective orders and holder assignments are the commercial source of truth.
+    await client.query(
+      `WITH requested AS (
+         SELECT unnest($1::uuid[]) AS contact_id
+       ), current_order AS (
+         SELECT DISTINCT ON (ha.contact_id)
+           ha.contact_id,es.effective_sale_type,ha.segment,terms.suite_number
+         FROM sale_holder_assignments ha
+         JOIN effective_sales es ON es.id=ha.sale_id
+         LEFT JOIN sale_commercial_terms terms ON terms.sale_id=es.id
+         JOIN requested r ON r.contact_id=ha.contact_id
+         WHERE ha.deleted_at IS NULL AND es.deleted_at IS NULL
+           AND es.effective_status IN ('confirmed','reserved')
+           AND es.season_code='LMP-2026-27'
+         ORDER BY ha.contact_id,
+           CASE es.effective_sale_type WHEN 'renewal' THEN 0 ELSE 1 END,
+           es.effective_sold_at DESC NULLS LAST,es.updated_at DESC,es.id
+       )
+       UPDATE contacts c SET
+         subscriber_status=CASE
+           WHEN current_order.contact_id IS NOT NULL AND current_order.effective_sale_type='renewal'
+             THEN 'current_subscriber'
+           WHEN current_order.contact_id IS NOT NULL THEN 'new_subscriber'
+           WHEN c.subscriber_status IN ('current_subscriber','new_subscriber') THEN 'renewing'
+           ELSE c.subscriber_status
+         END,
+         commercial_segment=CASE WHEN current_order.contact_id IS NOT NULL
+           THEN current_order.segment ELSE c.commercial_segment END,
+         suite_number=CASE
+           WHEN current_order.contact_id IS NOT NULL AND current_order.segment='Compromisos'
+             THEN current_order.suite_number
+           WHEN current_order.contact_id IS NOT NULL THEN NULL
+           ELSE c.suite_number
+         END,
+         updated_by=$2
+       FROM requested r
+       LEFT JOIN current_order ON current_order.contact_id=r.contact_id
+       WHERE c.id=r.contact_id AND c.deleted_at IS NULL
+         AND (current_order.contact_id IS NOT NULL
+           OR c.subscriber_status IN ('current_subscriber','new_subscriber'))`,
+      [ids, actorId]
+    );
+  }
+
   async getSubscriptionPricingCatalog({ client = this.pool } = {}) {
     const priceBookResult = await client.query(
       `SELECT version,season_code,display_name,currency
@@ -2332,6 +2380,11 @@ export class PgCrmRepository {
           }
         }
       }
+      await this.reconcileContactSaleState(
+        client,
+        requestedHolders.map((holder) => holder.contactId),
+        actor.id
+      );
       const created = saleRow({
         ...result.rows[0], items: saleItems,
         commercial_category: data.commercialCategory,
@@ -2354,6 +2407,11 @@ export class PgCrmRepository {
       await client.query('SELECT id FROM sales WHERE id=$1 AND deleted_at IS NULL FOR UPDATE', [saleId]);
       const before = await this.getSale(saleId, actor, { client });
       if (!before) throw notFound('Venta');
+      const previousHolders = await client.query(
+        `SELECT contact_id FROM sale_holder_assignments
+         WHERE sale_id=$1 AND deleted_at IS NULL`,
+        [saleId]
+      );
       await this.assertActiveUser(client, data.executiveId, ['executive']);
       const contact = await this.getContact(data.contactId, actor, { client });
       if (!contact) throw notFound('Contacto');
@@ -2522,6 +2580,20 @@ export class PgCrmRepository {
           }
         }
       }
+      const currentHolders = await client.query(
+        `SELECT contact_id FROM sale_holder_assignments
+         WHERE sale_id=$1 AND deleted_at IS NULL`,
+        [saleId]
+      );
+      await this.reconcileContactSaleState(
+        client,
+        [
+          before.contactId,
+          ...previousHolders.rows.map((holder) => holder.contact_id),
+          ...currentHolders.rows.map((holder) => holder.contact_id)
+        ],
+        actor.id
+      );
       const after = await this.getSale(saleId, actor, { client });
       await this.audit(client, context, {
         action: 'sale.corrected', entityType: 'sale', entityId: saleId, before, after,
@@ -2562,6 +2634,11 @@ export class PgCrmRepository {
       await client.query('SELECT id FROM sales WHERE id=$1 AND deleted_at IS NULL FOR UPDATE', [saleId]);
       const before = await this.getSale(saleId, actor, { client });
       if (!before) throw notFound('Venta');
+      const affectedHolders = await client.query(
+        `SELECT contact_id FROM sale_holder_assignments
+         WHERE sale_id=$1 AND deleted_at IS NULL`,
+        [saleId]
+      );
       if (['cancelled', 'refunded'].includes(before.status)) {
         throw conflict('La venta ya está anulada o reembolsada.');
       }
@@ -2580,6 +2657,11 @@ export class PgCrmRepository {
          SET membership_status='cancelled',updated_by=$1,updated_at=now(),row_version=row_version+1
          WHERE deleted_at IS NULL AND product LIKE $2`,
         [actor.id, `%· ORDEN ${before.externalOrderNumber}`]
+      );
+      await this.reconcileContactSaleState(
+        client,
+        [before.contactId, ...affectedHolders.rows.map((holder) => holder.contact_id)],
+        actor.id
       );
       const after = await this.getSale(saleId, actor, { client });
       await this.audit(client, context, {

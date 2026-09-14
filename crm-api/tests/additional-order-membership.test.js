@@ -60,3 +60,19 @@ test('detalle de contacto conserva verdad comercial, importes y butacas de la or
   assert.match(repository, /payment_adjustments pa WHERE pa\.payment_id=p\.id/);
   assert.match(repository, /async listContacts[\s\S]*'localityName',terms\.locality_name[\s\S]*sale_seat_units su/);
 });
+
+test('ventas reconcilia contactos y expone una auditoria de solo lectura', async () => {
+  const repository = await readFile(repositoryUrl, 'utf8');
+  const audit = await readFile(new URL('../migrations/025_sale_integrity_audit.sql', import.meta.url), 'utf8');
+  assert.match(repository, /async reconcileContactSaleState/);
+  assert.match(repository, /effective_status IN \('confirmed','reserved'\)/);
+  assert.match(repository, /THEN 'renewing'/);
+  assert.match(repository, /async createSale[\s\S]*reconcileContactSaleState/);
+  assert.match(repository, /async correctSale[\s\S]*previousHolders[\s\S]*reconcileContactSaleState/);
+  assert.match(repository, /async cancelSale[\s\S]*affectedHolders[\s\S]*reconcileContactSaleState/);
+  assert.match(audit, /CREATE OR REPLACE VIEW sale_integrity_audit/);
+  assert.match(audit, /holder_quantity_mismatch/);
+  assert.match(audit, /seat_unit_mismatch/);
+  assert.match(audit, /invalid_primary_holder_count/);
+  assert.match(audit, /overpaid/);
+});
