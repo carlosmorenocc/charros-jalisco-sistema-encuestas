@@ -62,6 +62,14 @@ const currency = new Intl.NumberFormat("es-MX", {
 });
 const integer = new Intl.NumberFormat("es-MX");
 
+export function personalizationSaveMessage(error) {
+  if (error?.status === 409) return "La butaca cambió. Actualiza el contacto e intenta de nuevo.";
+  if (error?.status === 401) return "Tu sesión terminó. Inicia sesión nuevamente.";
+  if (error?.status === 403) return "No tienes permiso para modificar esta butaca.";
+  if (error?.status === 400 && error?.message) return error.message;
+  return "No pudimos guardar. Intenta de nuevo.";
+}
+
 let configuredApiBaseUrl = "";
 let apiConfigurationError = "";
 try {
@@ -1427,11 +1435,12 @@ function App() {
         jerseySize: payload.jerseySize,
       }, payload.rowVersion);
       setContactRevision((current) => current + 1);
-      setToast("La personalización de la butaca se guardó correctamente.");
+      setToast("Personalización guardada.");
       return response.data;
     } catch (error) {
-      setToast(error.message || "No fue posible guardar la personalización.");
-      throw error;
+      const message = personalizationSaveMessage(error);
+      setToast(message);
+      throw new Error(message);
     }
   }
 

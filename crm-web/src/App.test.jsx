@@ -1,9 +1,14 @@
 import React from 'react'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
-import App, { buildCommitmentItems, buildSaleItems, contactMatchesPatch, LoadingScreen, LoginScreen, revokeSessionSafely, salesForDashboard, updateContactWithVerification, verifyPersistedContactPatch } from './App'
+import App, { buildCommitmentItems, buildSaleItems, contactMatchesPatch, LoadingScreen, LoginScreen, personalizationSaveMessage, revokeSessionSafely, salesForDashboard, updateContactWithVerification, verifyPersistedContactPatch } from './App'
 
 describe('CRM web en modo demostración', () => {
+  it('nunca expone errores técnicos en inglés al guardar personalización', () => {
+    expect(personalizationSaveMessage(new TypeError('Failed to fetch'))).toBe('No pudimos guardar. Intenta de nuevo.')
+    expect(personalizationSaveMessage({ status: 500, message: 'An error occurred' })).toBe('No pudimos guardar. Intenta de nuevo.')
+    expect(personalizationSaveMessage({ status: 409 })).toMatch(/butaca cambió/i)
+  })
   it('calcula 2x1 con precio oficial, unidades con cargo y bonificadas', () => {
     expect(buildSaleItems({ kind: 'new', zone: 'Lateral 1a-3a', quantity: 3, unitPrice: 7480, promotion2x1: true })).toEqual([
       { product: 'ABONO NUEVO · PROMOCIÓN 2X1 (CON CARGO)', zone: 'Lateral 1a-3a', quantity: 2, unitPrice: 7480 },
