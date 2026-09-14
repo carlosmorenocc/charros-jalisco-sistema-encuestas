@@ -103,7 +103,8 @@ describe('CRM web en modo demostración', () => {
   it('abre Ver venta desde la tabla sin modificar datos', async () => {
     render(<App />)
     fireEvent.click(await screen.findByRole('button', { name: /^Ventas$/i }))
-    fireEvent.click((await screen.findAllByRole('button', { name: 'Ver venta' }))[0])
+    fireEvent.click((await screen.findAllByLabelText(/Más opciones de la orden/i))[0])
+    fireEvent.click((await screen.findAllByRole('menuitem', { name: 'Ver venta' }))[0])
     expect(await screen.findByRole('heading', { name: /^Orden / })).toBeInTheDocument()
     expect(screen.getByText(/Ningún dato se modifica desde esta pantalla/i)).toBeInTheDocument()
   })

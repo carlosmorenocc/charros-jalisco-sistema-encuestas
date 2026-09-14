@@ -436,6 +436,12 @@ function Icon({ name, size = 18, strokeWidth = 1.8 }) {
         <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z" />
       </>
     ),
+    eye: (
+      <>
+        <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" />
+        <circle cx="12" cy="12" r="3" />
+      </>
+    ),
     menu: (
       <>
         <path d="M4 6h16M4 12h16M4 18h16" />
@@ -4792,22 +4798,18 @@ function SalesPage({
                 <option key={value}>{value}</option>
               ))}
             </select>
-            <label className="compact-date">
-              <span>Desde</span>
-              <input
-                type="date"
-                value={from}
-                onChange={(event) => setFrom(event.target.value)}
-              />
-            </label>
-            <label className="compact-date">
-              <span>Hasta</span>
-              <input
-                type="date"
-                value={to}
-                onChange={(event) => setTo(event.target.value)}
-              />
-            </label>
+            <details className="filter-multiselect filter-multiselect--toolbar date-filter">
+              <summary aria-label="Filtrar por fecha">
+                <span><Icon name="calendar" size={15} />Fecha{from || to ? " aplicada" : ""}</span>
+              </summary>
+              <div className="date-filter__menu">
+                <div>
+                  <label><span>Desde</span><input type="date" value={from} onChange={(event) => setFrom(event.target.value)} /></label>
+                  <label><span>Hasta</span><input type="date" value={to} onChange={(event) => setTo(event.target.value)} /></label>
+                </div>
+                {(from || to) && <button type="button" onClick={() => { setFrom(""); setTo(""); }}>Limpiar fechas</button>}
+              </div>
+            </details>
           </div>
         </div>
         <div className="table-scroll">
@@ -4853,8 +4855,10 @@ function SalesPage({
                   </td>
                   <td>{sale.commercialStatus || "—"}</td>
                   <td>
-                      <div className="sale-row-actions">
-                        <button type="button" className="text-button" onClick={() => setViewingSale(sale)}>Ver venta</button>
+                      <details className="sale-actions-menu">
+                        <summary aria-label={`Más opciones de la orden ${sale.externalOrderNumber || sale.id}`} title="Más opciones"><Icon name="more" size={18} /></summary>
+                        <div className="sale-actions-menu__panel" role="menu">
+                        <button type="button" role="menuitem" title="Ver venta" onClick={(event) => { setViewingSale(sale); event.currentTarget.closest("details")?.removeAttribute("open"); }}><Icon name="eye" size={16} /><span>Ver venta</span></button>
                         {hasPermission(user, PERMISSIONS.SALES_WRITE) && <>
                         {!["Cancelada", "Reembolsada"].includes(
                           sale.commercialStatus,
@@ -4862,8 +4866,9 @@ function SalesPage({
                           (sale.paid < sale.total ? (
                             <button
                               type="button"
-                              className="text-button"
-                              onClick={() => {
+                              role="menuitem"
+                              title="Registrar cobro"
+                              onClick={(event) => {
                                 setPaymentSale(sale);
                                 setPaymentDraft({
                                   amount: "",
@@ -4872,12 +4877,13 @@ function SalesPage({
                                   reference: "",
                                 });
                                 setPaymentError("");
+                                event.currentTarget.closest("details")?.removeAttribute("open");
                               }}
                             >
-                              Registrar cobro
+                              <Icon name="wallet" size={16} /><span>Registrar cobro</span>
                             </button>
                           ) : (
-                            <span>Liquidado</span>
+                            <span className="sale-actions-menu__status"><Icon name="check" size={15} />Liquidado</span>
                           ))}
                         {!["Cancelada", "Reembolsada"].includes(
                           sale.commercialStatus,
@@ -4885,26 +4891,31 @@ function SalesPage({
                           <>
                             <button
                               type="button"
-                              className="text-button"
-                              onClick={() => openSaleCorrection(sale)}
+                              role="menuitem"
+                              title="Editar venta"
+                              onClick={(event) => { openSaleCorrection(sale); event.currentTarget.closest("details")?.removeAttribute("open"); }}
                             >
-                              Editar venta
+                              <Icon name="edit" size={16} /><span>Editar venta</span>
                             </button>
                             <button
                               type="button"
-                              className="text-button text-button--danger"
-                              onClick={() => {
+                              role="menuitem"
+                              className="sale-actions-menu__danger"
+                              title="Anular venta"
+                              onClick={(event) => {
                                 setCancellingSale(sale);
                                 setCancellationReason("");
                                 setCancellationError("");
+                                event.currentTarget.closest("details")?.removeAttribute("open");
                               }}
                             >
-                              Anular venta
+                              <Icon name="trash" size={16} /><span>Anular venta</span>
                             </button>
                           </>
                         )}
                         </>}
-                      </div>
+                        </div>
+                      </details>
                     </td>
                 </tr>
               ))}
