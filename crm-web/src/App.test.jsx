@@ -1,5 +1,5 @@
 import React from 'react'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import App, { buildCommitmentItems, buildSaleItems, contactMatchesPatch, LoadingScreen, LoginScreen, revokeSessionSafely, salesForDashboard, updateContactWithVerification, verifyPersistedContactPatch } from './App'
 
@@ -108,6 +108,18 @@ describe('CRM web en modo demostración', () => {
     fireEvent.click((await screen.findAllByRole('menuitem', { name: 'Ver venta' }))[0])
     expect(await screen.findByRole('heading', { name: /^Orden / })).toBeInTheDocument()
     expect(screen.getByText(/Ningún dato se modifica desde esta pantalla/i)).toBeInTheDocument()
+  })
+
+  it('abre cada vista desde el menú inicial y presenta el estado operativo del abonado', async () => {
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: /Cartera y Renovaciones/i }))
+    expect((await screen.findAllByText('Atención óptima para la temporada LMP 26-27')).length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Abonado').length).toBeGreaterThan(0)
+    const menuTrigger = screen.getByLabelText('Abrir vistas de Mariana López')
+    fireEvent.click(menuTrigger)
+    fireEvent.click(within(menuTrigger.closest('details')).getByRole('menuitem', { name: 'Personalización' }))
+    expect(await screen.findByRole('dialog')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Personalización', pressed: true })).toBeInTheDocument()
   })
 
   it('confirma una edición normal de contacto con el mensaje acordado', async () => {

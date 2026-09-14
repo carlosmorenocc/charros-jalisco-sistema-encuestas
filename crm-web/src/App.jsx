@@ -3557,19 +3557,17 @@ function ContactsPage({
           <table className="data-table contact-table">
             <thead>
               <tr>
+                <th><span className="sr-only">Abrir vista del contacto</span></th>
                 {sortableHeader("Contacto", "name")}
                 {sortableHeader("Estatus", "status")}
                 {isPortfolio && <th>Abonos</th>}
                 <th>Etapa comercial</th>
                 {isPortfolio && <th>Temporadas</th>}
-                {sortableHeader("Último contacto", "lastContact")}
+                {sortableHeader("Última acción", "lastContact")}
                 <th>Canal</th>
                 {sortableHeader("Próxima acción", "nextFollowUp")}
                 <th>Ejecutivo</th>
                 <th>Observaciones</th>
-                <th>
-                  <span className="sr-only">Acciones</span>
-                </th>
               </tr>
             </thead>
             <tbody>
@@ -3639,8 +3637,19 @@ function ContactsPage({
 }
 
 function ContactRow({ contact, isPortfolio, onEdit }) {
+  const isSubscriber = ["Abonado actual", "Abonado nuevo"].includes(contact.type);
   return (
     <tr>
+      <td>
+        <details className="sale-actions-menu contact-view-menu">
+          <summary aria-label={`Abrir vistas de ${contact.name}`} title="Abrir vistas"><Icon name="more" size={18} /></summary>
+          <div className="sale-actions-menu__panel" role="menu">
+            {[["contact", "people", "Contacto"], ["orders", "wallet", "Orden"], ["personalization", "edit", "Personalización"], ["inseason", "star", "In-season"]].map(([panel, icon, label]) => (
+              <button key={panel} type="button" role="menuitem" onClick={(event) => { onEdit(contact, { initialPanel: panel }); event.currentTarget.closest("details")?.removeAttribute("open"); }}><Icon name={icon} size={16} /><span>{label}</span></button>
+            ))}
+          </div>
+        </details>
+      </td>
       <td>
         <button className="contact-button" onClick={() => onEdit(contact)}>
           <span className="contact-avatar">
@@ -3675,20 +3684,14 @@ function ContactRow({ contact, isPortfolio, onEdit }) {
         </td>
       )}
       <td>
-        <span
-          className={
-            contact.lastContact?.includes("Sin ") ? "muted danger-text" : ""
-          }
-        >
-          {contact.lastContact}
+        <span className={isSubscriber ? "subscriber-action-state" : contact.lastContact?.includes("Sin ") ? "muted danger-text" : ""}>
+          {isSubscriber ? "Abonado" : contact.lastContact}
         </span>
       </td>
       <td>{contact.channel}</td>
       <td>
-        <span
-          className={contact.nextTask?.includes("Vencida") ? "danger-text" : ""}
-        >
-          {contact.nextTask}
+        <span className={isSubscriber ? "subscriber-next-action" : contact.nextTask?.includes("Vencida") ? "danger-text" : ""}>
+          {isSubscriber ? "Atención óptima para la temporada LMP 26-27" : contact.nextTask}
         </span>
       </td>
       <td>
@@ -3706,15 +3709,6 @@ function ContactRow({ contact, isPortfolio, onEdit }) {
         >
           {contact.note || "Sin observaciones"}
         </span>
-      </td>
-      <td>
-        <button
-          className="icon-button"
-          aria-label={`Editar ${contact.name}`}
-          onClick={() => onEdit(contact)}
-        >
-          <Icon name="more" size={19} />
-        </button>
       </td>
     </tr>
   );

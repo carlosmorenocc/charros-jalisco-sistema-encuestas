@@ -233,6 +233,9 @@ main:focus { outline: 0; }
 .sale-actions-menu__panel .sale-actions-menu__danger:hover { background: var(--red-100); }
 .sale-actions-menu__status { color: var(--green-700); }
 .data-table tbody tr:nth-last-child(-n+3) .sale-actions-menu__panel { top: auto; bottom: calc(100% + 5px); }
+.contact-view-menu .sale-actions-menu__panel { right: auto; left: 0; }
+.subscriber-action-state { display: inline-flex; align-items: center; padding: 4px 8px; color: var(--green-700); background: var(--green-100); border-radius: 999px; font-size: 8.5px; font-weight: 800; }
+.subscriber-next-action { display: block; min-width: 165px; color: var(--green-700); font-size: 8.5px; font-weight: 700; line-height: 1.35; }
 .sale-order-link { padding: 0; border: 0; background: transparent; font: inherit; font-weight: 700; }
 .sale-view-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; }
 .sale-view-grid > div { display: flex; flex-direction: column; gap: 4px; padding: 11px; background: var(--surface-soft); border: 1px solid var(--line); border-radius: 8px; }
@@ -624,6 +627,8 @@ select:focus, input:focus, textarea:focus { outline: 0; border-color: var(--blue
 .contact-panel-tabs button.active { color: var(--blue-800); background: var(--blue-50); border-color: #b9cee4; box-shadow: 0 2px 8px rgba(18,76,132,.08); }
 .contact-drawer-form .contact-panel-section, .contact-drawer-form .order-panel-section, .contact-drawer-form .personalization-panel-section, .contact-drawer-form .inseason-panel-section { display: none; }
 .contact-drawer-form[data-active-panel='contact'] .contact-panel-section, .contact-drawer-form[data-active-panel='orders'] .order-panel-section, .contact-drawer-form[data-active-panel='personalization'] .personalization-panel-section, .contact-drawer-form[data-active-panel='inseason'] .inseason-panel-section { display: block; }
+.contact-drawer-form[data-active-panel='contact'] .contact-panel-section, .contact-drawer-form[data-active-panel='orders'] .order-panel-section, .contact-drawer-form[data-active-panel='personalization'] .personalization-panel-section, .contact-drawer-form[data-active-panel='inseason'] .inseason-panel-section { animation: panelReveal .2s ease-out; }
+@keyframes panelReveal { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
 .associated-order-detail { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 6px; margin: 10px 0 0; }
 .associated-order-detail div { display: grid; gap: 2px; padding: 7px; background: #f8fafc; border-radius: 6px; }
 .associated-order-detail dt { color: var(--muted); font-size: 8px; font-weight: 700; text-transform: uppercase; }
