@@ -6612,15 +6612,25 @@ function ContactDrawer({
                         <span>
                           {order.quantity}{" "}
                           {Number(order.quantity) === 1 ? "abono" : "abonos"} ·{" "}
-                          {order.segment || order.zone || "Sin segmento"}
+                          {order.section || order.segment || "Sin segmento"}
+                          {order.localityName || order.zone ? ` \u00b7 ${order.localityName || order.zone}` : ""}
                           {order.isPrimary ? " · Titular principal" : ""}
                         </span>
                         <dl className="associated-order-detail">
                           <div><dt>Fecha</dt><dd>{order.soldAt ? new Date(order.soldAt).toLocaleDateString("es-MX") : "Sin fecha"}</dd></div>
+                          <div><dt>Zona</dt><dd>{order.section || order.segment || "Requiere revisi\u00f3n"}</dd></div>
+                          <div><dt>Localidad</dt><dd>{order.localityName || order.zone || "Requiere revisi\u00f3n"}</dd></div>
+                          <div><dt>Descuento</dt><dd>{order.discountName || order.discountCode || "Requiere revisi\u00f3n"}</dd></div>
                           <div><dt>Total</dt><dd>{currency.format(order.totalAmount || 0)}</dd></div>
                           <div><dt>Cobrado</dt><dd>{currency.format(order.paidAmount || 0)}</dd></div>
                           <div><dt>Saldo</dt><dd>{currency.format(Math.max(0, (order.totalAmount || 0) - (order.paidAmount || 0)))}</dd></div>
                         </dl>
+                        <div className="associated-order-seats">
+                          <strong>Butacas</strong>
+                          {order.seatDetails?.length ? (
+                            <ul>{order.seatDetails.map((seat) => <li key={seat.id || seat.unitNumber}><span>Butaca {seat.unitNumber}</span><b>{seat.seatIdentifier || "Sin ubicaci\u00f3n capturada"}</b></li>)}</ul>
+                          ) : <p>A\u00fan no hay butacas capturadas para esta orden.</p>}
+                        </div>
                       </article>
                     ))}
                   </div>

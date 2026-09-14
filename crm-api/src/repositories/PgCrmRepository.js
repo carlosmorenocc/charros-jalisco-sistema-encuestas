@@ -1126,7 +1126,12 @@ export class PgCrmRepository {
                  'status',es.effective_status,'isPrimary',ha.is_primary,
                  'soldAt',es.effective_sold_at,
                  'totalAmount',es.effective_total_amount,
-                 'paidAmount',COALESCE((SELECT sum(p.amount) FROM payments p WHERE p.sale_id=es.id AND p.voided_at IS NULL),0),
+                 'paidAmount',COALESCE((SELECT sum(p.amount + COALESCE((
+                   SELECT sum(pa.amount) FROM payment_adjustments pa WHERE pa.payment_id=p.id
+                 ),0)) FROM payments p WHERE p.sale_id=es.id AND p.voided_at IS NULL),0),
+                 'section',terms.section,'localityCode',terms.locality_code,
+                 'localityName',terms.locality_name,'discountCode',terms.discount_code,
+                 'discountName',terms.discount_name,'pricingMode',terms.pricing_mode,
                  'seatDetails',COALESCE((SELECT jsonb_agg(jsonb_build_object(
                    'id',su.id,'rowVersion',su.row_version,'unitNumber',su.unit_number,
                    'seatIdentifier',su.seat_identifier,'jerseySize',su.jersey_size,
@@ -1134,6 +1139,7 @@ export class PgCrmRepository {
                    FROM sale_seat_units su WHERE su.holder_assignment_id=ha.id AND su.deleted_at IS NULL),'[]'::jsonb)
                  ) ORDER BY es.effective_sold_at DESC)
                  FROM sale_holder_assignments ha JOIN effective_sales es ON es.id=ha.sale_id
+                 LEFT JOIN sale_commercial_terms terms ON terms.sale_id=es.id
                  WHERE ha.contact_id=c.id AND ha.deleted_at IS NULL AND es.deleted_at IS NULL), '[]'::jsonb) AS associated_orders,
                ${SELECTED_MEMBERSHIP_COLUMNS}
        FROM contacts c

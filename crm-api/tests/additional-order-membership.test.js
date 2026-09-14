@@ -50,3 +50,12 @@ test('contacto expone y actualiza personalización conservando la orden propieta
   assert.match(repository, /ha\.contact_id=\$2/);
   assert.match(repository, /contact\.seat_customization_updated/);
 });
+
+test('detalle de contacto conserva verdad comercial, importes y butacas de la orden', async () => {
+  const repository = await readFile(repositoryUrl, 'utf8');
+  assert.match(repository, /'totalAmount',es\.effective_total_amount/);
+  assert.match(repository, /'section',terms\.section/);
+  assert.match(repository, /'discountName',terms\.discount_name/);
+  assert.match(repository, /LEFT JOIN sale_commercial_terms terms ON terms\.sale_id=es\.id/);
+  assert.match(repository, /payment_adjustments pa WHERE pa\.payment_id=p\.id/);
+});

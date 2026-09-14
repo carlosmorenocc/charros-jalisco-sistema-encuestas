@@ -2,6 +2,15 @@ import { describe, expect, it } from 'vitest'
 import { fromApiContact, fromApiMembership, fromApiSale, fromApiTask, membershipStatusForContact, toApiContactPayload, toApiMembershipPayload } from './dataAdapters'
 
 describe('adaptadores de contacto', () => {
+  it('conserva importes en pesos, terminos comerciales y butacas de cada orden', () => {
+    const contact = fromApiContact({
+      id: 'contact-1', firstName: 'Dora', lastName: 'Alvarez',
+      associatedOrders: [{ orderNumber: '14769523', totalAmount: '51408', paidAmount: '25704', section: 'Preferente', localityName: 'Planta baja central', discountName: '25% de descuento', seatDetails: [{ id: 'seat-1', unitNumber: 1, seatIdentifier: 'PB-01' }] }],
+    })
+    expect(contact.associatedOrders[0]).toMatchObject({ totalAmount: 51408, paidAmount: 25704, section: 'Preferente', localityName: 'Planta baja central', discountName: '25% de descuento' })
+    expect(contact.associatedOrders[0].seatDetails[0].seatIdentifier).toBe('PB-01')
+  })
+
   it('convierte códigos de API en etiquetas y mantiene derivados read-only', () => {
     const contact = fromApiContact({
       id: 'contact-1',

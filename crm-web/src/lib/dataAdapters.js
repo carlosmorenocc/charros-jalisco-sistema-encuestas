@@ -109,8 +109,8 @@ export function fromApiContact(contact) {
     suiteNumber: contact.suiteNumber || '',
     associatedOrders: (contact.associatedOrders || []).map((order) => ({
       ...order,
-      totalAmount: Number(order.totalAmount || 0) / 100,
-      paidAmount: Number(order.paidAmount || 0) / 100,
+      totalAmount: Number(order.totalAmount || 0),
+      paidAmount: Number(order.paidAmount || 0),
       seatDetails: Array.isArray(order.seatDetails) ? order.seatDetails : [],
     })),
     kind: contact.subscriberStatus === 'prospect' ? 'prospect' : 'portfolio',
