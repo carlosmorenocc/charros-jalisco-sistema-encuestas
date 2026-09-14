@@ -1,6 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import { CrmService } from '../src/services/CrmService.js';
+
+test('aprovisiona las nuevas ejecutivas como perfiles activos sin credenciales', async () => {
+  const migration = await readFile(new URL('../migrations/024_add_sales_executives.sql', import.meta.url), 'utf8');
+  assert.match(migration, /JULISSA CARRANZA/);
+  assert.match(migration, /DANIELA VÉLAZQUEZ/);
+  assert.match(migration, /'executive', true/);
+  assert.doesNotMatch(migration, /local_credentials|password/i);
+});
 
 test('Supervisor puede cargar la proyección mínima del selector de ejecutivos', async () => {
   const expected = [{
