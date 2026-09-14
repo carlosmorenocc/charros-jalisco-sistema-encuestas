@@ -224,6 +224,16 @@ main:focus { outline: 0; }
 .text-button--danger:hover { color: #7f1d2d; }
 .sale-row-actions { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 96px; }
 .sale-row-actions > span { padding: 4px; color: var(--slate-500); font-size: 11px; }
+.sale-order-link { padding: 0; border: 0; background: transparent; font: inherit; font-weight: 700; }
+.sale-view-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; }
+.sale-view-grid > div { display: flex; flex-direction: column; gap: 4px; padding: 11px; background: var(--surface-soft); border: 1px solid var(--line); border-radius: 8px; }
+.sale-view-grid span { color: var(--muted); font-size: 9px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+.sale-view-grid strong { color: var(--ink); font-size: 12px; }
+.sale-view-section { margin-top: 17px; }
+.sale-view-section h3 { margin: 0 0 8px; color: var(--blue-900); font-size: 13px; }
+.sale-view-section p { color: var(--muted); font-size: 11px; }
+.sale-view-section ul { display: grid; gap: 6px; padding: 0; margin: 0; list-style: none; }
+.sale-view-section li { display: flex; justify-content: space-between; gap: 12px; padding: 9px 10px; border: 1px solid var(--line); border-radius: 7px; font-size: 11px; }
 
 .global-filters { display: flex; align-items: flex-end; gap: 10px; padding: 13px 15px; margin-bottom: 16px; background: white; border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow-sm); }
 .global-filters label, .global-filter-field { display: flex; flex: 1; flex-direction: column; gap: 5px; min-width: 130px; }

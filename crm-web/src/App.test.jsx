@@ -100,6 +100,14 @@ describe('CRM web en modo demostración', () => {
     expect(screen.getByLabelText(/Número de orden/)).toHaveValue('')
   })
 
+  it('abre Ver venta desde la tabla sin modificar datos', async () => {
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: /^Ventas$/i }))
+    fireEvent.click((await screen.findAllByRole('button', { name: 'Ver venta' }))[0])
+    expect(await screen.findByRole('heading', { name: /^Orden / })).toBeInTheDocument()
+    expect(screen.getByText(/Ningún dato se modifica desde esta pantalla/i)).toBeInTheDocument()
+  })
+
   it('confirma una edición normal de contacto con el mensaje acordado', async () => {
     render(<App />)
     fireEvent.click(await screen.findByRole('button', { name: /Cartera y Renovaciones/i }))

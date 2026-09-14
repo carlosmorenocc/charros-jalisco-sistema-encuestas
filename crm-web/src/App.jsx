@@ -4115,6 +4115,7 @@ function SalesPage({
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [paymentSale, setPaymentSale] = useState(null);
+  const [viewingSale, setViewingSale] = useState(null);
   const [paymentDraft, setPaymentDraft] = useState({
     amount: "",
     method: "Transferencia",
@@ -4344,6 +4345,7 @@ function SalesPage({
       chargedItem.zone ||
       String(sale.zone || "").replace(/\s*·\s*Promoción 2x1$/i, "");
     const locality =
+      saleLocalities.find((item) => item.code === sale.localityCode) ||
       saleLocalities.find((item) => item.displayName === rawZone) ||
       saleLocalities.find((item) =>
         rawZone.toLowerCase().includes(item.displayName.toLowerCase()),
@@ -4357,13 +4359,18 @@ function SalesPage({
     const recordedDiscountCode = String(chargedItem.product || "").match(
       /DESCUENTO .* \[([^\]]+)\]/i,
     )?.[1];
-    const discountCode = saleDiscounts.some(
+    const structuredDiscountCode = saleDiscounts.some(
+      (item) => item.code === sale.discountCode,
+    )
+      ? sale.discountCode
+      : null;
+    const discountCode = structuredDiscountCode || (saleDiscounts.some(
       (item) => item.code === recordedDiscountCode,
     )
       ? recordedDiscountCode
       : promotion2x1 && saleDiscounts.some((item) => item.code === "july25")
         ? "july25"
-        : "regular";
+        : "");
     setEditingSale(sale);
     setContactSearch(sale.contact || "");
     setSaleDraft({
@@ -4818,18 +4825,16 @@ function SalesPage({
                 <th>Ejecutivo</th>
                 <th>Pago</th>
                 <th>Estado comercial</th>
-                {hasPermission(user, PERMISSIONS.SALES_WRITE) && (
-                  <th>Acción</th>
-                )}
+                <th>Acción</th>
               </tr>
             </thead>
             <tbody>
               {filteredSales.map((sale) => (
                 <tr key={sale.id}>
                   <td>
-                    <strong className="link-value">
+                    <button type="button" className="link-value sale-order-link" onClick={() => setViewingSale(sale)}>
                       {sale.externalOrderNumber || sale.id}
-                    </strong>
+                    </button>
                   </td>
                   <td>{sale.date}</td>
                   <td>
@@ -4847,9 +4852,10 @@ function SalesPage({
                     <StatusPill>{sale.status}</StatusPill>
                   </td>
                   <td>{sale.commercialStatus || "—"}</td>
-                  {hasPermission(user, PERMISSIONS.SALES_WRITE) && (
-                    <td>
+                  <td>
                       <div className="sale-row-actions">
+                        <button type="button" className="text-button" onClick={() => setViewingSale(sale)}>Ver venta</button>
+                        {hasPermission(user, PERMISSIONS.SALES_WRITE) && <>
                         {!["Cancelada", "Reembolsada"].includes(
                           sale.commercialStatus,
                         ) &&
@@ -4882,7 +4888,7 @@ function SalesPage({
                               className="text-button"
                               onClick={() => openSaleCorrection(sale)}
                             >
-                              Corregir venta
+                              Editar venta
                             </button>
                             <button
                               type="button"
@@ -4897,9 +4903,9 @@ function SalesPage({
                             </button>
                           </>
                         )}
+                        </>}
                       </div>
                     </td>
-                  )}
                 </tr>
               ))}
             </tbody>
@@ -4921,6 +4927,58 @@ function SalesPage({
           </small>
         </div>
       </section>
+      {viewingSale && (
+        <div className="drawer-backdrop" role="presentation" onMouseDown={(event) => {
+          if (event.target === event.currentTarget) setViewingSale(null);
+        }}>
+          <aside className="drawer" role="dialog" aria-modal="true" aria-labelledby="view-sale-title">
+            <header className="drawer-header">
+              <div>
+                <span className="eyebrow">Detalle almacenado</span>
+                <h2 id="view-sale-title">Orden {viewingSale.externalOrderNumber || viewingSale.id}</h2>
+                <p>Vista de consulta. Ningún dato se modifica desde esta pantalla.</p>
+              </div>
+              <button type="button" className="icon-button" aria-label="Cerrar" onClick={() => setViewingSale(null)}>×</button>
+            </header>
+            <div className="drawer-body">
+              <div className="sale-view-grid">
+                <div><span>Titular principal</span><strong>{viewingSale.contact}</strong></div>
+                <div><span>Fecha</span><strong>{viewingSale.date}</strong></div>
+                <div><span>Zona</span><strong>{viewingSale.localityName || viewingSale.zone || "Sin capturar"}</strong></div>
+                <div><span>Descuento</span><strong>{viewingSale.commercialCategory === "commitment" ? "No aplica" : viewingSale.discountName || viewingSale.discountCode || "Requiere revisión"}</strong></div>
+                <div><span>Tipo de compra</span><strong>{(viewingSale.purchaseFacets || []).join(", ") || viewingSale.segment}</strong></div>
+                <div><span>Butacas</span><strong>{viewingSale.seats}</strong></div>
+                <div><span>Total documentado</span><strong>{currency.format(viewingSale.total)}</strong></div>
+                <div><span>Cobrado</span><strong>{currency.format(viewingSale.paid)}</strong></div>
+                <div><span>Saldo</span><strong>{currency.format(Math.max(0, viewingSale.total - viewingSale.paid))}</strong></div>
+                <div><span>Estado</span><strong>{viewingSale.commercialStatus}</strong></div>
+                <div><span>Ejecutivo</span><strong>{viewingSale.owner}</strong></div>
+                {viewingSale.suiteNumber && <div><span>Número de suite</span><strong>{viewingSale.suiteNumber}</strong></div>}
+                {viewingSale.parkingQuantity > 0 && <div><span>Estacionamientos</span><strong>{viewingSale.parkingQuantity}</strong></div>}
+              </div>
+              <section className="sale-view-section">
+                <h3>Titulares asociados</h3>
+                {(viewingSale.holderAssignments || []).length ? (
+                  <ul>{viewingSale.holderAssignments.map((holder) => (
+                    <li key={`${holder.contactId}-${holder.isPrimary}`}><strong>{holder.contactName}</strong><span>{holder.quantity} abonos{holder.isPrimary ? " · Titular principal" : ""}</span></li>
+                  ))}</ul>
+                ) : <p>Sin desglose adicional de titulares.</p>}
+              </section>
+              {viewingSale.notes && <section className="sale-view-section"><h3>Notas</h3><p>{viewingSale.notes}</p></section>}
+            </div>
+            <footer className="drawer-footer">
+              <button type="button" className="button button--secondary" onClick={() => setViewingSale(null)}>Cerrar</button>
+              {hasPermission(user, PERMISSIONS.SALES_WRITE) && !["Cancelada", "Reembolsada"].includes(viewingSale.commercialStatus) && (
+                <button type="button" className="button button--primary" onClick={() => {
+                  const sale = viewingSale;
+                  setViewingSale(null);
+                  openSaleCorrection(sale);
+                }}>Editar venta</button>
+              )}
+            </footer>
+          </aside>
+        </div>
+      )}
       {cancellingSale && (
         <div className="drawer-backdrop" role="presentation">
           <aside
@@ -5538,7 +5596,11 @@ function SalesPage({
                             }));
                           }}
                         >
-                          <option value="">Selecciona una zona</option>
+                          <option value="">
+                            {saleDraft.zone && !saleDraft.localityCode
+                              ? `Revisar registro histórico: ${saleDraft.zone}`
+                              : "Selecciona una zona"}
+                          </option>
                           {saleLocalities.map((item) => (
                             <option key={item.code} value={item.code}>
                               {item.displayName}

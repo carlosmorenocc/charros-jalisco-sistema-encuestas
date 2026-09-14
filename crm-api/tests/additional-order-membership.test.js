@@ -30,3 +30,15 @@ test('las migraciones conservan una venta por orden y permiten varios titulares'
   assert.match(seatUnits,/seat_personalization text/);
   assert.match(seatUnits,/generate_series\(1,ha\.quantity\)/);
 });
+
+test('ventas usa el titular conciliado y conserva zona y descuento estructurados', async () => {
+  const repository = await readFile(repositoryUrl, 'utf8');
+  const migration = await readFile(new URL('../migrations/023_sale_truth_and_pricing_terms.sql', import.meta.url), 'utf8');
+  assert.match(repository, /primary_holder_contact_id/);
+  assert.match(repository, /COALESCE\(primary_holder\.contact_id,s\.effective_contact_id\)/);
+  assert.match(repository, /price_book_version,section,locality_code,locality_name,discount_code,discount_name,pricing_mode/);
+  assert.match(migration, /INSERT INTO sale_corrections/);
+  assert.match(migration, /titular conciliado de la orden/);
+  assert.match(migration, /ADD COLUMN locality_code/);
+  assert.match(migration, /ADD COLUMN discount_code/);
+});

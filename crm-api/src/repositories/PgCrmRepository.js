@@ -225,7 +225,7 @@ function saleRow(row) {
     id: row.id,
     externalOrderNumber: row.effective_external_order_number ?? row.external_order_number,
     saleType: row.effective_sale_type ?? row.sale_type,
-    contactId: row.effective_contact_id ?? row.contact_id,
+    contactId: row.primary_holder_contact_id ?? row.effective_contact_id ?? row.contact_id,
     contactName: row.contact_name,
     executiveId: row.effective_executive_id ?? row.executive_id,
     executiveName: row.executive_name,
@@ -248,6 +248,13 @@ function saleRow(row) {
     suiteNumber: row.suite_number ?? (suiteZone ? suiteZone.replace(/^suite\s+/i, '').trim() : null),
     parkingQuantity: Number(row.parking_quantity ?? items.filter(isParkingItem).reduce((sum, item) => sum + Number(item.quantity || 0), 0)),
     parkingUnitPrice: PARKING_UNIT_PRICE,
+    priceBookVersion: row.price_book_version ?? null,
+    section: row.sale_section ?? null,
+    localityCode: row.locality_code ?? null,
+    localityName: row.locality_name ?? null,
+    discountCode: row.discount_code ?? null,
+    discountName: row.discount_name ?? null,
+    pricingMode: row.sale_pricing_mode ?? null,
     correctionId: row.correction_id ?? null,
     correctionReason: row.correction_reason ?? null,
     correctedAt: row.corrected_at ?? null,
@@ -2026,8 +2033,18 @@ export class PgCrmRepository {
                 ) ORDER BY ha.is_primary DESC,ha.created_at)
                 FROM sale_holder_assignments ha WHERE ha.sale_id=s.id AND ha.deleted_at IS NULL), '[]'::jsonb) AS holder_assignments,
               terms.commercial_category,terms.coverage_seasons,terms.suite_number,terms.parking_quantity,
+              terms.price_book_version,terms.section AS sale_section,terms.locality_code,
+              terms.locality_name,terms.discount_code,terms.discount_name,terms.pricing_mode AS sale_pricing_mode,
+              primary_holder.contact_id AS primary_holder_contact_id,
               count(*) OVER()::integer AS total_count
-       FROM effective_sales s JOIN contacts c ON c.id=s.effective_contact_id LEFT JOIN app_users u ON u.id=s.effective_executive_id
+       FROM effective_sales s
+       LEFT JOIN LATERAL (
+         SELECT ha.contact_id FROM sale_holder_assignments ha
+         WHERE ha.sale_id=s.id AND ha.deleted_at IS NULL
+         ORDER BY ha.is_primary DESC,ha.created_at,ha.id LIMIT 1
+       ) primary_holder ON true
+       JOIN contacts c ON c.id=COALESCE(primary_holder.contact_id,s.effective_contact_id)
+       LEFT JOIN app_users u ON u.id=s.effective_executive_id
        LEFT JOIN sale_commercial_terms terms ON terms.sale_id=s.id
        LEFT JOIN LATERAL (
          SELECT sum(p.amount + COALESCE(a.amount,0)) AS paid_amount
@@ -2064,8 +2081,18 @@ export class PgCrmRepository {
                   WHERE su.holder_assignment_id=ha.id AND su.deleted_at IS NULL),'[]'::jsonb)
                 ) ORDER BY ha.is_primary DESC,ha.created_at)
                 FROM sale_holder_assignments ha WHERE ha.sale_id=s.id AND ha.deleted_at IS NULL), '[]'::jsonb) AS holder_assignments,
-              terms.commercial_category,terms.coverage_seasons,terms.suite_number,terms.parking_quantity
-       FROM effective_sales s JOIN contacts c ON c.id=s.effective_contact_id LEFT JOIN app_users u ON u.id=s.effective_executive_id
+              terms.commercial_category,terms.coverage_seasons,terms.suite_number,terms.parking_quantity,
+              terms.price_book_version,terms.section AS sale_section,terms.locality_code,
+              terms.locality_name,terms.discount_code,terms.discount_name,terms.pricing_mode AS sale_pricing_mode,
+              primary_holder.contact_id AS primary_holder_contact_id
+       FROM effective_sales s
+       LEFT JOIN LATERAL (
+         SELECT ha.contact_id FROM sale_holder_assignments ha
+         WHERE ha.sale_id=s.id AND ha.deleted_at IS NULL
+         ORDER BY ha.is_primary DESC,ha.created_at,ha.id LIMIT 1
+       ) primary_holder ON true
+       JOIN contacts c ON c.id=COALESCE(primary_holder.contact_id,s.effective_contact_id)
+       LEFT JOIN app_users u ON u.id=s.effective_executive_id
        LEFT JOIN sale_commercial_terms terms ON terms.sale_id=s.id
        LEFT JOIN LATERAL (
          SELECT sum(p.amount + COALESCE(a.amount,0)) AS paid_amount,
@@ -2131,10 +2158,16 @@ export class PgCrmRepository {
       );
       await client.query(
         `INSERT INTO sale_commercial_terms
-          (sale_id,commercial_category,coverage_seasons,suite_number,parking_quantity,created_by,updated_by)
-         VALUES ($1,$2,$3,$4,$5,$6,$6)`,
+          (sale_id,commercial_category,coverage_seasons,suite_number,parking_quantity,
+           price_book_version,section,locality_code,locality_name,discount_code,discount_name,pricing_mode,
+           created_by,updated_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$13)`,
         [result.rows[0].id, data.commercialCategory, data.coverageSeasons,
-          data.suiteNumber ?? null, data.parkingQuantity, actor.id]
+          data.suiteNumber ?? null, data.parkingQuantity,
+          pricing?.priceBookVersion ?? null, pricing?.section ?? null,
+          pricing?.localityCode ?? null, pricing?.localityName ?? null,
+          pricing?.discountCode ?? null, pricing?.discountName ?? null,
+          pricing?.pricingMode ?? null, actor.id]
       );
       for (const item of saleItems) {
         await client.query(
@@ -2294,16 +2327,29 @@ export class PgCrmRepository {
       );
       await client.query(
         `INSERT INTO sale_commercial_terms
-          (sale_id,commercial_category,coverage_seasons,suite_number,parking_quantity,created_by,updated_by)
-         VALUES ($1,$2,$3,$4,$5,$6,$6)
+          (sale_id,commercial_category,coverage_seasons,suite_number,parking_quantity,
+           price_book_version,section,locality_code,locality_name,discount_code,discount_name,pricing_mode,
+           created_by,updated_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$13)
          ON CONFLICT (sale_id) DO UPDATE SET
            commercial_category=EXCLUDED.commercial_category,
            coverage_seasons=EXCLUDED.coverage_seasons,
            suite_number=EXCLUDED.suite_number,
            parking_quantity=EXCLUDED.parking_quantity,
+           price_book_version=EXCLUDED.price_book_version,
+           section=EXCLUDED.section,
+           locality_code=EXCLUDED.locality_code,
+           locality_name=EXCLUDED.locality_name,
+           discount_code=EXCLUDED.discount_code,
+           discount_name=EXCLUDED.discount_name,
+           pricing_mode=EXCLUDED.pricing_mode,
            updated_by=EXCLUDED.updated_by`,
         [saleId, data.commercialCategory, data.coverageSeasons,
-          data.suiteNumber ?? null, data.parkingQuantity, actor.id]
+          data.suiteNumber ?? null, data.parkingQuantity,
+          pricing?.priceBookVersion ?? null, pricing?.section ?? null,
+          pricing?.localityCode ?? null, pricing?.localityName ?? null,
+          pricing?.discountCode ?? null, pricing?.discountName ?? null,
+          pricing?.pricingMode ?? null, actor.id]
       );
       if (data.holderAssignments?.length) {
         const holderContacts = await client.query(
