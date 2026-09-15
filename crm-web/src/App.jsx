@@ -3742,6 +3742,24 @@ function OrderSummaryCell({ contact, onEdit }) {
   );
 }
 
+export function validateSaleSeatIdentifiers(quantity, seatDetails = []) {
+  const count = Number(quantity);
+  if (!Number.isInteger(count) || count < 1) return "";
+  const seats = Array.from({ length: count }, (_, index) =>
+    String(seatDetails[index]?.seatIdentifier || "").trim(),
+  );
+  if (seats.some((seat) => !seat)) {
+    return `Captura la ubicación de las ${count} ${count === 1 ? "butaca" : "butacas"}.`;
+  }
+  const canonical = seats.map((seat) =>
+    seat.replace(/\s+/gu, " ").toLocaleUpperCase("es-MX"),
+  );
+  if (new Set(canonical).size !== canonical.length) {
+    return "Cada butaca de la orden debe tener una ubicación diferente.";
+  }
+  return "";
+}
+
 function MembershipCell({ contact, onEdit }) {
   const loaded = Object.prototype.hasOwnProperty.call(
     contact,
@@ -4544,6 +4562,10 @@ function SalesPage({
         !saleQuote ||
         !Number.isFinite(unitPrice) ||
         unitPrice < 0;
+    const seatValidationError = validateSaleSeatIdentifiers(
+      quantity,
+      saleDraft.seatDetails,
+    );
     if (
       !saleDraft.externalOrderNumber.trim() ||
       !saleDraft.contactId ||
@@ -4555,12 +4577,13 @@ function SalesPage({
       parkingQuantity > 100 ||
       invalidCommercialTerms ||
       invalidHolderDistribution ||
+      seatValidationError ||
       (!editingSale && (paymentAmount < 0 || paymentAmount > totalAmount))
     ) {
       setSaleError(
-        isCommitmentDraft
+        seatValidationError || (isCommitmentDraft
           ? "Completa número de orden, titular, ejecutivo, número de suite, butacas y valor anual."
-          : "Completa número de orden, titular, ejecutivo, zona, descuento y cantidad; espera a que termine la cotización antes de guardar.",
+          : "Completa número de orden, titular, ejecutivo, zona, descuento y cantidad; espera a que termine la cotización antes de guardar."),
       );
       return;
     }
@@ -4593,16 +4616,11 @@ function SalesPage({
       ];
       const seatDetails = Array.from({ length: quantity }, (_, index) => ({
         unitNumber: index + 1,
-        seatIdentifier:
-          saleDraft.seatDetails[index]?.seatIdentifier || undefined,
+        seatIdentifier: saleDraft.seatDetails[index]?.seatIdentifier?.trim(),
         jerseySize: saleDraft.seatDetails[index]?.jerseySize || undefined,
         personalization:
           saleDraft.seatDetails[index]?.personalization || undefined,
       }));
-      const hasSeatDetails = seatDetails.some(
-        (seat) =>
-          seat.seatIdentifier || seat.jerseySize || seat.personalization,
-      );
       const payload = {
         externalOrderNumber: saleDraft.externalOrderNumber.trim(),
         commercialCategory: saleDraft.commercialCategory,
@@ -4636,7 +4654,7 @@ function SalesPage({
               seatCount: quantity,
             },
         holderAssignments,
-        ...(hasSeatDetails ? { seatDetails } : {}),
+        seatDetails,
       };
       payload.parkingQuantity = parkingQuantity;
       if (editingSale)
@@ -5719,6 +5737,47 @@ function SalesPage({
                       </label>
                     </>
                   )}
+                  <section className="field field--full sale-seat-capture" aria-labelledby="sale-seat-capture-title">
+                    <div>
+                      <strong id="sale-seat-capture-title">Butacas de la orden *</strong>
+                      <small>
+                        Captura una ubicación por cada abono. Se mostrará en Orden, Personalización y en el resumen del contacto.
+                      </small>
+                    </div>
+                    <div className="membership-seat-grid">
+                      {Array.from(
+                        { length: Math.max(0, Number(saleDraft.quantity) || 0) },
+                        (_, index) => (
+                          <label className="field" key={`sale-seat-${index + 1}`}>
+                            <span>Butaca {index + 1} *</span>
+                            <input
+                              required
+                              maxLength="100"
+                              autoComplete="off"
+                              value={saleDraft.seatDetails[index]?.seatIdentifier || ""}
+                              onChange={(event) =>
+                                setSaleDraft((current) => {
+                                  const seatDetails = Array.from(
+                                    { length: Math.max(0, Number(current.quantity) || 0) },
+                                    (_, seatIndex) => ({
+                                      ...(current.seatDetails[seatIndex] || {}),
+                                      unitNumber: seatIndex + 1,
+                                    }),
+                                  );
+                                  seatDetails[index] = {
+                                    ...seatDetails[index],
+                                    seatIdentifier: event.target.value,
+                                  };
+                                  return { ...current, seatDetails };
+                                })
+                              }
+                              placeholder="Ej. 307-G-14"
+                            />
+                          </label>
+                        ),
+                      )}
+                    </div>
+                  </section>
                   {!editingSale && (
                     <>
                       <label className="field">

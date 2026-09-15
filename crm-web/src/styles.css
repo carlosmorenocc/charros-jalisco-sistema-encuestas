@@ -606,6 +606,11 @@ select:focus, input:focus, textarea:focus { outline: 0; border-color: var(--blue
 .membership-pricing-summary .membership-pricing-net strong { color: #17643f; font-size: 12px; }
 .membership-pricing-summary > small { grid-column: 1 / -1; color: #536c60; font-size: 8px; }
 .membership-seat-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; max-height: 265px; padding: 13px; overflow-y: auto; background: white; border: 1px solid var(--line); border-radius: 9px; }
+.sale-seat-capture { display: grid; gap: 10px; padding: 12px; background: #f7f9fb; border: 1px solid var(--line); border-radius: 8px; }
+.sale-seat-capture > div:first-child { display: grid; gap: 4px; }
+.sale-seat-capture > div:first-child > strong { color: var(--blue-800); font-size: 10px; }
+.sale-seat-capture > div:first-child > small { color: #6f7d90; font-size: 9px; }
+.sale-seat-capture .membership-seat-grid { max-height: 220px; padding: 10px; }
 .membership-editor-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; }
 .membership-editor-footer > span { color: #738096; font-size: 8.5px; }
 .membership-submit-error { margin: 10px 0 0; }

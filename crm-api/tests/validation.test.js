@@ -208,6 +208,30 @@ test('venta confirmada exige fecha y los pagos deben ser positivos', () => {
   assert.equal(validatePayment({ amount: 500, method: 'card' }).amount, 500);
 });
 
+test('detalle de venta exige una ubicación única por cada butaca enviada', () => {
+  const base = {
+    externalOrderNumber: '26000125', saleType: 'new', closeStage: 'reserved',
+    contactId: UUID, executiveId: UUID, seasonCode: 'LMP-2026-27', status: 'reserved',
+    soldAt: '2026-09-15T12:00:00.000Z',
+    items: [{ product: 'ABONO NUEVO', zone: 'VIP', quantity: 2, unitPrice: 100 }],
+    holderAssignments: [{ contactId: UUID, quantity: 2, isPrimary: true }]
+  };
+  assert.throws(() => validateSale({
+    ...base,
+    seatDetails: [
+      { unitNumber: 1, seatIdentifier: 'VIP-01' },
+      { unitNumber: 2, seatIdentifier: '' }
+    ]
+  }), /ubicación/);
+  assert.throws(() => validateSale({
+    ...base,
+    seatDetails: [
+      { unitNumber: 1, seatIdentifier: 'VIP-01' },
+      { unitNumber: 2, seatIdentifier: ' vip-01 ' }
+    ]
+  }), /diferente/);
+});
+
 test('compromiso anual exige suite, conserva butacas e importe manual sin catálogo', () => {
   const base = {
     externalOrderNumber: 'SUITE-2026-01', commercialCategory: 'commitment', coverageSeasons: 2,
@@ -252,7 +276,9 @@ test('distribución multititular conserva exactamente la cantidad de la orden', 
   ] }), /titular principal/);
   const detailed = validateSale({ ...base, seatDetails: [
     { unitNumber: 1, seatIdentifier: '112-A-1', jerseySize: 'M', personalization: 'CARLOS' },
-    { unitNumber: 2 }, { unitNumber: 3 }, { unitNumber: 4 }
+    { unitNumber: 2, seatIdentifier: '112-A-2' },
+    { unitNumber: 3, seatIdentifier: '112-A-3' },
+    { unitNumber: 4, seatIdentifier: '112-A-4' }
   ] });
   assert.equal(detailed.seatDetails[0].personalization, 'CARLOS');
   assert.equal(detailed.seatDetails[1].jerseySize, null);

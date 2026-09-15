@@ -568,6 +568,15 @@ export function validateSale(input) {
       || sequence.some((unitNumber, index) => unitNumber !== index + 1)) {
       throw badRequest('El detalle opcional debe contener exactamente una fila consecutiva por cada abono vendido.');
     }
+    if (result.seatDetails.some((seat) => !seat.seatIdentifier)) {
+      throw badRequest('Cada fila del detalle debe incluir la ubicación de su butaca.');
+    }
+    const identifiers = result.seatDetails.map((seat) =>
+      seat.seatIdentifier.replace(/\s+/gu, ' ').toLocaleUpperCase('es-MX')
+    );
+    if (new Set(identifiers).size !== identifiers.length) {
+      throw badRequest('Cada butaca de la orden debe tener una ubicación diferente.');
+    }
   }
   return result;
 }

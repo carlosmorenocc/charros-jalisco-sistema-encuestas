@@ -1,7 +1,7 @@
 import React from 'react'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
-import App, { buildCommitmentItems, buildSaleItems, contactMatchesPatch, LoadingScreen, LoginScreen, personalizationSaveMessage, revokeSessionSafely, salesForDashboard, updateContactWithVerification, verifyPersistedContactPatch } from './App'
+import App, { buildCommitmentItems, buildSaleItems, contactMatchesPatch, LoadingScreen, LoginScreen, personalizationSaveMessage, revokeSessionSafely, salesForDashboard, updateContactWithVerification, validateSaleSeatIdentifiers, verifyPersistedContactPatch } from './App'
 
 describe('CRM web en modo demostración', () => {
   it('nunca expone errores técnicos en inglés al guardar personalización', () => {
@@ -113,6 +113,18 @@ describe('CRM web en modo demostración', () => {
     fireEvent.click((await screen.findAllByRole('menuitem', { name: 'Ver venta' }))[0])
     expect(await screen.findByRole('heading', { name: /^Orden / })).toBeInTheDocument()
     expect(screen.getByText(/Ningún dato se modifica desde esta pantalla/i)).toBeInTheDocument()
+  })
+
+  it('exige una ubicación única por cada abono de la orden', () => {
+    expect(validateSaleSeatIdentifiers(2, [])).toMatch(/2 butacas/i)
+    expect(validateSaleSeatIdentifiers(2, [
+      { seatIdentifier: '307-G-14' },
+      { seatIdentifier: ' 307-g-14 ' },
+    ])).toMatch(/diferente/i)
+    expect(validateSaleSeatIdentifiers(2, [
+      { seatIdentifier: '307-G-14' },
+      { seatIdentifier: '307-G-13' },
+    ])).toBe('')
   })
 
   it('abre cada vista desde el menú inicial y presenta el estado operativo del abonado', async () => {
