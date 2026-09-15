@@ -1066,7 +1066,8 @@ export class PgCrmRepository {
       confirmedSales: Number(row.confirmed_sales),
       salesAmount: Number(row.sales_amount),
       collectedAmount: Number(row.collected_amount),
-      balanceAmount: Number(row.sales_amount) - Number(row.collected_amount)
+      balanceAmount: Math.max(0, Number(row.sales_amount) - Number(row.collected_amount)),
+      overpaymentAmount: Math.max(0, Number(row.collected_amount) - Number(row.sales_amount))
     };
   }
 
@@ -2253,7 +2254,6 @@ export class PgCrmRepository {
       const total = pricing ? moneyFromCents(pricing.netAmount) + data.parkingQuantity * PARKING_UNIT_PRICE
         : saleItems.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
       const paid = data.payments.reduce((sum, payment) => sum + payment.amount, 0);
-      if (paid > total) throw conflict('Los pagos no pueden superar el total de la venta.');
       const result = await client.query(
         `INSERT INTO sales
           (external_order_number,sale_type,contact_id,executive_id,season_code,status,sold_at,currency,total_amount,paid_amount,notes,created_by,updated_by)
@@ -2422,9 +2422,6 @@ export class PgCrmRepository {
       const isCommitment = saleSegment(saleItems, pricing) === 'Compromisos';
       const total = pricing ? moneyFromCents(pricing.netAmount) + data.parkingQuantity * PARKING_UNIT_PRICE
         : saleItems.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
-      if (before.paidAmount > total) {
-        throw conflict('La corrección no puede dejar un total menor que los cobros registrados.');
-      }
       const duplicate = await client.query(
         `SELECT id FROM effective_sales
          WHERE season_code=$1 AND upper(effective_external_order_number)=upper($2)
@@ -2611,9 +2608,6 @@ export class PgCrmRepository {
       if (!sale) throw notFound('Venta');
       if (['cancelled', 'refunded'].includes(sale.status)) {
         throw conflict('No se pueden agregar pagos a una venta cancelada o reembolsada.');
-      }
-      if (sale.paidAmount + data.amount > sale.totalAmount) {
-        throw conflict('El pago supera el saldo pendiente de la venta.');
       }
       const result = await client.query(
         `INSERT INTO payments (sale_id,amount,method,paid_at,reference,created_by)

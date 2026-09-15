@@ -4302,7 +4302,9 @@ function SalesPage({
   const paid = metricSales.reduce(
     (sum, sale) =>
       sum +
-      Math.min(Number(sale.paid || 0), saleAmountForFacets(sale, segments)),
+      (segments.length
+        ? Math.min(Number(sale.paid || 0), saleAmountForFacets(sale, segments))
+        : Number(sale.paid || 0)),
     0,
   );
   const seats = metricSales.reduce(
@@ -4479,14 +4481,8 @@ function SalesPage({
   async function submitPayment(event) {
     event.preventDefault();
     const amount = Number(paymentDraft.amount);
-    const balance = Math.max(
-      0,
-      Number(paymentSale.total || 0) - Number(paymentSale.paid || 0),
-    );
-    if (!Number.isFinite(amount) || amount <= 0 || amount > balance) {
-      setPaymentError(
-        `Captura un importe mayor a $0 y no superior a ${currency.format(balance)}.`,
-      );
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setPaymentError("Captura un importe recibido mayor a $0.");
       return;
     }
     setSavingPayment(true);
@@ -4578,7 +4574,7 @@ function SalesPage({
       invalidCommercialTerms ||
       invalidHolderDistribution ||
       seatValidationError ||
-      (!editingSale && (paymentAmount < 0 || paymentAmount > totalAmount))
+      (!editingSale && paymentAmount < 0)
     ) {
       setSaleError(
         seatValidationError || (isCommitmentDraft
@@ -4590,12 +4586,6 @@ function SalesPage({
     if (editingSale && saleDraft.correctionReason.trim().length < 5) {
       setSaleError(
         "Describe el motivo de la corrección con al menos 5 caracteres.",
-      );
-      return;
-    }
-    if (editingSale && Number(editingSale.paid || 0) > totalAmount) {
-      setSaleError(
-        `El total corregido no puede ser menor a lo ya cobrado (${currency.format(editingSale.paid)}).`,
       );
       return;
     }
@@ -4903,28 +4893,24 @@ function SalesPage({
                         {!["Cancelada", "Reembolsada"].includes(
                           sale.commercialStatus,
                         ) &&
-                          (sale.paid < sale.total ? (
-                            <button
-                              type="button"
-                              role="menuitem"
-                              title="Registrar cobro"
-                              onClick={(event) => {
-                                setPaymentSale(sale);
-                                setPaymentDraft({
-                                  amount: "",
-                                  method: "Transferencia",
-                                  paidAt: new Date().toISOString().slice(0, 10),
-                                  reference: "",
-                                });
-                                setPaymentError("");
-                                event.currentTarget.closest("details")?.removeAttribute("open");
-                              }}
-                            >
-                              <Icon name="wallet" size={16} /><span>Registrar cobro</span>
-                            </button>
-                          ) : (
-                            <span className="sale-actions-menu__status"><Icon name="check" size={15} />Liquidado</span>
-                          ))}
+                          <button
+                            type="button"
+                            role="menuitem"
+                            title={sale.paid >= sale.total ? "Registrar cobro adicional" : "Registrar cobro"}
+                            onClick={(event) => {
+                              setPaymentSale(sale);
+                              setPaymentDraft({
+                                amount: "",
+                                method: "Transferencia",
+                                paidAt: new Date().toISOString().slice(0, 10),
+                                reference: "",
+                              });
+                              setPaymentError("");
+                              event.currentTarget.closest("details")?.removeAttribute("open");
+                            }}
+                          >
+                            <Icon name="wallet" size={16} /><span>{sale.paid >= sale.total ? "Registrar cobro adicional" : "Registrar cobro"}</span>
+                          </button>}
                         {!["Cancelada", "Reembolsada"].includes(
                           sale.commercialStatus,
                         ) && (
@@ -5123,12 +5109,7 @@ function SalesPage({
               <div>
                 <span className="eyebrow">Control de cobranza</span>
                 <h2 id="payment-title">Registrar cobro</h2>
-                <p>
-                  {paymentSale.contact} · Saldo{" "}
-                  {currency.format(
-                    Math.max(0, paymentSale.total - paymentSale.paid),
-                  )}
-                </p>
+                <p>{paymentSale.contact} · Orden {paymentSale.externalOrderNumber || paymentSale.id}</p>
               </div>
               <button
                 type="button"
@@ -5143,7 +5124,7 @@ function SalesPage({
               <div className="drawer-body">
                 <div className="form-grid">
                   <label className="field">
-                    <span>Importe recibido *</span>
+                    <span>Monto recibido *</span>
                     <input
                       autoFocus
                       type="number"
@@ -5157,7 +5138,17 @@ function SalesPage({
                         }))
                       }
                     />
+                    <small>
+                      Captura el importe real, incluidos centavos o una comisión adicional de BoletoMóvil.
+                    </small>
                   </label>
+                  <div className="field payment-order-summary">
+                    <span>Resumen de cobranza</span>
+                    <strong>Venta {currency.format(paymentSale.total)}</strong>
+                    <small>
+                      Cobrado {currency.format(paymentSale.paid)} · Saldo {currency.format(Math.max(0, paymentSale.total - paymentSale.paid))}
+                    </small>
+                  </div>
                   <label className="field">
                     <span>Método *</span>
                     <select

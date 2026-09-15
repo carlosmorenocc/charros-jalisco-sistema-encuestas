@@ -76,3 +76,16 @@ test('ventas reconcilia contactos y expone una auditoria de solo lectura', async
   assert.match(audit, /invalid_primary_holder_count/);
   assert.match(audit, /overpaid/);
 });
+
+test('cobranza conserva excedentes documentados sin confundirlos con inconsistencias', async () => {
+  const repository = await readFile(repositoryUrl, 'utf8');
+  const migration = await readFile(new URL('../migrations/026_allow_documented_payment_excess.sql', import.meta.url), 'utf8');
+  const addPayment = repository.slice(
+    repository.indexOf('async addPayment('),
+    repository.indexOf('async cancelSale(')
+  );
+  assert.doesNotMatch(addPayment, /supera el saldo/);
+  assert.match(migration, /DROP CONSTRAINT IF EXISTS sales_paid_not_over_total/);
+  assert.match(migration, /overpayment_amount/);
+  assert.doesNotMatch(migration, /THEN 'overpaid'/);
+});

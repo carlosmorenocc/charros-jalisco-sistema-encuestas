@@ -127,6 +127,16 @@ describe('CRM web en modo demostración', () => {
     ])).toBe('')
   })
 
+  it('mantiene el cobro real separado del valor comercial en los indicadores', () => {
+    const sales = [{
+      id: 'commission', soldAt: '2026-09-15T12:00:00.000Z', owner: 'JULISSA CARRANZA',
+      total: 1000, paid: 1007.25, commercialStatus: 'Confirmada'
+    }]
+    const current = salesForDashboard(sales, {})
+    expect(current.reduce((sum, sale) => sum + sale.paid, 0)).toBe(1007.25)
+    expect(current.reduce((sum, sale) => sum + sale.total, 0)).toBe(1000)
+  })
+
   it('abre cada vista desde el menú inicial y presenta el estado operativo del abonado', async () => {
     render(<App />)
     fireEvent.click(await screen.findByRole('button', { name: /Cartera y Renovaciones/i }))
