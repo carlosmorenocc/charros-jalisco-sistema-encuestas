@@ -4478,6 +4478,37 @@ function SalesPage({
     setSaleError("");
     setSaleOpen(true);
   }
+  function openPaymentDrawer(sale) {
+    setPaymentSale(sale);
+    setPaymentDraft({
+      amount: "",
+      method: "Transferencia",
+      paidAt: new Date().toISOString().slice(0, 10),
+      reference: "",
+    });
+    setPaymentError("");
+  }
+  function positionSaleActions(event) {
+    const details = event.currentTarget;
+    if (!details.open) return;
+    window.requestAnimationFrame(() => {
+      const trigger = details.querySelector(":scope > summary");
+      const panel = details.querySelector(".sale-actions-menu__panel");
+      if (!trigger || !panel) return;
+      const triggerRect = trigger.getBoundingClientRect();
+      const panelRect = panel.getBoundingClientRect();
+      const roomBelow = window.innerHeight - triggerRect.bottom - 8;
+      const top = roomBelow >= panelRect.height
+        ? triggerRect.bottom + 5
+        : triggerRect.top - panelRect.height - 5;
+      const left = Math.min(
+        window.innerWidth - panelRect.width - 8,
+        Math.max(8, triggerRect.right - panelRect.width),
+      );
+      panel.style.setProperty("--sale-menu-top", `${Math.max(8, top)}px`);
+      panel.style.setProperty("--sale-menu-left", `${left}px`);
+    });
+  }
   async function submitPayment(event) {
     event.preventDefault();
     const amount = Number(paymentDraft.amount);
@@ -4885,7 +4916,7 @@ function SalesPage({
                   </td>
                   <td>{sale.commercialStatus || "—"}</td>
                   <td>
-                      <details className="sale-actions-menu">
+                      <details className="sale-actions-menu" onToggle={positionSaleActions}>
                         <summary aria-label={`Más opciones de la orden ${sale.externalOrderNumber || sale.id}`} title="Más opciones"><Icon name="more" size={18} /></summary>
                         <div className="sale-actions-menu__panel" role="menu">
                         <button type="button" role="menuitem" title="Ver venta" onClick={(event) => { setViewingSale(sale); event.currentTarget.closest("details")?.removeAttribute("open"); }}><Icon name="eye" size={16} /><span>Ver venta</span></button>
@@ -4898,14 +4929,7 @@ function SalesPage({
                             role="menuitem"
                             title={sale.paid >= sale.total ? "Registrar cobro adicional" : "Registrar cobro"}
                             onClick={(event) => {
-                              setPaymentSale(sale);
-                              setPaymentDraft({
-                                amount: "",
-                                method: "Transferencia",
-                                paidAt: new Date().toISOString().slice(0, 10),
-                                reference: "",
-                              });
-                              setPaymentError("");
+                              openPaymentDrawer(sale);
                               event.currentTarget.closest("details")?.removeAttribute("open");
                             }}
                           >
@@ -5827,6 +5851,27 @@ function SalesPage({
                         />
                       </label>
                     </>
+                  )}
+                  {editingSale && !["Cancelada", "Reembolsada"].includes(editingSale.commercialStatus) && (
+                    <section className="field field--full payment-edit-access">
+                      <div>
+                        <strong>Cobranza</strong>
+                        <small>
+                          Venta {currency.format(editingSale.total)} · Cobrado {currency.format(editingSale.paid)} · Saldo {currency.format(Math.max(0, editingSale.total - editingSale.paid))}
+                        </small>
+                      </div>
+                      <button
+                        type="button"
+                        className="button button--secondary"
+                        onClick={() => {
+                          setSaleOpen(false);
+                          openPaymentDrawer(editingSale);
+                        }}
+                      >
+                        <Icon name="wallet" size={16} />
+                        {editingSale.paid >= editingSale.total ? "Registrar cobro adicional" : "Registrar nuevo cobro"}
+                      </button>
+                    </section>
                   )}
                   <label className="field field--full">
                     <span>Notas</span>

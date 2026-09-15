@@ -226,14 +226,13 @@ main:focus { outline: 0; }
 .sale-actions-menu > summary { display: grid; place-items: center; width: 34px; height: 32px; color: var(--blue-700); background: white; border: 1px solid var(--line); border-radius: 8px; cursor: pointer; list-style: none; }
 .sale-actions-menu > summary::-webkit-details-marker { display: none; }
 .sale-actions-menu > summary:hover, .sale-actions-menu[open] > summary { background: var(--blue-50); border-color: #b9cee4; }
-.sale-actions-menu__panel { position: absolute; z-index: 45; top: calc(100% + 5px); right: 0; width: 172px; padding: 6px; background: white; border: 1px solid var(--line); border-radius: 9px; box-shadow: var(--shadow-lg); }
+.sale-actions-menu__panel { position: fixed; z-index: 120; top: var(--sale-menu-top, 8px); left: var(--sale-menu-left, 8px); width: 190px; padding: 6px; background: white; border: 1px solid var(--line); border-radius: 9px; box-shadow: var(--shadow-lg); }
 .sale-actions-menu__panel button, .sale-actions-menu__status { display: flex; align-items: center; gap: 9px; width: 100%; min-height: 34px; padding: 7px 9px; color: var(--blue-800); background: transparent; border: 0; border-radius: 6px; font-size: 10px; font-weight: 700; text-align: left; }
 .sale-actions-menu__panel button:hover { background: var(--blue-50); }
 .sale-actions-menu__panel .sale-actions-menu__danger { color: var(--red-700); }
 .sale-actions-menu__panel .sale-actions-menu__danger:hover { background: var(--red-100); }
 .sale-actions-menu__status { color: var(--green-700); }
-.data-table tbody tr:nth-last-child(-n+3) .sale-actions-menu__panel { top: auto; bottom: calc(100% + 5px); }
-.contact-view-menu .sale-actions-menu__panel { right: auto; left: 0; }
+.contact-view-menu .sale-actions-menu__panel { position: absolute; top: calc(100% + 5px); right: auto; left: 0; width: 172px; }
 .subscriber-action-state { display: inline-flex; align-items: center; padding: 4px 8px; color: var(--green-700); background: var(--green-100); border-radius: 999px; font-size: 8.5px; font-weight: 800; }
 .subscriber-next-action { display: block; min-width: 165px; color: var(--green-700); font-size: 8.5px; font-weight: 700; line-height: 1.35; }
 .sale-order-link { padding: 0; border: 0; background: transparent; font: inherit; font-weight: 700; }
@@ -613,6 +612,10 @@ select:focus, input:focus, textarea:focus { outline: 0; border-color: var(--blue
 .sale-seat-capture .membership-seat-grid { max-height: 220px; padding: 10px; }
 .payment-order-summary { align-self: stretch; justify-content: center; padding: 10px 12px; background: var(--blue-50); border: 1px solid #dce8f4; border-radius: 8px; }
 .payment-order-summary strong { color: var(--blue-800); font-size: 11px; }
+.payment-edit-access { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 12px; background: var(--blue-50); border: 1px solid #dce8f4; border-radius: 8px; }
+.payment-edit-access > div { display: grid; gap: 4px; }
+.payment-edit-access strong { color: var(--blue-800); font-size: 10px; }
+.payment-edit-access small { color: #60728a; font-size: 9px; }
 .membership-editor-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; }
 .membership-editor-footer > span { color: #738096; font-size: 8.5px; }
 .membership-submit-error { margin: 10px 0 0; }
