@@ -2,7 +2,10 @@
 -- value remains commercial truth while payments preserve the real cash amount.
 ALTER TABLE sales DROP CONSTRAINT IF EXISTS sales_paid_not_over_total;
 
-CREATE OR REPLACE VIEW sale_integrity_audit AS
+-- PostgreSQL cannot insert a column in the middle of an existing view with
+-- CREATE OR REPLACE. This diagnostic view has no dependants and stores no data.
+DROP VIEW IF EXISTS sale_integrity_audit;
+CREATE VIEW sale_integrity_audit AS
 WITH holder_totals AS (
   SELECT ha.sale_id,count(*)::integer AS holder_count,
     count(*) FILTER (WHERE ha.is_primary)::integer AS primary_holder_count,

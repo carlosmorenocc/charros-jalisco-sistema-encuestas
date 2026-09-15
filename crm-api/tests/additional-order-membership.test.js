@@ -86,6 +86,8 @@ test('cobranza conserva excedentes documentados sin confundirlos con inconsisten
   );
   assert.doesNotMatch(addPayment, /supera el saldo/);
   assert.match(migration, /DROP CONSTRAINT IF EXISTS sales_paid_not_over_total/);
+  assert.match(migration, /DROP VIEW IF EXISTS sale_integrity_audit/);
+  assert.match(migration, /CREATE VIEW sale_integrity_audit/);
   assert.match(migration, /overpayment_amount/);
   assert.doesNotMatch(migration, /THEN 'overpaid'/);
 });
