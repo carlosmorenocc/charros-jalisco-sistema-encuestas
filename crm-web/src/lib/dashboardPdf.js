@@ -339,7 +339,7 @@ function createContentStream(report, logoDimensions) {
   })
   commands.push(rect(rightX, 255, rightWidth, 116, COLORS.white, COLORS.line))
   drawPanelHeading(commands, rightX + 16, 352, 'Segmentación de la cartera', 'Abonos por segmento')
-  const pdfSegments = [['Compromisos', COLORS.red], ['VIP', COLORS.gold], ['Preferente', COLORS.blue], ['General', COLORS.green]]
+  const pdfSegments = [['Compromisos', COLORS.red], ['VIP', COLORS.gold], ['Preferente', COLORS.blue], ['General', COLORS.green], ['Estacionamientos', COLORS.violet]]
   const segmentTotal = pdfSegments.reduce((sum, [label]) => sum + asNumber(summary.membershipSegments?.[label]), 0)
   let segmentCursor = 0
   if (segmentTotal > 0) {
@@ -351,7 +351,7 @@ function createContentStream(report, logoDimensions) {
     })
   } else commands.push(arcStroke(rightX + 55, 302, 30, 0, Math.PI * 2, COLORS.line, 12))
   commands.push(text(formatInteger(segmentTotal), rightX + 43, 300, { font: 'F2', size: 11, fill: COLORS.ink }))
-  commands.push(text('ABONOS', rightX + 41, 290, { font: 'F2', size: 5.5, fill: COLORS.muted }))
+  commands.push(text('UNIDADES', rightX + 39, 290, { font: 'F2', size: 5.5, fill: COLORS.muted }))
   pdfSegments.forEach(([label, accent], index) => {
     const x = rightX + 105 + (index % 2) * 110
     const y = 315 - Math.floor(index / 2) * 37

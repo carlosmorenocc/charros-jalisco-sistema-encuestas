@@ -103,7 +103,7 @@ test('aplica temporada en ventas y dashboard con parámetros SQL', async () => {
           membership_commercial_value: 4492000,
           membership_net_amount: 3748000, membership_discount_amount: 744000,
           campaign_messages: 0, confirmed_sales: 0, sales_amount: 0,
-          collected_amount: 0
+          collected_amount: 0, period_segment_parking: 2
         }] };
       }
       return { rows: [] };
@@ -142,7 +142,7 @@ test('aplica temporada en ventas y dashboard con parámetros SQL', async () => {
   assert.equal(summary.membershipNetAmount, 37480);
   assert.equal(summary.membershipDiscountAmount, 7440);
   assert.deepEqual(summary.periodMembershipSegments, {
-    Compromisos: 0, VIP: 0, Preferente: 0, General: 0
+    Compromisos: 0, VIP: 0, Preferente: 0, General: 0, Estacionamientos: 2
   });
 });
 
@@ -179,7 +179,7 @@ test('Dirección suma el total documentado de apartados y separa el cobro recibi
   assert.equal(summary.newSeats, 1);
   assert.equal(summary.activeSeats, 1);
   assert.deepEqual(summary.membershipSegments, {
-    Compromisos: 0, VIP: 1, Preferente: 0, General: 0
+    Compromisos: 0, VIP: 1, Preferente: 0, General: 0, Estacionamientos: 0
   });
   assert.equal(summary.salesAmount, 4207);
   assert.equal(summary.collectedAmount, 1500);
@@ -204,7 +204,7 @@ test('DirecciÃ³n toma titulares, abonos, segmentos y renovaciones desde asigna
   assert.equal(summary.currentSubscribers,200);
   assert.equal(summary.activeSeats,569);
   assert.equal(summary.renewing,25);
-  assert.deepEqual(summary.membershipSegments,{ Compromisos: 46,VIP: 151,Preferente: 152,General: 220 });
+  assert.deepEqual(summary.membershipSegments,{ Compromisos: 46,VIP: 151,Preferente: 152,General: 220,Estacionamientos: 0 });
 });
 
 test('bitácora global y tareas abiertas conservan el alcance del ejecutivo', async () => {

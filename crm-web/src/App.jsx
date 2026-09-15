@@ -2664,6 +2664,11 @@ function DashboardPage({
     ["VIP", Number(displayedSegments.VIP || 0), "#d5a228"],
     ["Preferente", Number(displayedSegments.Preferente || 0), "#2a73b7"],
     ["General", Number(displayedSegments.General || 0), "#2c9b70"],
+    [
+      "Estacionamientos",
+      Number(displayedSegments.Estacionamientos || 0),
+      "#7c5cc4",
+    ],
   ];
   const segmentTotal = segmentRows.reduce((sum, [, value]) => sum + value, 0);
   const newSubscriberPeriodLabel = selectedPeriodLabel(
@@ -2988,7 +2993,7 @@ function DashboardPage({
               <h2>Abonos por segmento</h2>
             </div>
             <span className="small-chip">
-              {integer.format(segmentTotal)} abonos
+              {integer.format(segmentTotal)} unidades
             </span>
           </div>
           <div className="donut-layout">
@@ -2999,7 +3004,7 @@ function DashboardPage({
               <div>
                 <strong>{integer.format(segmentTotal)}</strong>
                 <span>
-                  {segmentIsPeriod ? "abonos del periodo" : "abonos activos"}
+                  {segmentIsPeriod ? "unidades del periodo" : "unidades activas"}
                 </span>
               </div>
             </div>

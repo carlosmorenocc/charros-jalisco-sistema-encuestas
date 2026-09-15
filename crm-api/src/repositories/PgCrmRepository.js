@@ -946,7 +946,10 @@ export class PgCrmRepository {
            ),0)::integer AS period_segment_preferente,
            COALESCE(sum(COALESCE(i.segment_general,0)) FILTER (
              WHERE s.effective_status IN ('confirmed','reserved')
-           ),0)::integer AS period_segment_general
+           ),0)::integer AS period_segment_general,
+           COALESCE(sum(COALESCE(i.segment_parking,0)) FILTER (
+             WHERE s.effective_status IN ('confirmed','reserved')
+           ),0)::integer AS period_segment_parking
          FROM effective_sales s JOIN scoped_contacts c ON c.id = s.effective_contact_id
          LEFT JOIN LATERAL (
            SELECT sum(p.amount + COALESCE(a.amount,0)) AS paid_amount
@@ -979,11 +982,17 @@ export class PgCrmRepository {
              sum((item->>'quantity')::integer) FILTER (
                WHERE NOT (lower(COALESCE(item->>'product','')) LIKE '%compromiso%'
                  OR lower(COALESCE(item->>'zone','')) = 'zona suites')
+                 AND lower(COALESCE(item->>'product','')) NOT LIKE '%estacionamiento%'
+                 AND lower(COALESCE(item->>'zone','')) NOT LIKE '%estacionamiento%'
                  AND lower(COALESCE(item->>'zone','')) NOT LIKE '%vip%'
                  AND lower(COALESCE(item->>'zone','')) NOT LIKE '%preferente%'
                  AND lower(COALESCE(item->>'zone','')) NOT LIKE '%premier%'
                  AND lower(COALESCE(item->>'zone','')) NOT LIKE '%planta baja%'
-             )::integer AS segment_general
+             )::integer AS segment_general,
+             sum((item->>'quantity')::integer) FILTER (
+               WHERE lower(COALESCE(item->>'product','')) LIKE '%estacionamiento%'
+                  OR lower(COALESCE(item->>'zone','')) LIKE '%estacionamiento%'
+             )::integer AS segment_parking
            FROM jsonb_array_elements(s.effective_items) item
          ) i ON true
          WHERE s.deleted_at IS NULL
@@ -1050,13 +1059,15 @@ export class PgCrmRepository {
         Compromisos: Number(row.holder_segment_commitments ?? 0),
         VIP: Number(row.holder_segment_vip ?? 0),
         Preferente: Number(row.holder_segment_preferente ?? 0),
-        General: Number(row.holder_segment_general ?? 0)
+        General: Number(row.holder_segment_general ?? 0),
+        Estacionamientos: Number(row.period_segment_parking ?? 0)
       },
       periodMembershipSegments: {
         Compromisos: Number(row.holder_segment_commitments ?? 0),
         VIP: Number(row.holder_segment_vip ?? 0),
         Preferente: Number(row.holder_segment_preferente ?? 0),
-        General: Number(row.holder_segment_general ?? 0)
+        General: Number(row.holder_segment_general ?? 0),
+        Estacionamientos: Number(row.period_segment_parking ?? 0)
       },
       notContacted: Number(row.not_contacted),
       unassigned: Number(row.unassigned),
