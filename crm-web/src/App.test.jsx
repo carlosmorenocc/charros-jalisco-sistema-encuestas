@@ -1,7 +1,7 @@
 import React from 'react'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
-import App, { buildCommitmentItems, buildSaleItems, contactMatchesPatch, LoadingScreen, LoginScreen, personalizationSaveMessage, revokeSessionSafely, salesForDashboard, updateContactWithVerification, validateSaleSeatIdentifiers, verifyPersistedContactPatch } from './App'
+import App, { buildCommitmentItems, buildSaleItems, contactMatchesPatch, handleFloatingActionMenuToggle, LoadingScreen, LoginScreen, personalizationSaveMessage, revokeSessionSafely, salesForDashboard, updateContactWithVerification, validateSaleSeatIdentifiers, verifyPersistedContactPatch } from './App'
 
 describe('CRM web en modo demostración', () => {
   it('nunca expone errores técnicos en inglés al guardar personalización', () => {
@@ -135,6 +135,20 @@ describe('CRM web en modo demostración', () => {
     const current = salesForDashboard(sales, {})
     expect(current.reduce((sum, sale) => sum + sale.paid, 0)).toBe(1007.25)
     expect(current.reduce((sum, sale) => sum + sale.total, 0)).toBe(1000)
+  })
+
+  it('cierra automáticamente los menús flotantes después de cinco segundos', () => {
+    vi.useFakeTimers()
+    const details = document.createElement('details')
+    details.className = 'floating-actions-menu'
+    details.innerHTML = '<summary>Acciones</summary><div class="sale-actions-menu__panel"></div>'
+    document.body.appendChild(details)
+    details.open = true
+    handleFloatingActionMenuToggle({ currentTarget: details })
+    vi.advanceTimersByTime(5000)
+    expect(details.open).toBe(false)
+    details.remove()
+    vi.useRealTimers()
   })
 
   it('abre cada vista desde el menú inicial y presenta el estado operativo del abonado', async () => {

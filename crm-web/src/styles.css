@@ -232,7 +232,7 @@ main:focus { outline: 0; }
 .sale-actions-menu__panel .sale-actions-menu__danger { color: var(--red-700); }
 .sale-actions-menu__panel .sale-actions-menu__danger:hover { background: var(--red-100); }
 .sale-actions-menu__status { color: var(--green-700); }
-.contact-view-menu .sale-actions-menu__panel { position: absolute; top: calc(100% + 5px); right: auto; left: 0; width: 172px; }
+.contact-view-menu .sale-actions-menu__panel { width: 172px; }
 .subscriber-action-state { display: inline-flex; align-items: center; padding: 4px 8px; color: var(--green-700); background: var(--green-100); border-radius: 999px; font-size: 8.5px; font-weight: 800; }
 .subscriber-next-action { display: block; min-width: 165px; color: var(--green-700); font-size: 8.5px; font-weight: 700; line-height: 1.35; }
 .sale-order-link { padding: 0; border: 0; background: transparent; font: inherit; font-weight: 700; }

@@ -3650,7 +3650,7 @@ function ContactRow({ contact, isPortfolio, onEdit }) {
   return (
     <tr>
       <td>
-        <details className="sale-actions-menu contact-view-menu">
+        <details className="sale-actions-menu contact-view-menu floating-actions-menu" onToggle={handleFloatingActionMenuToggle}>
           <summary aria-label={`Abrir vistas de ${contact.name}`} title="Abrir vistas"><Icon name="more" size={18} /></summary>
           <div className="sale-actions-menu__panel" role="menu">
             {[["contact", "people", "Contacto"], ["orders", "wallet", "Orden"], ["personalization", "edit", "Personalización"], ["inseason", "star", "In-season"]].map(([panel, icon, label]) => (
@@ -3758,6 +3758,45 @@ export function validateSaleSeatIdentifiers(quantity, seatDetails = []) {
     return "Cada butaca de la orden debe tener una ubicación diferente.";
   }
   return "";
+}
+
+const floatingActionMenuTimers = new WeakMap();
+
+export function handleFloatingActionMenuToggle(event) {
+  const details = event.currentTarget;
+  const priorTimer = floatingActionMenuTimers.get(details);
+  if (priorTimer) window.clearTimeout(priorTimer);
+  floatingActionMenuTimers.delete(details);
+  if (!details.open) return;
+
+  document.querySelectorAll("details.floating-actions-menu[open]").forEach((menu) => {
+    if (menu !== details) menu.removeAttribute("open");
+  });
+
+  window.requestAnimationFrame(() => {
+    if (!details.open || !details.isConnected) return;
+    const trigger = details.querySelector(":scope > summary");
+    const panel = details.querySelector(".sale-actions-menu__panel");
+    if (!trigger || !panel) return;
+    const triggerRect = trigger.getBoundingClientRect();
+    const panelRect = panel.getBoundingClientRect();
+    const roomBelow = window.innerHeight - triggerRect.bottom - 8;
+    const top = roomBelow >= panelRect.height
+      ? triggerRect.bottom + 5
+      : triggerRect.top - panelRect.height - 5;
+    const left = Math.min(
+      window.innerWidth - panelRect.width - 8,
+      Math.max(8, triggerRect.right - panelRect.width),
+    );
+    panel.style.setProperty("--sale-menu-top", `${Math.max(8, top)}px`);
+    panel.style.setProperty("--sale-menu-left", `${left}px`);
+  });
+
+  const timer = window.setTimeout(() => {
+    if (details.isConnected) details.removeAttribute("open");
+    floatingActionMenuTimers.delete(details);
+  }, 5000);
+  floatingActionMenuTimers.set(details, timer);
 }
 
 function MembershipCell({ contact, onEdit }) {
@@ -4488,27 +4527,6 @@ function SalesPage({
     });
     setPaymentError("");
   }
-  function positionSaleActions(event) {
-    const details = event.currentTarget;
-    if (!details.open) return;
-    window.requestAnimationFrame(() => {
-      const trigger = details.querySelector(":scope > summary");
-      const panel = details.querySelector(".sale-actions-menu__panel");
-      if (!trigger || !panel) return;
-      const triggerRect = trigger.getBoundingClientRect();
-      const panelRect = panel.getBoundingClientRect();
-      const roomBelow = window.innerHeight - triggerRect.bottom - 8;
-      const top = roomBelow >= panelRect.height
-        ? triggerRect.bottom + 5
-        : triggerRect.top - panelRect.height - 5;
-      const left = Math.min(
-        window.innerWidth - panelRect.width - 8,
-        Math.max(8, triggerRect.right - panelRect.width),
-      );
-      panel.style.setProperty("--sale-menu-top", `${Math.max(8, top)}px`);
-      panel.style.setProperty("--sale-menu-left", `${left}px`);
-    });
-  }
   async function submitPayment(event) {
     event.preventDefault();
     const amount = Number(paymentDraft.amount);
@@ -4916,7 +4934,7 @@ function SalesPage({
                   </td>
                   <td>{sale.commercialStatus || "—"}</td>
                   <td>
-                      <details className="sale-actions-menu" onToggle={positionSaleActions}>
+                      <details className="sale-actions-menu floating-actions-menu" onToggle={handleFloatingActionMenuToggle}>
                         <summary aria-label={`Más opciones de la orden ${sale.externalOrderNumber || sale.id}`} title="Más opciones"><Icon name="more" size={18} /></summary>
                         <div className="sale-actions-menu__panel" role="menu">
                         <button type="button" role="menuitem" title="Ver venta" onClick={(event) => { setViewingSale(sale); event.currentTarget.closest("details")?.removeAttribute("open"); }}><Icon name="eye" size={16} /><span>Ver venta</span></button>
