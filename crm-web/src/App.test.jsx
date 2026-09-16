@@ -6,7 +6,7 @@ import App, { buildCommitmentItems, buildSaleItems, contactMatchesPatch, dashboa
 describe('CRM web en modo demostración', () => {
   it('separa estacionamientos de los abonos en todas las combinaciones del filtro', () => {
     const segments = { Compromisos: 2, VIP: 3, Preferente: 5, General: 7, Estacionamientos: 11 }
-    expect(dashboardSegmentsForFilters(segments, [])).toEqual({ Compromisos: 2, VIP: 3, Preferente: 5, General: 7, Estacionamientos: 0 })
+    expect(dashboardSegmentsForFilters(segments, [])).toEqual({ Compromisos: 2, VIP: 3, Preferente: 5, General: 7, Estacionamientos: 11 })
     expect(dashboardSegmentsForFilters(segments, ['Estacionamientos'])).toEqual({ Compromisos: 0, VIP: 0, Preferente: 0, General: 0, Estacionamientos: 11 })
     expect(dashboardSegmentsForFilters(segments, ['VIP', 'Estacionamientos'])).toEqual({ Compromisos: 0, VIP: 3, Preferente: 0, General: 0, Estacionamientos: 11 })
     expect(dashboardSegmentsForFilters(segments, ['Preferente', 'General'])).toEqual({ Compromisos: 0, VIP: 0, Preferente: 5, General: 7, Estacionamientos: 0 })

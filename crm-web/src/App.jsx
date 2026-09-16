@@ -323,7 +323,8 @@ export function dashboardSegmentsForFilters(segments = {}, facets = []) {
         ? Number(segments[segment] || 0)
         : 0;
   }
-  result.Estacionamientos = selected.has("Estacionamientos")
+  result.Estacionamientos =
+    !hasTypeFilter || selected.has("Estacionamientos")
     ? Number(segments.Estacionamientos || 0)
     : 0;
   return result;
