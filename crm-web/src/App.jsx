@@ -2656,20 +2656,35 @@ function DashboardPage({
   const segmentIsPeriod =
     reportFilters.period !== "all" ||
     Boolean(reportFilters.fromDate || reportFilters.toDate);
-  const displayedSegments = segmentIsPeriod
+  const rawDisplayedSegments = segmentIsPeriod
     ? summary.periodMembershipSegments || {}
     : summary.membershipSegments || {};
+  const parkingOnly =
+    reportFilters.purchaseFacets?.length === 1 &&
+    reportFilters.purchaseFacets[0] === "Estacionamientos";
+  const displayedSegments = parkingOnly
+    ? {
+        Compromisos: 0,
+        VIP: 0,
+        Preferente: 0,
+        General: 0,
+        Estacionamientos: Number(
+          rawDisplayedSegments.Estacionamientos || 0,
+        ),
+      }
+    : rawDisplayedSegments;
   const segmentRows = [
     ["Compromisos", Number(displayedSegments.Compromisos || 0), "#a33b46"],
     ["VIP", Number(displayedSegments.VIP || 0), "#d5a228"],
     ["Preferente", Number(displayedSegments.Preferente || 0), "#2a73b7"],
     ["General", Number(displayedSegments.General || 0), "#2c9b70"],
-    [
-      "Estacionamientos",
-      Number(displayedSegments.Estacionamientos || 0),
-      "#7c5cc4",
-    ],
   ];
+  const parkingSegmentRow = [
+    "Estacionamientos",
+    Number(displayedSegments.Estacionamientos || 0),
+    "#7c5cc4",
+  ];
+  const segmentLegendRows = [...segmentRows, parkingSegmentRow];
   const segmentTotal = segmentRows.reduce((sum, [, value]) => sum + value, 0);
   const newSubscriberPeriodLabel = selectedPeriodLabel(
     reportFilters.period,
@@ -2993,7 +3008,7 @@ function DashboardPage({
               <h2>Abonos por segmento</h2>
             </div>
             <span className="small-chip">
-              {integer.format(segmentTotal)} unidades
+              {integer.format(segmentTotal)} abonos
             </span>
           </div>
           <div className="donut-layout">
@@ -3004,12 +3019,12 @@ function DashboardPage({
               <div>
                 <strong>{integer.format(segmentTotal)}</strong>
                 <span>
-                  {segmentIsPeriod ? "unidades del periodo" : "unidades activas"}
+                  {segmentIsPeriod ? "abonos del periodo" : "abonos activos"}
                 </span>
               </div>
             </div>
             <div className="donut-legend">
-              {segmentRows.map(([label, value, color]) => (
+              {segmentLegendRows.map(([label, value, color]) => (
                 <div key={label}>
                   <i className="legend-dot" style={{ background: color }} />
                   <span>{label}</span>
