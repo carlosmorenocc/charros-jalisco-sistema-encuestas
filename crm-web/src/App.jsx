@@ -652,22 +652,31 @@ export async function updateContactWithVerification(
   throw originalError;
 }
 
-async function loadAllSales(api, filters = {}) {
+export async function loadAllSales(api, filters = {}) {
   const pageSize = 100;
-  const first = await api.sales({ ...filters, page: 1, pageSize });
-  const items = [
-    ...(Array.isArray(first.data) ? first.data : first.data?.items || []),
-  ];
-  const totalPages = Math.max(1, Number(first.meta?.totalPages || 1));
-  for (let page = 2; page <= totalPages; page += 1) {
-    const response = await api.sales({ ...filters, page, pageSize });
-    items.push(
-      ...(Array.isArray(response.data)
-        ? response.data
-        : response.data?.items || []),
-    );
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const first = await api.sales({ ...filters, page: 1, pageSize });
+    const items = new Map();
+    const expectedTotal = Number(first.meta?.total);
+    const totalPages = Math.max(1, Number(first.meta?.totalPages || 1));
+    let inconsistent = false;
+    const addPage = (response) => {
+      if (Number.isFinite(expectedTotal) && Number(response.meta?.total) !== expectedTotal)
+        inconsistent = true;
+      for (const item of Array.isArray(response.data) ? response.data : response.data?.items || []) {
+        if (!item.id || items.has(item.id)) inconsistent = true;
+        if (item.id) items.set(item.id, item);
+      }
+    };
+    addPage(first);
+    for (let page = 2; page <= totalPages; page += 1) {
+      addPage(await api.sales({ ...filters, page, pageSize }));
+    }
+    if (Number.isFinite(expectedTotal) && items.size !== expectedTotal) inconsistent = true;
+    if (!inconsistent)
+      return { data: [...items.values()], meta: { ...first.meta, total: items.size } };
   }
-  return { data: items, meta: { ...first.meta, total: items.length } };
+  throw new Error("La lista de ventas cambió durante la carga. Actualiza e intenta de nuevo.");
 }
 
 async function loadAllTasks(api, filters = {}) {
@@ -724,11 +733,13 @@ function App() {
   const latestContactRequest = useRef(0);
   const latestDashboardRequest = useRef(0);
   const latestDrawerRequest = useRef(0);
+  const latestSalesRequest = useRef(0);
 
   const clearPrivateState = useCallback((reason = "signed-out") => {
     latestContactRequest.current += 1;
     latestDashboardRequest.current += 1;
     latestDrawerRequest.current += 1;
+    latestSalesRequest.current += 1;
     setUser(null);
     setContacts([]);
     setContactRevision(0);
@@ -1323,12 +1334,18 @@ function App() {
     return result;
   }
 
+  async function refreshSales() {
+    const requestId = ++latestSalesRequest.current;
+    const refreshed = await loadAllSales(api, { season: "LMP-2026-27" });
+    if (requestId === latestSalesRequest.current)
+      setSales(refreshed.data.map(fromApiSale));
+  }
+
   async function addSalePayment(sale, payment) {
     if (authClient.isDemo)
       throw new Error("Los pagos solo pueden modificarse con datos reales.");
     await api.addPayment(sale.id, payment);
-    const refreshed = await loadAllSales(api, { season: "LMP-2026-27" });
-    setSales(refreshed.data.map(fromApiSale));
+    await refreshSales();
     setDashboardRevision((current) => current + 1);
     setToast(
       "El cobro quedó registrado y los indicadores fueron actualizados.",
@@ -1339,8 +1356,7 @@ function App() {
     if (authClient.isDemo)
       throw new Error("Las ventas solo pueden guardarse con datos reales.");
     await api.createSale(payload);
-    const refreshed = await loadAllSales(api, { season: "LMP-2026-27" });
-    setSales(refreshed.data.map(fromApiSale));
+    await refreshSales();
     setContactRevision((current) => current + 1);
     setDashboardRevision((current) => current + 1);
     setSaleClosure(null);
@@ -1351,8 +1367,7 @@ function App() {
     if (authClient.isDemo)
       throw new Error("Las ventas solo pueden corregirse con datos reales.");
     await api.correctSale(sale.id, payload);
-    const refreshed = await loadAllSales(api, { season: "LMP-2026-27" });
-    setSales(refreshed.data.map(fromApiSale));
+    await refreshSales();
     setContactRevision((current) => current + 1);
     setDashboardRevision((current) => current + 1);
     setToast(
@@ -1364,8 +1379,7 @@ function App() {
     if (authClient.isDemo)
       throw new Error("Las ventas solo pueden anularse con datos reales.");
     await api.cancelSale(sale.id, reason);
-    const refreshed = await loadAllSales(api, { season: "LMP-2026-27" });
-    setSales(refreshed.data.map(fromApiSale));
+    await refreshSales();
     setContactRevision((current) => current + 1);
     setDashboardRevision((current) => current + 1);
     setToast(
@@ -4359,7 +4373,7 @@ function SalesPage({
     );
   });
   const metricSales = filteredSales.filter(
-    (sale) => !["Cancelada", "Reembolsada"].includes(sale.commercialStatus),
+    (sale) => ["Confirmada", "Apartada"].includes(sale.commercialStatus),
   );
   const total = metricSales.reduce(
     (sum, sale) => sum + saleAmountForFacets(sale, segments),
@@ -5062,6 +5076,12 @@ function SalesPage({
                 {viewingSale.suiteNumber && <div><span>Número de suite</span><strong>{viewingSale.suiteNumber}</strong></div>}
                 {viewingSale.parkingQuantity > 0 && <div><span>Estacionamientos</span><strong>{viewingSale.parkingQuantity}</strong></div>}
               </div>
+              {viewingSale.hasQuantityMismatch && (
+                <section className="sale-view-section" role="status">
+                  <h3>Cantidad por revisar</h3>
+                  <p>La orden tiene {viewingSale.itemSeatCount} abonos en sus partidas y {viewingSale.assignedSeatCount} asignados a titulares. El conteo utiliza los titulares asignados, igual que Dirección. No se han modificado los datos ni el importe.</p>
+                </section>
+              )}
               <section className="sale-view-section">
                 <h3>Titulares asociados</h3>
                 {(viewingSale.holderAssignments || []).length ? (

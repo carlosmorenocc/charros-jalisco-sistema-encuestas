@@ -2172,7 +2172,7 @@ export class PgCrmRepository {
          ) a ON true
          WHERE p.sale_id=s.id AND p.voided_at IS NULL
        ) p ON true
-       WHERE ${where.join(' AND ')} ORDER BY s.effective_sold_at DESC NULLS LAST,s.created_at DESC
+       WHERE ${where.join(' AND ')} ORDER BY s.effective_sold_at DESC NULLS LAST,s.created_at DESC,s.id DESC
        LIMIT $${params.length - 1} OFFSET $${params.length}`, params
     );
     return { items: result.rows.map(saleRow), total: Number(result.rows[0]?.total_count ?? 0) };

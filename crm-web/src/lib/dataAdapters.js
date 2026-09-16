@@ -221,7 +221,11 @@ export function fromApiTask(task) {
 export function fromApiSale(sale) {
   if (sale.contact) return sale
   const isParking = (item) => /estacionamiento/i.test(`${item?.product || ''} ${item?.zone || ''}`)
-  const seats = (sale.items || []).filter((item) => !isParking(item)).reduce((sum, item) => sum + Number(item.quantity || item.seatCount || 0), 0)
+  const itemSeatCount = (sale.items || []).filter((item) => !isParking(item)).reduce((sum, item) => sum + Number(item.quantity || item.seatCount || 0), 0)
+  const assignedSeatCount = Array.isArray(sale.holderAssignments)
+    ? sale.holderAssignments.reduce((sum, holder) => sum + Number(holder.quantity || 0), 0)
+    : null
+  const seats = assignedSeatCount ?? itemSeatCount
   const total = Number(sale.totalAmount || 0)
   const paid = Number(sale.paidAmount || 0)
   const paymentStatus = paid <= 0 ? 'Pendiente' : paid < total ? 'Parcial' : 'Pagado'
@@ -260,6 +264,9 @@ export function fromApiSale(sale) {
     coverageLabel: isCommitment ? 'Anual · 2 temporadas' : 'Temporada LMP 2026–2027',
     promotion,
     seats,
+    itemSeatCount,
+    assignedSeatCount,
+    hasQuantityMismatch: assignedSeatCount !== null && assignedSeatCount !== itemSeatCount,
     total,
     paid,
     owner: sale.executiveName || 'Sin asignar',
