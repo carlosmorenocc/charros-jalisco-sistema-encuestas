@@ -313,6 +313,22 @@ export function saleAmountForFacets(sale, facets = []) {
     );
 }
 
+export function dashboardSegmentsForFilters(segments = {}, facets = []) {
+  const selected = new Set(facets);
+  const hasTypeFilter = selected.size > 0;
+  const result = {};
+  for (const segment of ["Compromisos", "VIP", "Preferente", "General"]) {
+    result[segment] =
+      !hasTypeFilter || selected.has(segment)
+        ? Number(segments[segment] || 0)
+        : 0;
+  }
+  result.Estacionamientos = selected.has("Estacionamientos")
+    ? Number(segments.Estacionamientos || 0)
+    : 0;
+  return result;
+}
+
 function Icon({ name, size = 18, strokeWidth = 1.8 }) {
   const paths = {
     chart: (
@@ -2659,20 +2675,10 @@ function DashboardPage({
   const rawDisplayedSegments = segmentIsPeriod
     ? summary.periodMembershipSegments || {}
     : summary.membershipSegments || {};
-  const parkingOnly =
-    reportFilters.purchaseFacets?.length === 1 &&
-    reportFilters.purchaseFacets[0] === "Estacionamientos";
-  const displayedSegments = parkingOnly
-    ? {
-        Compromisos: 0,
-        VIP: 0,
-        Preferente: 0,
-        General: 0,
-        Estacionamientos: Number(
-          rawDisplayedSegments.Estacionamientos || 0,
-        ),
-      }
-    : rawDisplayedSegments;
+  const displayedSegments = dashboardSegmentsForFilters(
+    rawDisplayedSegments,
+    reportFilters.purchaseFacets,
+  );
   const segmentRows = [
     ["Compromisos", Number(displayedSegments.Compromisos || 0), "#a33b46"],
     ["VIP", Number(displayedSegments.VIP || 0), "#d5a228"],
