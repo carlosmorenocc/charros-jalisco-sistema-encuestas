@@ -1,10 +1,20 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { calculateMembershipPrice, roundHalfUp } from '../src/lib/membershipPricing.js';
+import { calculateMembershipPrice, roundHalfUp, assertHistoricalTwoForOne } from '../src/lib/membershipPricing.js';
 import { PgCrmRepository } from '../src/repositories/PgCrmRepository.js';
 
 const priceBook = { version: 'LMP-2026-27-v1', currency: 'MXN' };
+
+test('2x1 histórico respeta fecha original, fecha corregida y localidad', () => {
+  const pricing = { pricingMode: 'two_for_one', localityCode: 'lateral_1_3' };
+  assert.doesNotThrow(() => assertHistoricalTwoForOne(pricing, '2026-08-31T23:59:59-06:00', '2026-08-31T12:00:00-06:00'));
+  assert.throws(() => assertHistoricalTwoForOne(pricing, '2026-09-01T00:00:00-06:00', '2026-08-31'), /31 de agosto/);
+  assert.throws(() => assertHistoricalTwoForOne(pricing, '2026-08-31', '2026-09-02'), /31 de agosto/);
+  assert.throws(() => assertHistoricalTwoForOne(pricing, null), /31 de agosto/);
+  assert.throws(() => assertHistoricalTwoForOne({ ...pricing, localityCode: 'vip' }, '2026-08-31'), /Lateral/);
+  assert.doesNotThrow(() => assertHistoricalTwoForOne({ pricingMode: 'regular' }, '2026-09-16'));
+});
 const regular = {
   code: 'regular', displayName: 'Sin descuento', mode: 'regular', rateBasisPoints: 0
 };

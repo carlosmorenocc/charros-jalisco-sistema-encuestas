@@ -3,6 +3,17 @@ import { badRequest } from './errors.js';
 export const MEMBERSHIP_PRICE_BOOK_VERSION = 'LMP-2026-27-v1';
 export const MEMBERSHIP_PRICING_SEASON = 'LMP-2026-27';
 
+export function assertHistoricalTwoForOne(pricing, ...saleDates) {
+  if (pricing?.pricingMode !== 'two_for_one') return;
+  const cutoff = Date.parse('2026-09-01T00:00:00-06:00');
+  if (pricing.localityCode !== 'lateral_1_3' || saleDates.some((value) => {
+    const timestamp = value == null ? NaN : new Date(value).getTime();
+    return !Number.isFinite(timestamp) || timestamp >= cutoff;
+  })) {
+    throw badRequest('El 2×1 histórico sólo aplica a Lateral 1ra–3ra en órdenes vendidas hasta el 31 de agosto de 2026.');
+  }
+}
+
 function integerAmount(value, field) {
   const amount = Number(value);
   if (!Number.isSafeInteger(amount) || amount < 0) {

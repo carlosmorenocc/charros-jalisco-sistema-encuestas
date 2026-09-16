@@ -2,6 +2,7 @@ import { withTransaction } from '../db/pool.js';
 import { badRequest, conflict, duplicateContact, notFound } from '../lib/errors.js';
 import {
   calculateMembershipPrice,
+  assertHistoricalTwoForOne,
   MEMBERSHIP_PRICING_SEASON
 } from '../lib/membershipPricing.js';
 
@@ -2429,6 +2430,7 @@ export class PgCrmRepository {
       const pricing = data.pricing ? await this.resolveSubscriptionPricing(client, {
         seasonCode: data.seasonCode, ...data.pricing
       }) : null;
+      assertHistoricalTwoForOne(pricing, before.soldAt, data.soldAt ?? before.soldAt);
       const saleItems = withParkingItems(saleItemsFromPricing(data, pricing), data.parkingQuantity);
       const isCommitment = saleSegment(saleItems, pricing) === 'Compromisos';
       const total = pricing ? moneyFromCents(pricing.netAmount) + data.parkingQuantity * PARKING_UNIT_PRICE

@@ -5764,6 +5764,20 @@ function SalesPage({
                       </label>
                       <label className="field">
                         <span>Cantidad de abonos *</span>
+                        {editingSale && saleDraft.localityCode === "lateral_1_3" && (
+                          <>
+                            <button
+                              type="button"
+                              className="button secondary"
+                              disabled={!editingSale.soldAt || new Date(editingSale.soldAt).getTime() >= Date.parse("2026-09-01T00:00:00-06:00") || !saleDraft.soldAt || saleDraft.soldAt > "2026-08-31"}
+                              aria-pressed={saleDraft.discountCode === "july25"}
+                              onClick={() => setSaleDraft((current) => ({ ...current, discountCode: "july25" }))}
+                            >
+                              {saleDraft.discountCode === "july25" ? "2×1 histórico aplicado" : "Aplicar 2×1 histórico"}
+                            </button>
+                            <small>Hasta el 31 de agosto de 2026. Se conservan todas las butacas; estacionamientos y cobros no cambian. Para retirarlo, selecciona otro descuento.</small>
+                          </>
+                        )}
                         <input
                           type="number"
                           min="1"
