@@ -1445,6 +1445,7 @@ function App() {
         kind: contact.kind,
         focusMembership: Boolean(options.focusMembership),
         initialPanel: options.initialPanel || "contact",
+        confirmDelete: Boolean(options.confirmDelete),
         orderNumber: options.orderNumber || null,
       });
     } catch (error) {
@@ -1761,7 +1762,7 @@ function App() {
       setDashboardRevision((current) => current + 1);
       setDrawer(null);
       setToast(
-        "El contacto se eliminó de forma lógica y puede restaurarse por auditoría.",
+        "Contacto eliminado.",
       );
     } catch (error) {
       setToast(error.message || "No fue posible eliminar el contacto.");
@@ -3626,6 +3627,7 @@ function ContactsPage({
                   key={contact.id}
                   contact={contact}
                   isPortfolio={isPortfolio}
+                  mayDelete={canDeleteContacts(user)}
                   onEdit={onEdit}
                 />
               ))}
@@ -3686,7 +3688,7 @@ function ContactsPage({
   );
 }
 
-function ContactRow({ contact, isPortfolio, onEdit }) {
+export function ContactRow({ contact, isPortfolio, onEdit, mayDelete = false }) {
   const isSubscriber = ["Abonado actual", "Abonado nuevo"].includes(contact.type);
   return (
     <tr>
@@ -3697,6 +3699,11 @@ function ContactRow({ contact, isPortfolio, onEdit }) {
             {[["contact", "people", "Contacto"], ["orders", "wallet", "Orden"], ["personalization", "edit", "Personalización"], ["inseason", "star", "In-season"]].map(([panel, icon, label]) => (
               <button key={panel} type="button" role="menuitem" onClick={(event) => { onEdit(contact, { initialPanel: panel }); event.currentTarget.closest("details")?.removeAttribute("open"); }}><Icon name={icon} size={16} /><span>{label}</span></button>
             ))}
+            {mayDelete && !contact.deletedAt && (
+              <button type="button" role="menuitem" className="delete-button" onClick={(event) => { onEdit(contact, { initialPanel: "contact", confirmDelete: true }); event.currentTarget.closest("details")?.removeAttribute("open"); }}>
+                <Icon name="trash" size={16} /><span>Eliminar contacto</span>
+              </button>
+            )}
           </div>
         </details>
       </td>
@@ -6222,7 +6229,12 @@ function ContactDrawer({
       : memberships.find((item) => item.id === selectedMembershipId) ||
         initialMembership ||
         null;
-  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(Boolean(drawer.confirmDelete));
+  const [deletingContact, setDeletingContact] = useState(false);
+  const deleteConfirmationRef = useRef(null);
+  useEffect(() => {
+    if (confirmDelete) deleteConfirmationRef.current?.scrollIntoView?.({ behavior: "smooth", block: "center" });
+  }, [confirmDelete]);
   const [deleteReason, setDeleteReason] = useState("");
   const [contactMethodError, setContactMethodError] = useState("");
   const [savingContact, setSavingContact] = useState(false);
@@ -7136,14 +7148,14 @@ function ContactDrawer({
               </section>
             )}
             {confirmDelete && (
-              <div className="delete-confirm" role="alert">
+              <div className="delete-confirm" role="alert" ref={deleteConfirmationRef}>
                 <div>
                   <Icon name="trash" size={19} />
                   <span>
                     <strong>¿Eliminar este contacto?</strong>
                     <small>
-                      El registro se ocultará, pero conservará su historial para
-                      restauración y auditoría.
+                      Dejará de aparecer en las listas y en el conteo por renovar.
+                      Su historial y las ventas válidas se conservarán.
                     </small>
                   </span>
                 </div>
@@ -7161,15 +7173,21 @@ function ContactDrawer({
                 <div>
                   <SecondaryButton
                     type="button"
+                    disabled={deletingContact}
                     onClick={() => setConfirmDelete(false)}
                   >
                     Cancelar
                   </SecondaryButton>
                   <button
-                    disabled={deleteReason.trim().length < 5}
+                    type="button"
+                    disabled={deletingContact || deleteReason.trim().length < 5}
                     type="button"
                     className="button button--danger"
-                    onClick={() => onDelete(existing, deleteReason.trim())}
+                    onClick={async () => {
+                      setDeletingContact(true);
+                      try { await onDelete(existing, deleteReason.trim()); }
+                      finally { setDeletingContact(false); }
+                    }}
                   >
                     <Icon name="trash" size={16} />
                     Confirmar eliminación
