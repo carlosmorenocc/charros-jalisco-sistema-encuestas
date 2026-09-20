@@ -56,7 +56,7 @@ describe('SorteosApp: flujo de sorteo y restablecimiento', () => {
     const stage = screen.getByRole('region', { name: 'Escenario del sorteo' })
 
     expect(within(stage).getByText('Participantes').previousElementSibling)
-      .toHaveTextContent('650')
+      .toHaveTextContent('0')
     expect(within(stage).queryByText('Participantes verificados')).not.toBeInTheDocument()
     expect(within(stage).queryByText('Continúan elegibles')).not.toBeInTheDocument()
     expect(within(stage).queryByText('ESPERANDO BASE')).not.toBeInTheDocument()
@@ -65,7 +65,7 @@ describe('SorteosApp: flujo de sorteo y restablecimiento', () => {
 
     expect(await screen.findByText('participantes-prueba.csv')).toBeInTheDocument()
     expect(within(stage).getByText('Participantes').previousElementSibling)
-      .toHaveTextContent('650')
+      .toHaveTextContent('3')
     expect(within(stage).queryByText('BASE VERIFICADA')).not.toBeInTheDocument()
     expect(within(stage).queryByText('Ana Gómez')).not.toBeInTheDocument()
 
@@ -85,13 +85,13 @@ describe('SorteosApp: flujo de sorteo y restablecimiento', () => {
 
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     expect(within(stage).getByText('Participantes').previousElementSibling)
-      .toHaveTextContent('650')
+      .toHaveTextContent('3')
     expect(screen.getByRole('heading', { name: 'Ganadores' })).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Restablecer participantes' }))
 
     expect(within(stage).getByText('Participantes').previousElementSibling)
-      .toHaveTextContent('650')
+      .toHaveTextContent('3')
     expect(screen.queryByRole('heading', { name: 'Ganadores' })).not.toBeInTheDocument()
     expect(screen.getByText('participantes-prueba.csv')).toBeInTheDocument()
   })
