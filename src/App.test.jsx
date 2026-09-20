@@ -10,6 +10,10 @@ vi.mock('./features/abonados/AbonadosMultiStepForm', () => ({
   default: () => <section>Formulario de abonados cargado</section>
 }))
 
+vi.mock('./components/LeadMultiStepForm', () => ({
+  default: () => <section>Registro corto de estadio cargado</section>
+}))
+
 vi.mock('./features/abonados/admin/AbonadosCsvDownloadPage', () => ({
   default: () => <main>Exportación privada de abonados cargada</main>
 }))
@@ -39,7 +43,7 @@ describe('App routing', () => {
     expect(screen.queryByText('Aviso de privacidad:')).not.toBeInTheDocument()
   })
 
-  it.each(['/', '/leads', '/abonados', '/abonados-lmp-26-27', '/cualquier-ruta'])(
+  it.each(['/', '/abonados', '/abonados-lmp-26-27', '/cualquier-ruta'])(
     'mantiene cerrados los formularios públicos en %s',
     (pathname) => {
       window.history.pushState({}, '', pathname)
