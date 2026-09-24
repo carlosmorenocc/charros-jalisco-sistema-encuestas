@@ -617,7 +617,7 @@ export default function SorteosApp() {
           <div className={styles.scoreboard}>
             <Metric
               label="Participantes"
-              value={formatNumber(DISPLAYED_PARTICIPANT_COUNT)}
+              value={formatNumber(participants.length)}
             />
             <div className={styles.prizeBoard}>
               <span>Premio en juego</span>

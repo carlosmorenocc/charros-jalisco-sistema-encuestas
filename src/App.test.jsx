@@ -10,6 +10,10 @@ vi.mock('./features/abonados/AbonadosMultiStepForm', () => ({
   default: ({ onComplete }) => <section>Formulario de abonados cargado<button type="button" onClick={onComplete}>Completar registro simulado</button></section>
 }))
 
+vi.mock('./components/LeadMultiStepForm', () => ({
+  default: () => <section>Registro corto de estadio cargado</section>
+}))
+
 vi.mock('./features/abonados/admin/AbonadosCsvDownloadPage', () => ({
   default: () => <main>Exportación privada de abonados cargada</main>
 }))
@@ -39,7 +43,7 @@ describe('App routing', () => {
     expect(screen.queryByText('Aviso de privacidad:')).not.toBeInTheDocument()
   })
 
-  it.each(['/', '/leads', '/abonados', '/abonados-lmp-26-27', '/cualquier-ruta'])(
+  it.each(['/', '/abonados', '/abonados-lmp-26-27', '/cualquier-ruta'])(
     'mantiene cerrados los formularios públicos en %s',
     (pathname) => {
       window.history.pushState({}, '', pathname)
@@ -52,6 +56,21 @@ describe('App routing', () => {
       expect(screen.queryByText('Aviso de privacidad:')).not.toBeInTheDocument()
     }
   )
+
+  it('mantiene abierto únicamente el registro corto de estadio', () => {
+    vi.stubEnv('VITE_PUBLIC_FORMS_ENABLED', 'false')
+    window.history.pushState({}, '', '/leads')
+    render(<App />)
+    expect(screen.getByText('Registro corto de estadio cargado')).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Registro temporalmente no disponible' })).not.toBeInTheDocument()
+  })
+
+  it('permite pausar de forma independiente el registro corto', () => {
+    vi.stubEnv('VITE_LEADS_FORM_ENABLED', 'false')
+    window.history.pushState({}, '', '/leads')
+    render(<App />)
+    expect(screen.getByRole('heading', { name: 'Registro temporalmente no disponible' })).toBeInTheDocument()
+  })
 
   it.each(['/abonados', '/abonados-lmp-26-27'])(
     'habilita la campaña de abonados de forma independiente en %s',

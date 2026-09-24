@@ -59,8 +59,11 @@ export default function App() {
 
   const publicFormsEnabled = import.meta.env.VITE_PUBLIC_FORMS_ENABLED === 'true'
   const subscriberFormEnabled = import.meta.env.VITE_SUBSCRIBER_FORM_ENABLED === 'true'
+  const leadsFormEnabled = import.meta.env.VITE_LEADS_FORM_ENABLED !== 'false'
 
-  if ((isAbonadosMode && !subscriberFormEnabled) || (!isAbonadosMode && !publicFormsEnabled)) {
+  if ((isAbonadosMode && !subscriberFormEnabled)
+    || (isLeadsMode && !leadsFormEnabled)
+    || (!isAbonadosMode && !isLeadsMode && !publicFormsEnabled)) {
     return <FormsPaused />
   }
 
