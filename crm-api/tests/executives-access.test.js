@@ -11,6 +11,15 @@ test('aprovisiona las nuevas ejecutivas como perfiles activos sin credenciales',
   assert.doesNotMatch(migration, /local_credentials|password/i);
 });
 
+test('aprovisiona a Mariette Dueñas como ejecutiva activa sin credenciales', async () => {
+  const migration = await readFile(new URL('../migrations/027_add_mariette_duenas.sql', import.meta.url), 'utf8');
+  assert.match(migration, /MARIETTE DUEÑAS/);
+  assert.match(migration, /crm\.assignment\.mariette\.duenas@charrosjalisco\.com/);
+  assert.match(migration, /'executive'/);
+  assert.match(migration, /true/);
+  assert.doesNotMatch(migration, /local_credentials|password/i);
+});
+
 test('Supervisor puede cargar la proyección mínima del selector de ejecutivos', async () => {
   const expected = [{
     id: 'executive-1',
