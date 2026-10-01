@@ -23,6 +23,7 @@ públicas:
 - [`docs/CRM_APPROVED_SCOPE.md`](docs/CRM_APPROVED_SCOPE.md) — alcance funcional y acceso aprobado.
 - [`docs/CRM_DATA_AUDIT_2026-08-21.md`](docs/CRM_DATA_AUDIT_2026-08-21.md) — auditoría agregada del Excel, sin PII.
 - [`docs/CRM_DEPLOYMENT_CHECKLIST.md`](docs/CRM_DEPLOYMENT_CHECKLIST.md) — configuración privada de Vercel, Render y acceso local.
+- [`docs/CRM_TECHNICAL_HANDOFF.md`](docs/CRM_TECHNICAL_HANDOFF.md) — arquitectura, base de datos, migración institucional e integración con una API externa.
 
 El CRM no comparte autenticación ni almacenamiento CSV con los formularios. Esta
 primera entrega utiliza una sola cuenta local de Administrador, sesiones seguras

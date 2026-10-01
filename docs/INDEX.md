@@ -38,6 +38,7 @@ Navega fácilmente por toda la documentación del proyecto.
 
 | Documento | Para qué |
 |-----------|----------|
+| [CRM_TECHNICAL_HANDOFF.md](CRM_TECHNICAL_HANDOFF.md) | Entrega técnica del CRM, estructura PostgreSQL, migración institucional e integración externa |
 | [openapi.yaml](openapi.yaml) | Especificación técnica del endpoint |
 | [postman_collection.json](postman_collection.json) | Tests HTTP listos para Postman |
 | [power-automate-sample-flow.json](power-automate-sample-flow.json) | Plantilla Power Automate (importar) |
