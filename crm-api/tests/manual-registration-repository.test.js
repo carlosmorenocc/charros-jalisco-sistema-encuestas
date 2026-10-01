@@ -188,7 +188,7 @@ test('alta compuesta confirma una transacción y replay conserva IDs sin nuevos 
   );
 });
 
-test('dedupe normaliza contactos y aliases, devuelve IDs sin automerge e incluye eliminados', async () => {
+test('permite contactos distintos que comparten correo o teléfono sin automerge', async () => {
   const pool = new FakePool({
     duplicates: [
       { id: '00000000-0000-4000-8000-000000000030', deleted_at: null },
@@ -196,24 +196,15 @@ test('dedupe normaliza contactos y aliases, devuelve IDs sin automerge e incluye
     ]
   });
   const repository = new PgCrmRepository(pool);
-  await assert.rejects(
-    repository.createManualRegistration(registration, actor, context, {
-      idempotencyKey: IDS.key, requestHash: 'd'.repeat(64)
-    }),
-    (error) => error.status === 409 && error.code === 'DUPLICATE_CONTACT'
-      && error.details.matches.length === 2 && error.details.matches[1].deleted === true
-  );
-  assert.equal(pool.state.contactsInserted, 0);
-  const duplicateQuery = pool.state.commands.find(
+  const created = await repository.createManualRegistration(registration, actor, context, {
+    idempotencyKey: IDS.key, requestHash: 'd'.repeat(64)
+  });
+  assert.equal(created.contact.id, IDS.contact);
+  assert.equal(pool.state.contactsInserted, 1);
+  assert.equal(pool.state.commands.some(
     (sql) => sql.startsWith('SELECT c.id,c.deleted_at FROM contacts c')
-  );
-  assert.match(duplicateQuery, /regexp_replace\(COALESCE\(c\.phone,''\),'\[\^0-9\]'/);
-  assert.match(duplicateQuery, /contact_phone\.digits ~ '\^\(52\|521\)\[0-9\]\{10\}\$'/);
-  assert.match(duplicateQuery, /EXISTS \( SELECT 1 FROM contact_aliases a/);
-  assert.match(duplicateQuery, /a\.alias_type='email'/);
-  assert.match(duplicateQuery, /a\.alias_type='phone'/);
-  assert.match(duplicateQuery, /alias_phone\.digits ~ '\^\(52\|521\)\[0-9\]\{10\}\$'/);
-  assert.equal(pool.state.commands.at(-1), 'ROLLBACK');
+  ), false);
+  assert.equal(pool.state.commands.at(-1), 'COMMIT');
 });
 
 test('falla del último subregistro provoca ROLLBACK y no escribe auditoría', async () => {
@@ -230,18 +221,15 @@ test('falla del último subregistro provoca ROLLBACK y no escribe auditoría', a
   assert.equal(pool.state.auditsInserted, 0);
 });
 
-test('POST de contacto toma los mismos locks y revalida duplicados antes del INSERT', async () => {
+test('POST de contacto permite correo o teléfono compartido con otro registro', async () => {
   const pool = new FakePool({
     duplicates: [{ id: '00000000-0000-4000-8000-000000000032', deleted_at: null }]
   });
   const repository = new PgCrmRepository(pool);
-  await assert.rejects(
-    repository.createContact(registration.contact, actor, context),
-    (error) => error.status === 409 && error.code === 'DUPLICATE_CONTACT'
-  );
-  assert.equal(pool.state.contactsInserted, 0);
-  assert.ok(pool.state.commands.some((sql) => sql.includes('pg_advisory_xact_lock')));
-  assert.ok(pool.state.commands.some((sql) =>
-    sql.startsWith('SELECT c.id,c.deleted_at FROM contacts c')));
-  assert.equal(pool.state.commands.at(-1), 'ROLLBACK');
+  const created = await repository.createContact(registration.contact, actor, context);
+  assert.equal(created.id, IDS.contact);
+  assert.equal(pool.state.contactsInserted, 1);
+  assert.equal(pool.state.commands.some((sql) =>
+    sql.startsWith('SELECT c.id,c.deleted_at FROM contacts c')), false);
+  assert.equal(pool.state.commands.at(-1), 'COMMIT');
 });
