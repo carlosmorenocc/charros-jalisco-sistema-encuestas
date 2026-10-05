@@ -20,6 +20,10 @@ const regular = {
 const discount30 = {
   code: 'discount30', displayName: '30% de descuento', mode: 'percentage', rateBasisPoints: 3000
 };
+const collaborator40 = {
+  code: 'collaborator40', displayName: 'Abono para Colaborador',
+  mode: 'percentage', rateBasisPoints: 4000
+};
 const july25 = {
   code: 'july25', displayName: '25% de descuento', mode: 'catalog_official',
   rateBasisPoints: null
@@ -46,6 +50,32 @@ test('calcula precio regular y descuento porcentual unitario half-up', () => {
   });
   assert.equal(rounded.netAmount, 140002);
   assert.equal(rounded.discountAmount, 60000);
+});
+
+test('Abono para Colaborador aplica 40% a cualquier localidad y cantidad', () => {
+  const quote = calculateMembershipPrice({
+    priceBook,
+    locality: locality({ listUnitPrice: 748000 }),
+    discount: collaborator40,
+    seatCount: 3
+  });
+  assert.equal(quote.discountCode, 'collaborator40');
+  assert.equal(quote.discountName, 'Abono para Colaborador');
+  assert.equal(quote.pricingMode, 'percentage');
+  assert.equal(quote.commercialValue, 2244000);
+  assert.equal(quote.netAmount, 1346400);
+  assert.equal(quote.discountAmount, 897600);
+  assert.equal(quote.effectiveUnitPrice, 448800);
+  assert.equal(quote.chargedUnits, 3);
+  assert.equal(quote.bonusUnits, 0);
+});
+
+test('la migración publica Abono para Colaborador como descuento seleccionable del 40%', () => {
+  const migration = readFileSync(
+    new URL('../migrations/028_add_collaborator_discount.sql', import.meta.url),
+    'utf8'
+  );
+  assert.match(migration, /'collaborator40','Abono para Colaborador','percentage',4000,true,5/);
 });
 
 test('julio25 usa importes oficiales y 2x1 para cualquier cantidad', () => {

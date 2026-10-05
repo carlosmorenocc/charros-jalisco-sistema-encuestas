@@ -119,7 +119,7 @@ erDiagram
 
 ## Estructura de PostgreSQL
 
-La definición canónica está en las migraciones `001` a `027`. No se deben editar migraciones que ya hayan sido aplicadas; cualquier cambio nuevo requiere el siguiente archivo numerado.
+La definición canónica está en las migraciones `001` a `028`. No se deben editar migraciones que ya hayan sido aplicadas; cualquier cambio nuevo requiere el siguiente archivo numerado.
 
 ### Identidad, acceso y permisos
 
@@ -521,7 +521,7 @@ No compartir archivos `.env`, URLs de PostgreSQL con contraseña, dumps sin cifr
 
 ## Fuentes técnicas dentro del repositorio
 
-- Esquema: `crm-api/migrations/001_core.sql` a `027_add_mariette_duenas.sql`.
+- Esquema: `crm-api/migrations/001_core.sql` a `028_add_collaborator_discount.sql`.
 - Ejecución de migraciones: `crm-api/scripts/migrate.js`.
 - Configuración: `crm-api/src/config.js` y `crm-api/.env.example`.
 - API: `crm-api/src/routes.js`, `authRoutes.js` y `app.js`.
