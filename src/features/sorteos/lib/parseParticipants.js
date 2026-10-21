@@ -2,7 +2,8 @@ export const MAX_PARTICIPANTS = 3000
 
 const HEADER_ALIASES = {
   name: ['nombre', 'name', 'participante', 'nombre_completo', 'nombres'],
-  id: ['id_participante', 'id', 'folio', 'participant_id', 'numero_participante', 'clave'],
+  lastName: ['apellido', 'apellidos', 'last_name', 'lastname'],
+  id: ['submissionid', 'submission_id', 'id_participante', 'id', 'folio', 'participant_id', 'numero_participante', 'clave'],
   ticket: ['id_boleto', 'boleto', 'ticket', 'ticket_id'],
   email: ['correo', 'email', 'correo_electronico', 'email_address', 'e_mail', 'mail']
 }
@@ -150,6 +151,7 @@ export function parseParticipantCsv(input) {
 
   const headers = rows[0].map((header) => normalizeText(header))
   const nameIndex = findColumn(headers, HEADER_ALIASES.name)
+  const lastNameIndex = findColumn(headers, HEADER_ALIASES.lastName)
   const idIndex = findColumn(headers, HEADER_ALIASES.id)
   const ticketIndex = findColumn(headers, HEADER_ALIASES.ticket)
   const emailIndex = findColumn(headers, HEADER_ALIASES.email)
@@ -179,7 +181,9 @@ export function parseParticipantCsv(input) {
       continue
     }
 
-    const name = normalizeText(values[nameIndex])
+    const firstName = normalizeText(values[nameIndex])
+    const lastName = lastNameIndex >= 0 ? normalizeText(values[lastNameIndex]) : ''
+    const name = normalizeText([firstName, lastName].filter(Boolean).join(' '))
     if (!name || name.length > 120) {
       rejectedRows += 1
       continue

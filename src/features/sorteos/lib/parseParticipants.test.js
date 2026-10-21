@@ -26,6 +26,33 @@ describe('parseParticipantCsv', () => {
     expect(result.stats.missingEmailRows).toBe(0)
   })
 
+  it('acepta directamente el CSV oficial del registro corto y usa solo el nombre completo', () => {
+    const result = parseParticipantCsv(
+      '\uFEFFsubmissionId,timestamp,campaignName,source,nombre,apellido,email,telefono,municipio,frecuenciaVisita,aceptaAvisoPrivacidad,aceptaComunicaciones,aceptaRegistroDiario\r\n' +
+      'lead-001,2026-10-21T12:00:00.000Z,Registro corto,estadio,Ana,Maria Lopez,ana@example.com,3312345678,Guadalajara,Primera vez,true,true,true\r\n' +
+      'lead-002,2026-10-21T12:01:00.000Z,Registro corto,estadio,Ana,Maria Lopez,otra@example.com,3387654321,Zapopan,Frecuente,true,false,true\r\n'
+    )
+
+    expect(result.participants).toEqual([
+      {
+        id: 'lead-001',
+        name: 'Ana Maria Lopez',
+        ticket: '',
+        email: 'ana@example.com',
+        rowNumber: 2
+      },
+      {
+        id: 'lead-002',
+        name: 'Ana Maria Lopez',
+        ticket: '',
+        email: 'otra@example.com',
+        rowNumber: 3
+      }
+    ])
+    expect(result.stats.validParticipants).toBe(2)
+    expect(result.stats.duplicateRows).toBe(0)
+  })
+
   it('mantiene compatibles las bases sin correo y genera una advertencia', () => {
     const result = parseParticipantCsv(
       'id,nombre\n001,María López\n'
