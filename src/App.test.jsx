@@ -14,6 +14,14 @@ vi.mock('./components/LeadMultiStepForm', () => ({
   default: () => <section>Registro corto de estadio cargado</section>
 }))
 
+vi.mock('./features/rewards/RewardsRegistration', () => ({
+  default: () => <section>Experiencias y recompensas cargado</section>
+}))
+
+vi.mock('./features/rewards/admin/RewardsCsvDownloadPage', () => ({
+  default: () => <main>Exportación privada de recompensas cargada</main>
+}))
+
 vi.mock('./features/abonados/admin/AbonadosCsvDownloadPage', () => ({
   default: () => <main>Exportación privada de abonados cargada</main>
 }))
@@ -158,6 +166,27 @@ describe('App routing', () => {
         screen.queryByRole('heading', { name: 'Registro temporalmente no disponible' })
       ).not.toBeInTheDocument()
       expect(screen.queryByText('Aviso de privacidad:')).not.toBeInTheDocument()
+    }
+  )
+
+  it('habilita de forma independiente experiencias y recompensas', () => {
+    vi.stubEnv('VITE_PUBLIC_FORMS_ENABLED', 'false')
+    vi.stubEnv('VITE_REWARDS_FORM_ENABLED', 'true')
+    window.history.pushState({}, '', '/experiencias-recompensas')
+
+    render(<App />)
+
+    expect(screen.getByText('Experiencias y recompensas cargado')).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Registro temporalmente no disponible' })).not.toBeInTheDocument()
+  })
+
+  it.each(['/admin/experiencias-recompensas', '/admin/experiencias-recompensas/'])(
+    'carga la exportación privada de recompensas en %s',
+    (pathname) => {
+      vi.stubEnv('VITE_REWARDS_FORM_ENABLED', 'false')
+      window.history.pushState({}, '', pathname)
+      render(<App />)
+      expect(screen.getByText('Exportación privada de recompensas cargada')).toBeInTheDocument()
     }
   )
 })
