@@ -1,0 +1,65 @@
+.page {
+  --navy: #082c66;
+  --blue: #074caa;
+  --gold: #d7aa2d;
+  min-height: 100vh;
+  padding: 34px 18px 24px;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  position: relative;
+  overflow: hidden;
+  color: #17233a;
+  background:
+    radial-gradient(circle at 15% 12%, rgba(215, 170, 45, .18), transparent 28rem),
+    radial-gradient(circle at 90% 90%, rgba(7, 76, 170, .18), transparent 30rem),
+    linear-gradient(145deg, #f8fbff 0%, #eef4fb 52%, #f8fafc 100%);
+}
+
+.glow { position: absolute; inset: 0; pointer-events: none; background-image: linear-gradient(rgba(8, 44, 102, .025) 1px, transparent 1px), linear-gradient(90deg, rgba(8, 44, 102, .025) 1px, transparent 1px); background-size: 28px 28px; }
+.card { position: relative; width: min(100%, 680px); padding: clamp(24px, 5vw, 48px); background: rgba(255,255,255,.96); border: 1px solid rgba(8,44,102,.1); border-radius: 28px; box-shadow: 0 24px 70px rgba(8,44,102,.16); outline: none; }
+.logoLink { display: block; width: min(100%, 440px); margin: 0 auto 22px; border-radius: 16px; transition: transform .35s cubic-bezier(.2,.8,.2,1), box-shadow .35s ease; }
+.logoLink:hover { transform: scale(1.045); box-shadow: 0 14px 32px rgba(8,44,102,.12); }
+.logoLink:focus-visible { outline: 3px solid var(--gold); outline-offset: 5px; }
+.logo { display: block; width: 100%; height: auto; border-radius: 16px; }
+.progress { display: flex; align-items: center; justify-content: center; margin: 0 auto 30px; }
+.progress span { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; background: #e8eef6; color: #63748b; font-size: .82rem; font-weight: 800; transition: .25s ease; }
+.progress i { width: 72px; height: 3px; background: #e8eef6; transition: .25s ease; }
+.progress .activeDot { color: white; background: var(--blue); box-shadow: 0 5px 14px rgba(7,76,170,.28); }
+.progress .activeLine { background: var(--blue); }
+.eyebrow { margin: 0 0 6px; color: var(--blue); font-size: .75rem; font-weight: 800; letter-spacing: .16em; text-transform: uppercase; }
+.card h1 { margin: 0; color: var(--navy); font-size: clamp(1.7rem, 5vw, 2.45rem); line-height: 1.12; letter-spacing: -.035em; text-wrap: balance; }
+.intro { margin: 14px 0 28px; color: #5b687b; font-size: 1rem; line-height: 1.65; }
+.field { display: grid; gap: 8px; margin: 22px 0; color: #26374e; font-weight: 750; }
+.field input, .field textarea { width: 100%; border: 1.5px solid #cbd6e4; border-radius: 14px; padding: 14px 16px; color: #14233a; background: #fbfdff; font: inherit; font-weight: 500; transition: border-color .2s ease, box-shadow .2s ease, background .2s ease; resize: vertical; }
+.field input:focus, .field textarea:focus { outline: none; border-color: var(--blue); background: white; box-shadow: 0 0 0 4px rgba(7,76,170,.1); }
+.field small { justify-self: end; color: #7a8798; font-size: .76rem; font-weight: 500; }
+.privacyLink { display: inline-flex; margin: -8px 0 24px; color: var(--blue); font-weight: 750; text-underline-offset: 4px; }
+.checkField { display: grid; grid-template-columns: 22px 1fr; gap: 12px; align-items: start; padding: 15px; margin: 12px 0; border: 1px solid #d9e2ed; border-radius: 14px; background: #f8fbff; font-weight: 550; line-height: 1.45; cursor: pointer; }
+.checkField input { width: 20px; height: 20px; margin: 1px 0 0; accent-color: var(--blue); }
+.checkField strong { color: #b4232c; }
+.actions { display: grid; grid-template-columns: 1fr 2fr; gap: 12px; margin-top: 24px; }
+.primaryButton, .secondaryButton { display: inline-flex; align-items: center; justify-content: center; min-height: 50px; padding: 12px 22px; border-radius: 14px; border: 0; font: inherit; font-weight: 800; text-decoration: none; cursor: pointer; transition: transform .2s ease, box-shadow .2s ease, filter .2s ease; }
+.primaryButton { width: 100%; color: white; background: linear-gradient(135deg, var(--blue), var(--navy)); box-shadow: 0 10px 20px rgba(8,44,102,.2); }
+.secondaryButton { color: var(--navy); background: #eaf0f7; }
+.primaryButton:hover, .secondaryButton:hover { transform: translateY(-2px); filter: brightness(1.04); }
+.primaryButton:focus-visible, .secondaryButton:focus-visible { outline: 3px solid var(--gold); outline-offset: 3px; }
+.primaryButton:disabled { opacity: .65; cursor: wait; transform: none; }
+.error { padding: 12px 14px; border: 1px solid #efc1c5; border-radius: 12px; color: #8b2028; background: #fff4f5; font-weight: 650; }
+.success { text-align: center; }
+.successIcon { display: grid; place-items: center; width: 74px; height: 74px; margin: 4px auto 20px; border-radius: 50%; color: white; background: linear-gradient(145deg, #16925b, #087746); box-shadow: 0 15px 28px rgba(8,119,70,.23); font-size: 2.25rem; font-weight: 800; }
+.success p:not(.eyebrow) { margin: 16px auto 28px; max-width: 500px; color: #5b687b; line-height: 1.65; }
+.footer { position: relative; margin: 18px 0 0; color: #52647b; font-size: .78rem; font-weight: 650; text-align: center; }
+
+@media (max-width: 560px) {
+  .page { padding: 14px 12px; align-content: start; }
+  .card { padding: 22px 18px 26px; border-radius: 22px; }
+  .logoLink { margin-bottom: 14px; }
+  .intro { margin-bottom: 22px; }
+  .actions { grid-template-columns: 1fr; }
+  .actions .secondaryButton { order: 2; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .logoLink, .primaryButton, .secondaryButton, .progress span, .progress i { transition: none; }
+}

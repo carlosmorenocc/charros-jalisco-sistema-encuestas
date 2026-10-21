@@ -19,6 +19,7 @@ const dataDir = process.env.CSV_DATA_DIR
 const csvPath = path.join(dataDir, 'submissions.csv')
 const leadsCsvPath = path.join(dataDir, 'submissions_leads.csv')
 const subscriberCsvPath = path.join(dataDir, 'submissions_abonados_lmp_2026_2027.csv')
+const rewardsCsvPath = path.join(dataDir, 'submissions_experiencias_recompensas.csv')
 const openApiPath = path.join(__dirname, 'docs', 'openapi.yaml')
 const flushIntervalMs = Number(process.env.CSV_FLUSH_INTERVAL_MS || 250)
 const maxQueueSize = Number(process.env.CSV_MAX_QUEUE_SIZE || 10000)
@@ -28,6 +29,7 @@ const submitRateLimit = Number(process.env.SUBMIT_RATE_LIMIT_PER_MIN || 180)
 const allowedOrigins = (process.env.ALLOWED_ORIGINS || '').split(',').map((v) => v.trim()).filter(Boolean)
 const publicFormsEnabled = process.env.PUBLIC_FORMS_ENABLED === 'true'
 const subscriberFormEnabled = process.env.SUBSCRIBER_FORM_ENABLED === 'true'
+const rewardsFormEnabled = process.env.REWARDS_FORM_ENABLED === 'true'
 const csvExportToken = process.env.CSV_EXPORT_TOKEN || ''
 const abonadosCsvExportToken = process.env.ABONADOS_CSV_EXPORT_TOKEN || ''
 
@@ -90,6 +92,19 @@ const LEADS_CSV_COLUMNS = [
   'aceptaRegistroDiario'
 ]
 
+const REWARDS_CSV_COLUMNS = [
+  'submissionId',
+  'timestamp',
+  'campaignName',
+  'source',
+  'nombreCompleto',
+  'recomendacion',
+  'aceptaAvisoPrivacidad',
+  'aceptaComunicaciones',
+  'privacyNoticeVersion',
+  'consentTimestamp'
+]
+
 const LEGACY_SUBSCRIBER_CSV_COLUMNS = [
   'submissionId',
   'timestamp',
@@ -143,6 +158,7 @@ const leadDailyEmailRegistry = new Map()
 
 const subscriberEmailRegistry = new Set()
 let subscriberWriteChain = Promise.resolve()
+let rewardsWriteChain = Promise.resolve()
 
 function loadOpenApiSpec() {
   if (!fs.existsSync(openApiPath)) return null
@@ -223,6 +239,10 @@ function ensureSubscriberDataFile() {
   console.log(`Subscriber CSV migrated. Original file saved to: ${backupPath}`)
 }
 
+function ensureRewardsDataFile() {
+  ensureCsvFile(rewardsCsvPath, REWARDS_CSV_COLUMNS, 'submissions_experiencias_recompensas')
+}
+
 function ensureSubscriberMigrationBackup(legacyContent) {
   const backupBase = path.join(
     dataDir,
@@ -295,6 +315,10 @@ function buildLeadsCsvRow(payload) {
 
 function buildSubscriberCsvRow(payload) {
   return SUBSCRIBER_CSV_COLUMNS.map((column) => toCsvValue(payload[column])).join(',') + '\n'
+}
+
+function buildRewardsCsvRow(payload) {
+  return REWARDS_CSV_COLUMNS.map((column) => toCsvValue(payload[column])).join(',') + '\n'
 }
 
 function parseCsvLine(line) {
@@ -438,6 +462,39 @@ function validateLeadPayload(payload) {
   }
 }
 
+function normalizeRewardsPayload(input) {
+  const raw = input && typeof input === 'object' && !Array.isArray(input) ? input : {}
+  const timestamp = new Date().toISOString()
+  return {
+    submissionId: typeof raw.submissionId === 'string' && raw.submissionId.trim()
+      ? raw.submissionId.trim()
+      : randomUUID(),
+    timestamp,
+    campaignName: 'Club Charros · Experiencias y Recompensas',
+    source: 'club-charros-rewards',
+    nombreCompleto: typeof raw.nombreCompleto === 'string'
+      ? raw.nombreCompleto.trim().toLocaleUpperCase('es-MX')
+      : '',
+    recomendacion: typeof raw.recomendacion === 'string' ? raw.recomendacion.trim() : '',
+    aceptaAvisoPrivacidad: raw.aceptaAvisoPrivacidad === true,
+    aceptaComunicaciones: raw.aceptaComunicaciones === true,
+    privacyNoticeVersion: '2026-10-20',
+    consentTimestamp: timestamp
+  }
+}
+
+function validateRewardsPayload(payload) {
+  const invalid = []
+  if (payload.nombreCompleto.length < 5 || payload.nombreCompleto.length > 140 || !payload.nombreCompleto.includes(' ')) {
+    invalid.push('nombreCompleto')
+  }
+  if (payload.recomendacion.length < 5 || payload.recomendacion.length > 1200) {
+    invalid.push('recomendacion')
+  }
+  if (payload.aceptaAvisoPrivacidad !== true) invalid.push('aceptaAvisoPrivacidad')
+  return { valid: invalid.length === 0, invalid }
+}
+
 function normalizeLeadPayload(input) {
   const nowIso = new Date().toISOString()
   const raw = input && typeof input === 'object' ? input : {}
@@ -540,6 +597,19 @@ function appendSubscriberRow(row) {
 
 async function flushSubscriberWrites() {
   await subscriberWriteChain
+}
+
+function appendRewardsRow(row) {
+  const writeOperation = rewardsWriteChain.then(async () => {
+    ensureRewardsDataFile()
+    await fs.promises.appendFile(rewardsCsvPath, row, 'utf8')
+  })
+  rewardsWriteChain = writeOperation.catch(() => {})
+  return writeOperation
+}
+
+async function flushRewardsWrites() {
+  await rewardsWriteChain
 }
 
 function enqueueRow(row) {
@@ -647,6 +717,12 @@ function requireSubscriberFormEnabled(_req, res, next) {
   })
 }
 
+function requireRewardsFormEnabled(_req, res, next) {
+  if (rewardsFormEnabled) return next()
+  res.setHeader('Cache-Control', 'no-store')
+  return res.status(503).json({ ok: false, error: 'Rewards form is temporarily disabled' })
+}
+
 function secureTokenEquals(received, expected) {
   const receivedBuffer = Buffer.from(received)
   const expectedBuffer = Buffer.from(expected)
@@ -692,6 +768,7 @@ app.get('/healthz', (_req, res) => {
     status: 'ready',
     publicFormsEnabled,
     subscriberFormEnabled,
+    rewardsFormEnabled,
     queueSize: pendingRows.length
   })
 })
@@ -788,6 +865,27 @@ app.post('/api/lead-submit', requirePublicFormsEnabled, submitLimiter, (req, res
   }
 })
 
+app.post('/api/rewards-submit', requireRewardsFormEnabled, submitLimiter, async (req, res) => {
+  const payload = normalizeRewardsPayload(req.body)
+  const validation = validateRewardsPayload(payload)
+
+  if (!validation.valid) {
+    return res.status(400).json({ ok: false, error: 'Invalid rewards fields', invalid: validation.invalid })
+  }
+
+  if (markAndCheckDuplicate(payload.submissionId)) {
+    return res.status(200).json({ ok: true, stored: false, duplicate: true })
+  }
+
+  try {
+    await appendRewardsRow(buildRewardsCsvRow(payload))
+    return res.status(201).json({ ok: true, stored: true, submissionId: payload.submissionId })
+  } catch (error) {
+    console.error('Rewards CSV persistence error', error)
+    return res.status(500).json({ ok: false, error: 'Unable to persist rewards submission' })
+  }
+})
+
 app.post(
   '/api/abonados-lmp-submit',
   requireSubscriberFormEnabled,
@@ -858,6 +956,19 @@ app.get('/api/leads-submissions.csv', requireCsvExportToken, async (_req, res) =
   }
 })
 
+app.get('/api/rewards-submissions.csv', requireCsvExportToken, async (_req, res) => {
+  try {
+    await flushRewardsWrites()
+    ensureRewardsDataFile()
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8')
+    res.setHeader('Content-Disposition', 'attachment; filename="submissions_experiencias_recompensas.csv"')
+    return fs.createReadStream(rewardsCsvPath).pipe(res)
+  } catch (error) {
+    console.error('Rewards CSV download error', error)
+    return res.status(500).json({ ok: false, error: 'Unable to read rewards CSV' })
+  }
+})
+
 app.get('/api/abonados-lmp-submissions.csv', requireAbonadosCsvExportToken, async (_req, res) => {
   try {
     await flushSubscriberWrites()
@@ -881,6 +992,7 @@ try {
   ensureDataFile()
   ensureLeadsDataFile()
   ensureSubscriberDataFile()
+  ensureRewardsDataFile()
   loadLeadDailyEmailRegistry()
   loadSubscriberEmailRegistry()
 } catch (error) {
@@ -893,6 +1005,7 @@ process.on('SIGINT', async () => {
     await flushQueue()
     await flushLeadQueue()
     await flushSubscriberWrites()
+    await flushRewardsWrites()
   } finally {
     process.exit(0)
   }
@@ -903,6 +1016,7 @@ process.on('SIGTERM', async () => {
     await flushQueue()
     await flushLeadQueue()
     await flushSubscriberWrites()
+    await flushRewardsWrites()
   } finally {
     process.exit(0)
   }
