@@ -34,6 +34,17 @@
 .field input, .field textarea { width: 100%; border: 1.5px solid #cbd6e4; border-radius: 14px; padding: 14px 16px; color: #14233a; background: #fbfdff; font: inherit; font-weight: 500; transition: border-color .2s ease, box-shadow .2s ease, background .2s ease; resize: vertical; }
 .field input:focus, .field textarea:focus { outline: none; border-color: var(--blue); background: white; box-shadow: 0 0 0 4px rgba(7,76,170,.1); }
 .field small { justify-self: end; color: #7a8798; font-size: .76rem; font-weight: 500; }
+.eventFieldset { min-width: 0; margin: 24px 0; padding: 0; border: 0; }
+.eventFieldset legend { padding: 0; color: #26374e; font-weight: 800; }
+.eventHelp { margin: 5px 0 12px; color: #6b788b; font-size: .83rem; }
+.eventGrid { display: grid; gap: 12px; }
+.eventCard { display: grid; grid-template-columns: 22px 1fr; gap: 12px; align-items: start; padding: 16px; border: 1.5px solid #d5dfeb; border-radius: 16px; background: #fbfdff; cursor: pointer; transition: border-color .2s ease, box-shadow .2s ease, transform .2s ease, background .2s ease; }
+.eventCard:hover { transform: translateY(-1px); border-color: #8cadd4; }
+.eventCardSelected { border-color: var(--blue); background: #f2f7ff; box-shadow: 0 0 0 3px rgba(7,76,170,.08); }
+.eventCard input { width: 20px; height: 20px; margin: 2px 0 0; accent-color: var(--blue); }
+.eventCopy { display: grid; gap: 4px; color: #526178; font-size: .86rem; line-height: 1.35; }
+.eventCopy strong { color: var(--navy); font-size: .98rem; }
+.eventCopy em { width: fit-content; margin-top: 4px; padding: 4px 8px; border-radius: 999px; color: #735615; background: #fff5d8; font-size: .75rem; font-style: normal; font-weight: 800; }
 .privacyLink { display: inline-flex; margin: -8px 0 24px; color: var(--blue); font-weight: 750; text-underline-offset: 4px; }
 .checkField { display: grid; grid-template-columns: 22px 1fr; gap: 12px; align-items: start; padding: 15px; margin: 12px 0; border: 1px solid #d9e2ed; border-radius: 14px; background: #f8fbff; font-weight: 550; line-height: 1.45; cursor: pointer; }
 .checkField input { width: 20px; height: 20px; margin: 1px 0 0; accent-color: var(--blue); }
@@ -61,5 +72,5 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .logoLink, .primaryButton, .secondaryButton, .progress span, .progress i { transition: none; }
+  .logoLink, .eventCard, .primaryButton, .secondaryButton, .progress span, .progress i { transition: none; }
 }

@@ -94,7 +94,7 @@ const LEADS_CSV_COLUMNS = [
   'aceptaRegistroDiario'
 ]
 
-const REWARDS_CSV_COLUMNS = [
+const LEGACY_REWARDS_CSV_COLUMNS = [
   'submissionId',
   'timestamp',
   'campaignName',
@@ -106,6 +106,27 @@ const REWARDS_CSV_COLUMNS = [
   'privacyNoticeVersion',
   'consentTimestamp'
 ]
+
+const REWARDS_CSV_COLUMNS = [
+  'submissionId',
+  'timestamp',
+  'campaignName',
+  'source',
+  'nombreCompleto',
+  'eventosSeleccionados',
+  'participaPapaSobreRuedas',
+  'participaRomeoSantos',
+  'recomendacion',
+  'aceptaAvisoPrivacidad',
+  'aceptaComunicaciones',
+  'privacyNoticeVersion',
+  'consentTimestamp'
+]
+
+const REWARD_EVENT_IDS = new Set([
+  'papa-sobre-ruedas-2026',
+  'romeo-santos-live-mexico-2026'
+])
 
 const LEGACY_SUBSCRIBER_CSV_COLUMNS = [
   'submissionId',
@@ -268,7 +289,58 @@ function ensureSubscriberDataFile() {
 }
 
 function ensureRewardsDataFile() {
-  ensureCsvFile(rewardsCsvPath, REWARDS_CSV_COLUMNS, 'submissions_experiencias_recompensas')
+  fs.mkdirSync(dataDir, { recursive: true })
+  const expectedHeader = REWARDS_CSV_COLUMNS.join(',')
+  if (!fs.existsSync(rewardsCsvPath)) {
+    fs.writeFileSync(rewardsCsvPath, `${expectedHeader}\n`, 'utf8')
+    return
+  }
+
+  const legacyContent = fs.readFileSync(rewardsCsvPath, 'utf8')
+  const firstLine = legacyContent.split(/\r?\n/, 1)[0].replace(/^\uFEFF/, '')
+  if (firstLine === expectedHeader) return
+  if (firstLine !== LEGACY_REWARDS_CSV_COLUMNS.join(',')) {
+    throw new Error(`Unsupported rewards CSV schema at ${rewardsCsvPath}; existing data was preserved`)
+  }
+
+  const migratedContent = migrateLegacyRewardsCsv(legacyContent)
+  const backupPath = ensureRewardsMigrationBackup(legacyContent)
+  const migrationPath = `${rewardsCsvPath}.migration.tmp`
+  fs.writeFileSync(migrationPath, migratedContent, 'utf8')
+  fs.renameSync(migrationPath, rewardsCsvPath)
+  console.log(`Rewards CSV migrated. Original file saved to: ${backupPath}`)
+}
+
+function ensureRewardsMigrationBackup(legacyContent) {
+  const backupBase = path.join(dataDir, 'submissions_experiencias_recompensas_legacy_backup')
+  for (let suffix = 0; ; suffix += 1) {
+    const backupPath = `${backupBase}${suffix === 0 ? '' : `_${suffix + 1}`}.csv`
+    if (fs.existsSync(backupPath)) {
+      if (fs.readFileSync(backupPath, 'utf8') === legacyContent) return backupPath
+      continue
+    }
+    fs.copyFileSync(rewardsCsvPath, backupPath, fs.constants.COPYFILE_EXCL)
+    return backupPath
+  }
+}
+
+function migrateLegacyRewardsCsv(legacyContent) {
+  const lines = legacyContent.split(/\r?\n/)
+  const header = parseCsvLine(lines[0].replace(/^\uFEFF/, ''))
+  const migratedRows = []
+  for (const line of lines.slice(1)) {
+    if (!line.trim()) continue
+    const values = parseCsvLine(line)
+    if (values.length !== header.length) throw new Error('Unable to safely migrate malformed rewards CSV row')
+    const legacyRow = Object.fromEntries(header.map((column, index) => [column, values[index]]))
+    migratedRows.push(buildRewardsCsvRow({
+      ...legacyRow,
+      eventosSeleccionados: [],
+      participaPapaSobreRuedas: false,
+      participaRomeoSantos: false
+    }).trimEnd())
+  }
+  return `${REWARDS_CSV_COLUMNS.join(',')}\n${migratedRows.join('\n')}${migratedRows.length ? '\n' : ''}`
 }
 
 function ensureSubscriberMigrationBackup(legacyContent) {
@@ -491,6 +563,9 @@ function validateLeadPayload(payload) {
 function normalizeRewardsPayload(input) {
   const raw = input && typeof input === 'object' && !Array.isArray(input) ? input : {}
   const timestamp = new Date().toISOString()
+  const eventosSeleccionados = Array.isArray(raw.eventosSeleccionados)
+    ? [...new Set(raw.eventosSeleccionados.filter((value) => typeof value === 'string').map((value) => value.trim()))]
+    : []
   return {
     submissionId: typeof raw.submissionId === 'string' && raw.submissionId.trim()
       ? raw.submissionId.trim()
@@ -501,6 +576,9 @@ function normalizeRewardsPayload(input) {
     nombreCompleto: typeof raw.nombreCompleto === 'string'
       ? raw.nombreCompleto.trim().toLocaleUpperCase('es-MX')
       : '',
+    eventosSeleccionados,
+    participaPapaSobreRuedas: eventosSeleccionados.includes('papa-sobre-ruedas-2026'),
+    participaRomeoSantos: eventosSeleccionados.includes('romeo-santos-live-mexico-2026'),
     recomendacion: typeof raw.recomendacion === 'string' ? raw.recomendacion.trim() : '',
     aceptaAvisoPrivacidad: raw.aceptaAvisoPrivacidad === true,
     aceptaComunicaciones: raw.aceptaComunicaciones === true,
@@ -513,6 +591,9 @@ function validateRewardsPayload(payload) {
   const invalid = []
   if (payload.nombreCompleto.length < 5 || payload.nombreCompleto.length > 140 || !payload.nombreCompleto.includes(' ')) {
     invalid.push('nombreCompleto')
+  }
+  if (payload.eventosSeleccionados.length < 1 || payload.eventosSeleccionados.length > 2 || payload.eventosSeleccionados.some((id) => !REWARD_EVENT_IDS.has(id))) {
+    invalid.push('eventosSeleccionados')
   }
   if (payload.recomendacion.length < 5 || payload.recomendacion.length > 1200) {
     invalid.push('recomendacion')
