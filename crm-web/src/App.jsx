@@ -35,6 +35,7 @@ import {
   toApiMembershipPayload,
 } from "./lib/dataAdapters";
 import { downloadExecutiveDashboardPdf } from "./lib/dashboardPdf";
+import RewardsProgramLive from "./rewards-program/RewardsProgramLive";
 import { buildManualRegistrationPayload } from "./lib/manualEntry";
 import {
   normalizeMembershipPricingCatalog,
@@ -861,6 +862,12 @@ function App() {
         if (!active) return;
         authClient.setSession(session);
         const currentUser = fromApiUser(session.user);
+        if (currentUser.roleCode === "rewards_operator") {
+          setUser(currentUser);
+          setLoginNotice("");
+          setBootState("ready");
+          return;
+        }
         const mayUseExecutiveDirectory =
           hasPermission(currentUser, PERMISSIONS.CONTACT_ASSIGN) ||
           hasPermission(currentUser, PERMISSIONS.DASHBOARD_READ);
@@ -1902,6 +1909,10 @@ function App() {
       />
     );
 
+  if (user?.roleCode === "rewards_operator") {
+    return <RewardsProgramLive api={api} user={user} onLogout={logout} />;
+  }
+
   const context = {
     contacts,
     contactRevision,
@@ -2067,7 +2078,10 @@ function App() {
         )}
         {activePage === "followup" && <FollowupPage {...context} />}
         {activePage === "sales" && <SalesPage {...context} />}
-        {MORE_ITEMS.some((item) => item.id === activePage) && (
+        {activePage === "rewards" && (
+          <RewardsProgramLive api={api} user={user} embedded />
+        )}
+        {MORE_ITEMS.some((item) => item.id === activePage) && activePage !== "rewards" && (
           <MorePage {...context} page={activePage} />
         )}
       </main>

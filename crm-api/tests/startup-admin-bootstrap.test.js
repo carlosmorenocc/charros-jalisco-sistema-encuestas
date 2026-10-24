@@ -147,6 +147,21 @@ test('allows assignment-only profiles while preserving a single Admin credential
   assert.equal(queries.some(({ sql }) => /INSERT INTO/.test(sql)), false);
 });
 
+test('allows an isolated rewards operator credential without changing the Admin', async () => {
+  const { pool, queries } = fakePool({
+    users: [
+      { id: 'admin-id', email: ENV.BOOTSTRAP_ADMIN_EMAIL, role: 'admin', active: true, has_credentials: true },
+      { id: 'rewards-id', email: 'recompensas@charrosjalisco.com', role: 'rewards_operator', active: true, has_credentials: true }
+    ]
+  });
+  const result = await ensureStartupAdmin({
+    pool, config: CONFIG, env: ENV,
+    hashPasswordFn: async () => { throw new Error('must not hash'); }
+  });
+  assert.deepEqual(result, { status: 'already_exists' });
+  assert.equal(queries.some(({ sql }) => /UPDATE local_credentials/.test(sql)), false);
+});
+
 test('refuses a different, disabled, incomplete, or multiple-credential state', async () => {
   const unsafeStates = [
     [{ id: 'admin-id', email: 'other@charrosjalisco.com', role: 'admin', active: true, has_credentials: true }],

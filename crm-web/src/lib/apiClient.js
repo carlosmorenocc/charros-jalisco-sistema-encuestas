@@ -144,5 +144,13 @@ export function createApiClient({
     exportContacts: (filters) => requestBlob(`/exports/contacts.csv${encodeQuery(filters)}`),
     exportSubscriberDetail: (filters) => requestBlob(`/exports/subscribers.xlsx${encodeQuery(filters)}`, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'reporte-titulares-butacas.xlsx'),
     recordDashboardPdfRequest: (filters) => request('/exports/dashboard-pdf-events', { method: 'POST', body: { filters } }),
+    rewardSummary: () => request('/rewards/summary'),
+    rewardPrograms: (filters) => request(`/rewards/programs${encodeQuery(filters)}`),
+    rewardProgram: (id) => request(`/rewards/programs/${encodeURIComponent(id)}`),
+    deliverRewardCoupon: (programId, rewardId, idempotencyKey) => request(`/rewards/programs/${encodeURIComponent(programId)}/coupon-deliveries`, {
+      method: 'POST',
+      headers: { 'Idempotency-Key': idempotencyKey },
+      body: { rewardId },
+    }),
   }
 }

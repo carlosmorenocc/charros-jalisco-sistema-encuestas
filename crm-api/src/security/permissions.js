@@ -4,7 +4,8 @@ export const ROLES = Object.freeze({
   DIRECTION: 'direction',
   EXECUTIVE: 'executive',
   SUPERVISOR: 'supervisor',
-  ADMIN: 'admin'
+  ADMIN: 'admin',
+  REWARDS_OPERATOR: 'rewards_operator'
 });
 
 export const PERMISSIONS = Object.freeze({
@@ -24,7 +25,12 @@ export const PERMISSIONS = Object.freeze({
   DATA_EXPORT: 'data.export',
   USER_MANAGE: 'user.manage',
   PERMISSION_MANAGE: 'permission.manage',
-  AUDIT_READ: 'audit.read'
+  AUDIT_READ: 'audit.read',
+  REWARDS_READ: 'rewards.read',
+  REWARDS_COUPON_DELIVER: 'rewards.coupon.deliver',
+  REWARDS_IMPORT: 'rewards.import',
+  REWARDS_ADMIN: 'rewards.admin',
+  REWARDS_EXPORT: 'rewards.export'
 });
 
 export const DELEGABLE_PERMISSIONS = Object.freeze([
@@ -58,6 +64,10 @@ export const ROLE_PERMISSIONS = Object.freeze({
     PERMISSIONS.TASK_WRITE_ALL,
     PERMISSIONS.MEMBERSHIP_WRITE,
     PERMISSIONS.SALES_READ
+  ]),
+  [ROLES.REWARDS_OPERATOR]: Object.freeze([
+    PERMISSIONS.REWARDS_READ,
+    PERMISSIONS.REWARDS_COUPON_DELIVER
   ]),
   [ROLES.ADMIN]: allPermissions
 });

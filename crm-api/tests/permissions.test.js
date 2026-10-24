@@ -53,3 +53,14 @@ test('Ejecutivo únicamente puede escribir su propia cartera', () => {
   assert.equal(mayWriteContact(actor, { executiveId: 'executive-b' }), false);
   assert.equal(mayWriteContact(actor, { executiveId: null }), false);
 });
+
+test('Operador de recompensas no hereda contactos, ventas ni exportaciones del CRM', () => {
+  const actor = { id: 'rewards-1', role: 'rewards_operator', permissionGrants: [] };
+  assert.equal(hasPermission(actor, PERMISSIONS.REWARDS_READ), true);
+  assert.equal(hasPermission(actor, PERMISSIONS.REWARDS_COUPON_DELIVER), true);
+  assert.equal(hasPermission(actor, PERMISSIONS.CONTACT_READ), false);
+  assert.equal(hasPermission(actor, PERMISSIONS.SALES_READ), false);
+  assert.equal(hasPermission(actor, PERMISSIONS.DATA_EXPORT), false);
+  assert.equal(hasPermission(actor, PERMISSIONS.REWARDS_IMPORT), false);
+  assert.equal(hasPermission(actor, PERMISSIONS.REWARDS_EXPORT), false);
+});

@@ -569,7 +569,7 @@ export class PgCrmRepository {
        FROM app_users u
        JOIN local_credentials c ON c.user_id = u.id
        LEFT JOIN user_permission_grants g ON g.user_id = u.id
-       WHERE lower(u.email) = lower($1) AND u.role = 'admin'
+       WHERE lower(u.email) = lower($1) AND u.role IN ('admin','rewards_operator')
          AND u.active = true AND u.deleted_at IS NULL
        GROUP BY u.id,c.user_id`,
       [email]
@@ -681,7 +681,7 @@ export class PgCrmRepository {
          FROM app_users u, local_credentials c
          WHERE s.token_digest=$1 AND s.user_id=u.id AND c.user_id=u.id
            AND s.revoked_at IS NULL AND s.expires_at > now() AND s.idle_expires_at > now()
-           AND u.active=true AND u.deleted_at IS NULL AND u.role='admin'
+           AND u.active=true AND u.deleted_at IS NULL AND u.role IN ('admin','rewards_operator')
          RETURNING s.id AS session_id,s.csrf_digest,s.created_at AS session_created_at,s.last_seen_at,
            s.idle_expires_at,s.expires_at,u.*,
            COALESCE((SELECT jsonb_agg(jsonb_build_object('permission',g.permission,'allowed',g.allowed))
@@ -2951,5 +2951,114 @@ export class PgCrmRepository {
        ORDER BY a.occurred_at DESC LIMIT $${params.length - 1} OFFSET $${params.length}`, params
     );
     return { items: result.rows, total: Number(result.rows[0]?.total_count ?? 0) };
+  }
+
+  async rewardSummary() {
+    const result = await this.pool.query(
+      `SELECT
+        (SELECT count(*)::integer FROM reward_programs WHERE status='active') AS programs,
+        (SELECT count(*)::integer FROM reward_attendance) AS attendances,
+        (SELECT count(*)::integer FROM reward_programs WHERE status='review') AS review_cases,
+        (SELECT count(*)::integer FROM reward_coupon_deliveries WHERE status='delivered') AS delivered`
+    );
+    const game = await this.pool.query(
+      `SELECT id,played_on,display_name,report_status,
+        (SELECT count(*)::integer FROM reward_attendance a WHERE a.game_id=g.id) AS unique_accesses
+       FROM reward_games g ORDER BY played_on DESC LIMIT 1`
+    );
+    return { ...result.rows[0], currentGame: game.rows[0] ?? null };
+  }
+
+  async listRewardPrograms({ query = '', zone, visits, rewardState, page = 1, pageSize = 50 } = {}) {
+    const params = [];
+    const where = [`p.status <> 'closed'`];
+    if (query) {
+      params.push(`%${query}%`);
+      where.push(`(p.holder_display_name ILIKE $${params.length} OR p.source_order_number ILIKE $${params.length}
+        OR concat_ws(' ',p.zone,p.section,p.seat) ILIKE $${params.length})`);
+    }
+    if (zone) { params.push(zone); where.push(`p.zone=$${params.length}`); }
+    if (visits !== undefined) { params.push(visits); where.push(`COALESCE(a.visits,0)=$${params.length}`); }
+    if (rewardState === 'pending') where.push(`COALESCE(a.visits,0)>=3 AND COALESCE(d.delivered,0)=0`);
+    if (rewardState === 'delivered') where.push(`COALESCE(d.delivered,0)>0`);
+    const offset = (page - 1) * pageSize;
+    params.push(pageSize, offset);
+    const result = await this.pool.query(
+      `SELECT p.id,p.holder_display_name AS name,p.source_order_number AS order_number,
+        p.zone,p.section,p.seat,p.status,COALESCE(a.visits,0)::integer AS visits,
+        COALESCE(d.delivered,0)::integer AS delivered_rewards,count(*) OVER()::integer AS total_count
+       FROM reward_programs p
+       LEFT JOIN (SELECT program_id,count(*) AS visits FROM reward_attendance GROUP BY program_id) a ON a.program_id=p.id
+       LEFT JOIN (SELECT program_id,count(*) AS delivered FROM reward_coupon_deliveries WHERE status='delivered' GROUP BY program_id) d ON d.program_id=p.id
+       WHERE ${where.join(' AND ')}
+       ORDER BY p.holder_display_name,p.source_order_number,p.zone,p.section,p.seat
+       LIMIT $${params.length - 1} OFFSET $${params.length}`,
+      params
+    );
+    return { items: result.rows.map(({ total_count: _total, ...row }) => row), total: Number(result.rows[0]?.total_count ?? 0) };
+  }
+
+  async getRewardProgram(id) {
+    const program = await this.pool.query(
+      `SELECT p.id,p.holder_display_name AS name,p.source_order_number AS order_number,
+        p.zone,p.section,p.seat,p.status,p.row_version,COALESCE(a.visits,0)::integer AS visits
+       FROM reward_programs p
+       LEFT JOIN (SELECT program_id,count(*) AS visits FROM reward_attendance GROUP BY program_id) a ON a.program_id=p.id
+       WHERE p.id=$1`, [id]
+    );
+    if (!program.rows[0]) return null;
+    const [history, rewards] = await Promise.all([
+      this.pool.query(
+        `SELECT g.id,g.played_on,g.display_name,g.report_status,(a.id IS NOT NULL) AS attended,a.evidence_at
+         FROM reward_games g LEFT JOIN reward_attendance a ON a.game_id=g.id AND a.program_id=$1
+         WHERE g.season_code='LMP-2026-27' ORDER BY g.played_on`, [id]
+      ),
+      this.pool.query(
+        `SELECT r.id,r.milestone_visits,r.benefit_name,r.redemption_delay_visits,
+          d.id AS delivery_id,d.status AS delivery_status,d.delivered_at
+         FROM reward_definitions r LEFT JOIN reward_coupon_deliveries d
+           ON d.reward_definition_id=r.id AND d.program_id=$1 AND d.status <> 'reversed'
+         WHERE r.season_code='LMP-2026-27' AND r.active=true ORDER BY r.milestone_visits`, [id]
+      )
+    ]);
+    return { ...program.rows[0], history: history.rows, rewards: rewards.rows };
+  }
+
+  async deliverRewardCoupon({ programId, rewardId, idempotencyKey }, actor, context) {
+    return withTransaction(this.pool, async (client) => {
+      const existing = await client.query(
+        `SELECT id,status,delivered_at FROM reward_coupon_deliveries
+         WHERE delivered_by=$1 AND idempotency_key=$2`, [actor.id, idempotencyKey]
+      );
+      if (existing.rows[0]) return { ...existing.rows[0], replayed: true };
+      const eligibility = await client.query(
+        `SELECT p.id,r.milestone_visits,r.redemption_delay_visits,
+          (SELECT count(*)::integer FROM reward_attendance a WHERE a.program_id=p.id) AS visits
+         FROM reward_programs p CROSS JOIN reward_definitions r
+         WHERE p.id=$1 AND r.id=$2 AND p.status='active' AND r.active=true FOR UPDATE OF p`,
+        [programId, rewardId]
+      );
+      if (!eligibility.rows[0]) throw notFound('Butaca o recompensa');
+      const item = eligibility.rows[0];
+      if (Number(item.visits) < Number(item.milestone_visits) + Number(item.redemption_delay_visits)) {
+        throw conflict('La recompensa todavía no está habilitada para canje.');
+      }
+      const duplicate = await client.query(
+        `SELECT id FROM reward_coupon_deliveries
+         WHERE program_id=$1 AND reward_definition_id=$2 AND status='delivered'`, [programId, rewardId]
+      );
+      if (duplicate.rows[0]) throw conflict('Este cupón ya fue entregado.');
+      const result = await client.query(
+        `INSERT INTO reward_coupon_deliveries
+          (program_id,reward_definition_id,status,delivered_at,delivered_by,source,idempotency_key)
+         VALUES ($1,$2,'delivered',now(),$3,'operator',$4)
+         RETURNING id,status,delivered_at`, [programId, rewardId, actor.id, idempotencyKey]
+      );
+      await this.audit(client, context, {
+        action: 'reward.coupon_delivered', entityType: 'reward_program', entityId: programId,
+        metadata: { rewardId }
+      });
+      return { ...result.rows[0], replayed: false };
+    });
   }
 }
