@@ -20,3 +20,17 @@ crm-import/**/*.csv
 crm-api/coverage/
 crm-web/coverage/
 crm-web/public/crm-private-data.json
+rewards-api/.env
+rewards-api/.env.*
+!rewards-api/.env.example
+rewards-api/private/
+rewards-api/uploads/
+rewards-api/backups/
+rewards-api/**/*.xlsx
+rewards-api/**/*.xls
+rewards-api/**/*.csv
+rewards-web/.env
+rewards-web/.env.*
+!rewards-web/.env.example
+rewards-web/dist/
+rewards-web/.vercel/
