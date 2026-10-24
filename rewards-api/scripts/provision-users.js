@@ -10,10 +10,14 @@ const accounts = [
   ['Mariette Dueñas','mariette.guillen@charrosdejalisco.com','operator'],
   ['Esmeralda Ruvalcaba','esmeralda.ruvalcaba@charrosdejalisco.com','operator']
 ];
+const requestedEmailIndex=process.argv.indexOf('--email');
+const requestedEmail=requestedEmailIndex>=0?String(process.argv[requestedEmailIndex+1]||'').trim().toLowerCase():'';
+const selectedAccounts=requestedEmail?accounts.filter(([,email])=>email===requestedEmail):accounts;
+if(!selectedAccounts.length) throw new Error(`Cuenta no reconocida: ${requestedEmail}`);
 const config=loadConfig(), pool=createPool(config), terminal=readline.createInterface({input:stdin,output:stdout,terminal:true});
 try {
   await transaction(pool,async(client)=>{
-    for(const [name,email,role] of accounts){
+    for(const [name,email,role] of selectedAccounts){
       const password=await terminal.question(`Contraseña temporal para ${name}: `,{hideEchoBack:true});
       const confirmation=await terminal.question('Confirmar: ',{hideEchoBack:true});
       if(password!==confirmation) throw new Error(`Las contraseñas de ${name} no coinciden`);
@@ -22,5 +26,5 @@ try {
       await client.query(`UPDATE rewards_sessions SET revoked_at=now() WHERE user_id=(SELECT id FROM rewards_users WHERE email=$1) AND revoked_at IS NULL`,[email]);
     }
   });
-  console.log('Cuentas provisionadas; todas exigirán cambio de contraseña.');
+  console.log(`${selectedAccounts.length===1?'Cuenta provisionada':'Cuentas provisionadas'}; se exigirá cambio de contraseña al ingresar.`);
 } finally { terminal.close(); await pool.end(); }
