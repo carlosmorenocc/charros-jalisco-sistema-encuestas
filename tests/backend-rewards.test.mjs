@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:net'
 import os from 'node:os'
 import path from 'node:path'
@@ -58,6 +58,12 @@ async function stopBackend(child) {
 
 test('experiencias y recompensas valida, persiste y protege la exportación', async (t) => {
   const dataDir = await mkdtemp(path.join(os.tmpdir(), 'charros-rewards-'))
+  await mkdir(dataDir, { recursive: true })
+  await writeFile(
+    path.join(dataDir, 'submissions_experiencias_recompensas.csv'),
+    'submissionId,timestamp,campaignName,source,nombreCompleto,recomendacion,aceptaAvisoPrivacidad,aceptaComunicaciones,privacyNoticeVersion,consentTimestamp\n"legacy-1","2026-10-20T00:00:00.000Z","Club Charros · Experiencias y Recompensas","club-charros-rewards","REGISTRO ANTERIOR","Respuesta conservada","true","false","2026-10-20","2026-10-20T00:00:00.000Z"\n',
+    'utf8'
+  )
   const backend = await startBackend(dataDir)
   t.after(async () => {
     await stopBackend(backend.child)
@@ -77,6 +83,7 @@ test('experiencias y recompensas valida, persiste y protege la exportación', as
     body: JSON.stringify({
       submissionId: 'reward-test-1',
       nombreCompleto: 'Ana López Pérez',
+      eventosSeleccionados: ['papa-sobre-ruedas-2026', 'romeo-santos-live-mexico-2026'],
       recomendacion: 'Más actividades familiares antes del juego.',
       aceptaAvisoPrivacidad: true,
       aceptaComunicaciones: true
@@ -92,9 +99,12 @@ test('experiencias y recompensas valida, persiste y protege la exportación', as
   })
   assert.equal(authorized.status, 200)
   const csv = await authorized.text()
-  assert.match(csv, /nombreCompleto,recomendacion/)
+  assert.match(csv, /nombreCompleto,eventosSeleccionados,participaPapaSobreRuedas,participaRomeoSantos,recomendacion/)
   assert.match(csv, /ANA LÓPEZ PÉREZ/)
   assert.match(csv, /Más actividades familiares/)
+  assert.match(csv, /papa-sobre-ruedas-2026 \| romeo-santos-live-mexico-2026/)
+  assert.match(csv, /REGISTRO ANTERIOR/)
+  assert.match(csv, /Respuesta conservada/)
 
   const stored = await readFile(path.join(dataDir, 'submissions_experiencias_recompensas.csv'), 'utf8')
   assert.equal(stored, csv)

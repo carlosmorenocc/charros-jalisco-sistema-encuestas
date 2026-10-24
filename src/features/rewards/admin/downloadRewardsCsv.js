@@ -16,7 +16,7 @@ export function downloadRewardsCsv({ token, endpoint = resolveEndpoint(), now = 
     endpoint,
     filename: createMexicoDatedCsvFilename('club-charros-experiencias-recompensas', now),
     configurationMessage: 'La descarga de experiencias y recompensas no está configurada.',
-    expectedColumns: ['nombreCompleto', 'recomendacion', 'aceptaAvisoPrivacidad'],
+    expectedColumns: ['nombreCompleto', 'eventosSeleccionados', 'participaPapaSobreRuedas', 'participaRomeoSantos', 'recomendacion', 'aceptaAvisoPrivacidad'],
     schemaMessage: 'El archivo recibido no corresponde a experiencias y recompensas.',
     ...dependencies
   })

@@ -22,6 +22,10 @@ describe('RewardsRegistration', () => {
       { target: { value: 'Más actividades familiares antes del juego.' } }
     )
     fireEvent.click(screen.getByRole('button', { name: 'Continuar' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Selecciona al menos uno')
+    fireEvent.click(screen.getByLabelText(/Papá sobre Ruedas Tour 2026/i))
+    fireEvent.click(screen.getByLabelText(/Romeo Santos · Live México/i))
+    fireEvent.click(screen.getByRole('button', { name: 'Continuar' }))
 
     expect(await screen.findByRole('heading', { name: 'Aviso de Privacidad' })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Enviar respuesta' }))
@@ -33,6 +37,7 @@ describe('RewardsRegistration', () => {
     await waitFor(() => expect(submitRewardsForm).toHaveBeenCalledOnce())
     expect(submitRewardsForm.mock.calls[0][0]).toMatchObject({
       nombreCompleto: 'ANA LÓPEZ PÉREZ',
+      eventosSeleccionados: ['papa-sobre-ruedas-2026', 'romeo-santos-live-mexico-2026'],
       recomendacion: 'Más actividades familiares antes del juego.',
       aceptaAvisoPrivacidad: true
     })

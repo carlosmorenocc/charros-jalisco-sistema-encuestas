@@ -4,6 +4,22 @@ import { submitRewardsForm } from './submitRewardsForm'
 import styles from './RewardsRegistration.module.css'
 
 const WHATSAPP_CHANNEL = 'https://whatsapp.com/channel/0029VbE1306LSmbVPqM1Ro02'
+const REWARD_EVENTS = [
+  {
+    id: 'papa-sobre-ruedas-2026',
+    title: 'Papá sobre Ruedas Tour 2026',
+    date: '7 de noviembre de 2026 · 3:00 PM',
+    venue: 'Explanada del Estadio de los Charros · Guadalajara',
+    prize: '15 ganadores de pases dobles'
+  },
+  {
+    id: 'romeo-santos-live-mexico-2026',
+    title: 'Romeo Santos · Live México',
+    date: '31 de octubre de 2026',
+    venue: 'Estadio Panamericano · Guadalajara',
+    prize: '1 ganador de un pase doble'
+  }
+]
 
 function normalizeUppercase(value) {
   return value.toLocaleUpperCase('es-MX')
@@ -11,7 +27,7 @@ function normalizeUppercase(value) {
 
 export default function RewardsRegistration() {
   const [step, setStep] = useState(1)
-  const [data, setData] = useState({ nombreCompleto: '', recomendacion: '' })
+  const [data, setData] = useState({ nombreCompleto: '', eventosSeleccionados: [], recomendacion: '' })
   const [acceptsPrivacy, setAcceptsPrivacy] = useState(false)
   const [acceptsCommunications, setAcceptsCommunications] = useState(false)
   const [error, setError] = useState('')
@@ -28,6 +44,10 @@ export default function RewardsRegistration() {
     const recommendation = data.recomendacion.trim()
     if (fullName.length < 5 || !fullName.includes(' ')) {
       setError('Escribe tu nombre completo.')
+      return
+    }
+    if (data.eventosSeleccionados.length === 0) {
+      setError('Selecciona al menos uno de los eventos para participar.')
       return
     }
     if (recommendation.length < 5) {
@@ -54,6 +74,7 @@ export default function RewardsRegistration() {
         campaignName: 'Club Charros · Experiencias y Recompensas',
         source: 'club-charros-rewards',
         nombreCompleto: normalizeUppercase(data.nombreCompleto.trim()),
+        eventosSeleccionados: data.eventosSeleccionados,
         recomendacion: data.recomendacion.trim(),
         aceptaAvisoPrivacidad: true,
         aceptaComunicaciones: acceptsCommunications,
@@ -67,6 +88,16 @@ export default function RewardsRegistration() {
     } finally {
       setSending(false)
     }
+  }
+
+  function toggleEvent(eventId) {
+    setData((current) => ({
+      ...current,
+      eventosSeleccionados: current.eventosSeleccionados.includes(eventId)
+        ? current.eventosSeleccionados.filter((id) => id !== eventId)
+        : [...current.eventosSeleccionados, eventId]
+    }))
+    setError('')
   }
 
   return (
@@ -113,6 +144,34 @@ export default function RewardsRegistration() {
               />
               <small>Tu nombre se guardará en mayúsculas.</small>
             </label>
+
+            <fieldset className={styles.eventFieldset}>
+              <legend>¿En qué rifa quieres participar?</legend>
+              <p className={styles.eventHelp}>Puedes seleccionar uno o ambos eventos.</p>
+              <div className={styles.eventGrid}>
+                {REWARD_EVENTS.map((rewardEvent) => {
+                  const selected = data.eventosSeleccionados.includes(rewardEvent.id)
+                  return (
+                    <label
+                      className={`${styles.eventCard} ${selected ? styles.eventCardSelected : ''}`}
+                      key={rewardEvent.id}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selected}
+                        onChange={() => toggleEvent(rewardEvent.id)}
+                      />
+                      <span className={styles.eventCopy}>
+                        <strong>{rewardEvent.title}</strong>
+                        <span>{rewardEvent.date}</span>
+                        <span>{rewardEvent.venue}</span>
+                        <em>{rewardEvent.prize}</em>
+                      </span>
+                    </label>
+                  )
+                })}
+              </div>
+            </fieldset>
 
             <label className={styles.field} htmlFor="rewards-recommendation">
               <span>¿Qué recomendarías al Club Charros para hacer de tu experiencia mejor?</span>
