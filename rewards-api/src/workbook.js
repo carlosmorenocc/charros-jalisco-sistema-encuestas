@@ -10,6 +10,7 @@ export const ELIGIBLE_EVENTS = new Set([
 const plain = (value) => String(value?.text ?? value?.result ?? value ?? '').trim();
 const canonical = (value) => plain(value).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
 const seatKey = (order, zone, section, seat) => [order,zone,section,seat].map(canonical).join('|');
+const numeric = (value) => Number(plain(value).replace(/[$,\s]/g,''));
 
 function table(sheet) {
   let headerRow = 0;
@@ -38,7 +39,8 @@ export async function inspectWorkbook(buffer, { kind, knownPrograms = new Map() 
     if (kind === 'sales') {
       const event = row.EVENTO;
       const key = seatKey(row['NUMERO DE ORDEN'], row.ZONA, row.SECCION, row.ASIENTO);
-      const excludedModality = ['0','0.00','1','1.00'].includes(row.PRECIO) || /COLABORADOR/i.test(row.TIPO);
+      const price = numeric(row.PRECIO);
+      const excludedModality = price === 0 || price === 1 || /COLABORADOR/i.test(`${row.TIPO} ${row.PARAMETRO} ${event}`);
       if (!ELIGIBLE_EVENTS.has(event) || /COMPROMISO|PATROCIN/i.test(`${row.PARAMETRO}`) || /SUITE/i.test(row.ZONA) || excludedModality) {
         excluded.push({ key, reason: 'Producto o localidad excluida' }); continue;
       }
@@ -51,7 +53,7 @@ export async function inspectWorkbook(buffer, { kind, knownPrograms = new Map() 
       const type = row.TIPO;
       const event = row['EVENTO LIGADO'];
       const key = seatKey(row.COMPRA, row.ZONA, row.SECCION, row.ASIENTO);
-      if (type !== 'Abono' || !ELIGIBLE_EVENTS.has(event) || /COMPROMISO|PATROCIN/i.test(`${row.PARAMETRO}`)) {
+      if (type !== 'Abono' || !ELIGIBLE_EVENTS.has(event) || /COMPROMISO|PATROCIN|COLABORADOR/i.test(`${row.PARAMETRO}`) || /SUITE/i.test(row.ZONA)) {
         excluded.push({ key, reason: 'Acceso fuera de reglas' }); continue;
       }
       if (seen.has(key)) { duplicates.push({ key, reason: 'Doble escaneo en el mismo corte' }); continue; }

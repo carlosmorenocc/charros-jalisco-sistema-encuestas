@@ -20,13 +20,15 @@ export function createApp({ pool, config }) {
   app.use(express.json({ limit: '256kb' }));
   app.use(cookieParser());
 
-  const cookie = { httpOnly: true, secure: config.cookieSecure, sameSite: 'strict', path: '/' };
+  const cookie = { httpOnly: true, secure: config.cookieSecure, sameSite: config.cookieSameSite, path: '/' };
   const authenticate = async (req,res,next) => {
     const token = req.cookies[COOKIE];
     if (!token) return res.status(401).json({ error: 'Sesión requerida' });
     const result = await pool.query(`SELECT u.*,s.id session_id,s.csrf_digest FROM rewards_sessions s JOIN rewards_users u ON u.id=s.user_id WHERE s.token_digest=$1 AND s.revoked_at IS NULL AND s.expires_at>now() AND s.idle_expires_at>now() AND u.active`, [digest(token,config.sessionKey)]);
     if (!result.rowCount) return res.status(401).json({ error: 'Sesión inválida' });
     req.user = result.rows[0];
+    const passwordChangeAllowed = ['/api/auth/session','/api/auth/change-password','/api/auth/logout'].includes(req.path);
+    if (req.user.must_change_password && !passwordChangeAllowed) return res.status(403).json({ error:'Debes crear tu contraseña antes de continuar' });
     await pool.query('UPDATE rewards_sessions SET last_seen_at=now(),idle_expires_at=LEAST(expires_at,now()+interval \'45 minutes\') WHERE id=$1',[req.user.session_id]);
     next();
   };
@@ -49,6 +51,7 @@ export function createApp({ pool, config }) {
   });
   app.get('/api/auth/session', authenticate, (req,res) => res.json({ user:safeUser(req.user), csrfToken:req.cookies[CSRF] }));
   app.post('/api/auth/change-password', authenticate, csrf, async (req,res) => {
+    if (String(req.body.password || '').length < 12) return res.status(400).json({ error:'La contraseña debe contener al menos 12 caracteres' });
     const passwordHash=await hashPassword(req.body.password,config.passwordPepper);
     await pool.query('UPDATE rewards_users SET password_hash=$1,must_change_password=false,updated_at=now() WHERE id=$2',[passwordHash,req.user.id]);
     res.status(204).end();
@@ -56,8 +59,8 @@ export function createApp({ pool, config }) {
   app.post('/api/auth/logout', authenticate, csrf, async (req,res) => { await pool.query('UPDATE rewards_sessions SET revoked_at=now() WHERE id=$1',[req.user.session_id]); res.clearCookie(COOKIE,{path:'/'}).clearCookie(CSRF,{path:'/'}).status(204).end(); });
 
   app.get('/api/summary', authenticate, async (_req,res) => {
-    const [programs,visits,pending,distribution] = await Promise.all([pool.query("SELECT count(*)::int total FROM rewards_programs WHERE active AND eligibility_status='eligible'"),pool.query('SELECT count(*)::int total FROM rewards_attendance'),pool.query(`SELECT count(*)::int total FROM rewards_deliveries WHERE status='historical_unreviewed'`),pool.query(`SELECT visits,count(*)::int total FROM (SELECT p.id,count(DISTINCT a.game_id)::int visits FROM rewards_programs p LEFT JOIN rewards_attendance a ON a.program_id=p.id WHERE p.active AND p.eligibility_status='eligible' GROUP BY p.id) x GROUP BY visits ORDER BY visits`)]);
-    res.json({ programs:programs.rows[0].total, visits:visits.rows[0].total, historicalPending:pending.rows[0].total, distribution:distribution.rows });
+    const [programs,visits,pending,distribution,games] = await Promise.all([pool.query("SELECT count(*)::int total FROM rewards_programs WHERE active AND eligibility_status='eligible'"),pool.query('SELECT count(*)::int total FROM rewards_attendance'),pool.query(`SELECT count(*)::int total FROM rewards_deliveries WHERE status='historical_unreviewed'`),pool.query(`SELECT visits,count(*)::int total FROM (SELECT p.id,count(DISTINCT a.game_id)::int visits FROM rewards_programs p LEFT JOIN rewards_attendance a ON a.program_id=p.id WHERE p.active AND p.eligibility_status='eligible' GROUP BY p.id) x GROUP BY visits ORDER BY visits`),pool.query(`SELECT count(DISTINCT game_id)::int processed,max(scanned_at) cutoff FROM rewards_attendance`)]);
+    res.json({ programs:programs.rows[0].total, visits:visits.rows[0].total, historicalPending:pending.rows[0].total, distribution:distribution.rows, processedGames:games.rows[0].processed, cutoff:games.rows[0].cutoff });
   });
   app.get('/api/programs', authenticate, async (req,res) => {
     const q=String(req.query.q||'').trim(),zone=String(req.query.zone||'').trim(),min=Number(req.query.minVisits||0),max=Number(req.query.maxVisits||34);

@@ -13,6 +13,7 @@ export function loadConfig() {
     databaseSsl: process.env.DATABASE_SSL === 'true',
     corsOrigin: required('CORS_ORIGIN'),
     cookieSecure: process.env.SESSION_COOKIE_SECURE === 'true',
+    cookieSameSite: process.env.SESSION_COOKIE_SAME_SITE || (production ? 'none' : 'lax'),
     sessionKey: required('SESSION_HASH_KEY'),
     passwordPepper: required('PASSWORD_PEPPER'),
     auditKey: required('AUDIT_HASH_KEY')
@@ -22,6 +23,12 @@ export function loadConfig() {
   }
   if (production && (!config.cookieSecure || !config.corsOrigin.startsWith('https://'))) {
     throw new Error('Production requires secure cookies and an HTTPS CORS origin');
+  }
+  if (!['lax', 'strict', 'none'].includes(config.cookieSameSite)) {
+    throw new Error('SESSION_COOKIE_SAME_SITE must be lax, strict or none');
+  }
+  if (config.cookieSameSite === 'none' && !config.cookieSecure) {
+    throw new Error('SameSite=None requires secure cookies');
   }
   return config;
 }

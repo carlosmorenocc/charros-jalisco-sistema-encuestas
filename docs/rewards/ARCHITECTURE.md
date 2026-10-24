@@ -18,6 +18,8 @@ La publicación institucional no está autorizada todavía. No se modificó ning
 
 La temporada `LMP-2026-27` está configurada con 34 partidos de temporada regular y sin playoffs. La fecha de cierre permanece configurable.
 
+Cuando se autorice el despliegue separado, Render debe usar `SESSION_COOKIE_SECURE=true` y `SESSION_COOKIE_SAME_SITE=none`, porque el frontend de Vercel y el API de Render pertenecen a sitios distintos. La protección CSRF permanece obligatoria. `CORS_ORIGIN` debe contener únicamente el dominio HTTPS exacto del frontend de recompensas.
+
 ## Archivos privados
 
 Los Excel originales, cargas temporales, respaldos, `.env` y exportaciones permanecen fuera de Git mediante `.gitignore`. Los reportes adjuntos se auditan desde su ubicación local y no se copian al repositorio.
