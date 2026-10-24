@@ -50,38 +50,6 @@ export function createApiRouter({ service, config }) {
     permissions: [...effectivePermissions(req.actor)].sort()
   }));
 
-  router.get('/rewards/summary', asyncHandler(async (req, res) => {
-    data(res, await service.rewardSummary(req.actor));
-  }));
-
-  router.get('/rewards/programs', asyncHandler(async (req, res) => {
-    const page = Math.max(1, Number.parseInt(req.query.page ?? '1', 10));
-    const pageSize = Math.min(100, Math.max(1, Number.parseInt(req.query.pageSize ?? '50', 10)));
-    const visits = req.query.visits === undefined ? undefined : Number.parseInt(req.query.visits, 10);
-    if (visits !== undefined && (!Number.isInteger(visits) || visits < 0 || visits > 100)) throw badRequest('visits no es válido.');
-    const result = await service.listRewardPrograms(req.actor, {
-      query: String(req.query.query ?? '').trim().slice(0, 160),
-      zone: req.query.zone ? String(req.query.zone).trim().slice(0, 160) : undefined,
-      visits,
-      rewardState: req.query.rewardState ? String(req.query.rewardState) : undefined,
-      page,
-      pageSize
-    });
-    data(res, result.items, 200, paginationMeta(page, pageSize, result.total));
-  }));
-
-  router.get('/rewards/programs/:id', asyncHandler(async (req, res) => {
-    data(res, await service.getRewardProgram(req.actor, validateUuid(req.params.id)));
-  }));
-
-  router.post('/rewards/programs/:id/coupon-deliveries', asyncHandler(async (req, res) => {
-    data(res, await service.deliverRewardCoupon(req.actor, {
-      programId: validateUuid(req.params.id),
-      rewardId: validateUuid(req.body?.rewardId, 'rewardId'),
-      idempotencyKey: validateUuid(req.get('idempotency-key'), 'Idempotency-Key')
-    }, req.auditContext), 201);
-  }));
-
   router.get('/dashboard/summary', asyncHandler(async (req, res) => {
     const filters = parseListQuery(req.query);
     data(res, await service.dashboard(req.actor, filters));

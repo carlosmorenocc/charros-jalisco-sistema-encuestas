@@ -13,8 +13,6 @@ export const PERMISSIONS = Object.freeze({
   SALES_READ: 'sales.read',
   SALES_WRITE: 'sales.write',
   EXPORT_DATA: 'data.export',
-  REWARDS_READ: 'rewards.read',
-  REWARDS_COUPON_DELIVER: 'rewards.coupon.deliver',
 })
 
 export function hasPermission(user, permission) {

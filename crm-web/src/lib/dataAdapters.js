@@ -289,7 +289,7 @@ export function fromApiInteraction(interaction) {
 
 export function fromApiUser(payload) {
   const user = payload?.user || payload || {}
-  const roleLabels = { admin: 'Administrador', supervisor: 'Supervisor', executive: 'Ejecutivo', direction: 'Dirección', rewards_operator: 'Operador de recompensas' }
+  const roleLabels = { admin: 'Administrador', supervisor: 'Supervisor', executive: 'Ejecutivo', direction: 'Dirección' }
   return {
     ...user,
     name: user.name || user.displayName || 'Usuario',

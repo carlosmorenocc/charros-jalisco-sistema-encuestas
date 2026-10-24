@@ -238,26 +238,4 @@ export class CrmService {
     requirePermission(actor, PERMISSIONS.AUDIT_READ);
     return this.repository.listAuditEvents(filters);
   }
-
-  async rewardSummary(actor) {
-    requirePermission(actor, PERMISSIONS.REWARDS_READ);
-    return this.repository.rewardSummary();
-  }
-
-  async listRewardPrograms(actor, filters) {
-    requirePermission(actor, PERMISSIONS.REWARDS_READ);
-    return this.repository.listRewardPrograms(filters);
-  }
-
-  async getRewardProgram(actor, id) {
-    requirePermission(actor, PERMISSIONS.REWARDS_READ);
-    const program = await this.repository.getRewardProgram(id);
-    if (!program) throw notFound('Programa de recompensas');
-    return program;
-  }
-
-  async deliverRewardCoupon(actor, input, context) {
-    requirePermission(actor, PERMISSIONS.REWARDS_COUPON_DELIVER);
-    return this.repository.deliverRewardCoupon(input, actor, context);
-  }
 }
