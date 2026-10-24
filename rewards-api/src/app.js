@@ -72,15 +72,22 @@ export function createApp({ pool, config }) {
   app.get('/api/programs/:id', authenticate, async (req,res) => {
     const result=await pool.query(`SELECT p.id,p.holder_name,p.order_number,p.purchase_code,p.zone,p.section,p.seat,p.source_event,count(DISTINCT a.game_id)::int visits FROM rewards_programs p LEFT JOIN rewards_attendance a ON a.program_id=p.id WHERE p.id=$1 GROUP BY p.id`,[req.params.id]);
     if (!result.rowCount) return res.status(404).json({error:'Butaca no encontrada'});
-    const rewards=await pool.query(`SELECT c.*,d.status,d.delivered_at FROM rewards_catalog c LEFT JOIN rewards_deliveries d ON d.program_id=$1 AND d.milestone=c.milestone AND d.status<>'reversed' ORDER BY c.milestone`,[req.params.id]);
-    res.json({ program:result.rows[0], rewards:rewards.rows });
+    const [rewards,seats,attendance]=await Promise.all([
+      pool.query(`SELECT c.*,d.id delivery_id,d.status,d.delivered_at,d.known_date FROM rewards_catalog c LEFT JOIN rewards_deliveries d ON d.program_id=$1 AND d.milestone=c.milestone AND d.status<>'reversed' ORDER BY c.milestone`,[req.params.id]),
+      pool.query(`SELECT p.id,p.zone,p.section,p.seat,count(DISTINCT a.game_id)::int visits FROM rewards_programs p LEFT JOIN rewards_attendance a ON a.program_id=p.id WHERE p.active AND p.order_number=$1 GROUP BY p.id ORDER BY p.zone,p.section,p.seat`,[result.rows[0].order_number]),
+      pool.query(`SELECT g.sequence_number,g.display_name,g.played_on,a.scanned_at FROM rewards_attendance a JOIN rewards_games g ON g.id=a.game_id WHERE a.program_id=$1 ORDER BY g.sequence_number`,[req.params.id])
+    ]);
+    res.json({ program:result.rows[0], rewards:rewards.rows, seats:seats.rows, attendance:attendance.rows });
   });
   app.post('/api/programs/:id/deliveries', authenticate, csrf, async (req,res) => {
     const idempotency=req.get('idempotency-key') || crypto.randomUUID();
     const status=req.body.historical ? 'historical_unreviewed' : 'delivered';
+    let deliveredAt=new Date();
+    if(req.body.historical&&req.body.unknownDate) deliveredAt=null;
+    if(req.body.historical&&!req.body.unknownDate){deliveredAt=new Date(req.body.deliveredAt);if(Number.isNaN(deliveredAt.getTime()))return res.status(400).json({error:'Indica la fecha conocida de la entrega histórica'})}
     const eligibility=await pool.query('SELECT count(DISTINCT game_id)::int visits FROM rewards_attendance WHERE program_id=$1',[req.params.id]);
     if(!req.body.historical && eligibility.rows[0].visits < Number(req.body.milestone)+1) return res.status(409).json({error:'El canje se habilita desde la siguiente asistencia al hito'});
-    const result=await pool.query(`INSERT INTO rewards_deliveries(program_id,milestone,status,delivered_at,delivered_by,known_date,reason,idempotency_key) VALUES($1,$2,$3,CASE WHEN $4 THEN NULL ELSE now() END,$5,$6,$7,$8) ON CONFLICT DO NOTHING RETURNING *`,[req.params.id,req.body.milestone,status,Boolean(req.body.unknownDate),req.user.id,!req.body.unknownDate,req.body.reason||null,idempotency]);
+    const result=await pool.query(`INSERT INTO rewards_deliveries(program_id,milestone,status,delivered_at,delivered_by,known_date,reason,idempotency_key) VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT DO NOTHING RETURNING *`,[req.params.id,req.body.milestone,status,deliveredAt,req.user.id,!req.body.unknownDate,req.body.reason||null,idempotency]);
     if (!result.rowCount) return res.status(409).json({error:'Esta entrega ya estaba registrada'});
     await pool.query(`INSERT INTO rewards_audit(actor_id,action,entity_type,entity_id,metadata) VALUES($1,'delivery.recorded','program',$2,$3)`,[req.user.id,req.params.id,JSON.stringify({milestone:req.body.milestone,status})]);
     res.status(201).json(result.rows[0]);
