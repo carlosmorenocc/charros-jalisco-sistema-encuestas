@@ -38,12 +38,13 @@ export async function inspectWorkbook(buffer, { kind, knownPrograms = new Map() 
     if (kind === 'sales') {
       const event = row.EVENTO;
       const key = seatKey(row['NUMERO DE ORDEN'], row.ZONA, row.SECCION, row.ASIENTO);
-      if (!ELIGIBLE_EVENTS.has(event) || /COMPROMISO|PATROCIN/i.test(`${row.PARAMETRO}`)) {
+      const excludedModality = ['0','0.00','1','1.00'].includes(row.PRECIO) || /COLABORADOR/i.test(row.TIPO);
+      if (!ELIGIBLE_EVENTS.has(event) || /COMPROMISO|PATROCIN/i.test(`${row.PARAMETRO}`) || /SUITE/i.test(row.ZONA) || excludedModality) {
         excluded.push({ key, reason: 'Producto o localidad excluida' }); continue;
       }
       if (seen.has(key)) { duplicates.push({ key, reason: 'Butaca repetida en el archivo' }); continue; }
       seen.add(key);
-      const special = ['0','1','1.00'].includes(row.PRECIO) || /COLABORADOR/i.test(row.TIPO) || /SUITE/i.test(row.ZONA);
+      const special = false;
       const record = { key, orderNumber: row['NUMERO DE ORDEN'], purchaseCode: row['CODIGO DE COMPRA'], holderName: row['*NOMBRE'] || row.PARAMETRO || row.CLIENTE, holderEmail: row['*CORREO ELECTRONICO'] || null, holderPhone: row['*TELEFONO'] || null, zone: row.ZONA, section: row.SECCION, seat: row.ASIENTO, barcode: row['CODIGO DE BARRAS'], sourceEvent: event, specialReview: special };
       (special ? review : included).push(record);
     } else {

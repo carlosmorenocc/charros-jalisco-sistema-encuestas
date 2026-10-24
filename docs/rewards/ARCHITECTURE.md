@@ -16,6 +16,8 @@ Aplicación independiente del CRM. `rewards-web` consume exclusivamente `rewards
 
 La publicación institucional no está autorizada todavía. No se modificó ningún servicio ni base del CRM. El repositorio solo tiene configurado el remoto personal `origin`; falta recibir y verificar el remoto institucional antes de establecer un flujo de promoción.
 
+La temporada `LMP-2026-27` está configurada con 34 partidos de temporada regular y sin playoffs. La fecha de cierre permanece configurable.
+
 ## Archivos privados
 
 Los Excel originales, cargas temporales, respaldos, `.env` y exportaciones permanecen fuera de Git mediante `.gitignore`. Los reportes adjuntos se auditan desde su ubicación local y no se copian al repositorio.
