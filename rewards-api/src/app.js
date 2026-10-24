@@ -40,7 +40,10 @@ export function createApp({ pool, config }) {
   };
   const admin = (req,res,next) => req.user.role === 'administrator' ? next() : res.status(403).json({ error:'Permiso de administrador requerido' });
 
-  app.get('/ready', (_req,res) => res.json({ ok:true, service:'charros-rewards-api' }));
+  app.get('/ready', async (_req,res) => {
+    await pool.query('SELECT 1');
+    res.json({ ok:true, service:'charros-rewards-api' });
+  });
   app.post('/api/auth/login', rateLimit({ windowMs:15*60*1000, limit:5 }), async (req,res) => {
     const result = await pool.query('SELECT * FROM rewards_users WHERE email=$1 AND active',[normalizeEmail(req.body.email)]);
     const user = result.rows[0];
