@@ -8,7 +8,7 @@ const accounts = [
   ['Carlos Moreno','carlos.moreno@charrosdejalisco.com','administrator'],
   ['César Carrasco','cesar.carrasco@charrosdejalisco.com','operator'],
   ['Mariette Dueñas','mariette.duenas@charrosdejalisco.com','operator'],
-  ['Blanca Rubalcaba','blanca.rubalcaba@charrosdejalisco.com','operator']
+  ['Blanca Ruvalcaba','esmeralda.ruvalcaba@charrosdejalisco.com','operator']
 ];
 const approvedOperatorEmails = accounts
   .filter(([, , role]) => role === 'operator')

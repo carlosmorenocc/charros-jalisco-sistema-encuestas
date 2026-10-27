@@ -7,9 +7,10 @@ test('el aprovisionamiento conserva solo las tres cuentas de consulta aprobadas'
   for (const email of [
     'cesar.carrasco@charrosdejalisco.com',
     'mariette.duenas@charrosdejalisco.com',
-    'blanca.rubalcaba@charrosdejalisco.com'
+    'esmeralda.ruvalcaba@charrosdejalisco.com'
   ]) assert.match(source,new RegExp(email.replaceAll('.','\\.')));
   assert.match(source,/WHERE role='operator' AND NOT \(email=ANY\(\$1::text\[\]\)\)/);
   assert.doesNotMatch(source,/mariette\.guillen@/);
-  assert.doesNotMatch(source,/esmeralda\.ruvalcaba@/);
+  assert.doesNotMatch(source,/blanca\.rubalcaba@/);
+  assert.doesNotMatch(source,/blanca\.ruvalcaba@/);
 });
