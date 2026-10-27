@@ -26,6 +26,10 @@ Para cada partido, el administrador sigue este flujo en `Importar`:
 5. Confirma la importación. El API vuelve a validar el archivo, guarda su SHA-256 y las nuevas asistencias en una sola transacción.
 6. Registra solo el SHA-256 y el resumen agregado, y verifica el resultado en Resumen y en una muestra de perfiles sin copiar datos personales a la evidencia operativa.
 
-El API construye la llave orden + zona + sección + asiento. Un mismo archivo no puede confirmarse dos veces y la restricción programa + partido impide sumar dos veces una butaca. Un corte parcial posterior debe provenir de una nueva exportación; un corte cerrado no vuelve a estado parcial.
+El API concilia cada acceso contra una sola butaca activa. Primero busca orden + zona + sección + asiento; después admite una equivalencia única de nombre de zona y, como último recurso, una coincidencia única de orden + asiento compatible con el segmento. Los cambios históricos de orden o butaca solo se aceptan mediante `rewards_program_aliases`: nunca se infieren por nombre, correo o teléfono.
+
+Se aceptan filas `Abono` de los productos aprobados y también `Cortesía abono` cuando esa fila concilia con una butaca activa del padrón; esto conserva los abonos 2x1. Se excluyen boletos de ocasión, cortesías ordinarias, suites, compromisos, patrocinadores y colaboradores. Una fila con patrocinador informado se excluye incluso si su tipo o evento parece elegible.
+
+Los escaneos repetidos se agrupan por programa + partido, no por dispositivo ni ronda, y se conserva la hora de ingreso más temprana. Un mismo archivo no puede confirmarse dos veces y la restricción programa + partido impide sumar dos veces una butaca entre cortes. La confirmación se bloquea si queda al menos una fila `Por revisar`. Un corte parcial posterior debe provenir de una nueva exportación; un corte cerrado no vuelve a estado parcial.
 
 No se deben contar suites, compromisos, patrocinios, colaborador ni modalidades excluidas del padrón aprobado. Solo un administrador puede realizar ambas cargas y nunca se deben reutilizar credenciales, tablas o archivos del CRM.

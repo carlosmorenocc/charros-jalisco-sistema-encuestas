@@ -7,6 +7,8 @@
 - Playoffs no incluidos.
 - Cada abono/butaca constituye un programa independiente.
 - Una butaca puede sumar como máximo una asistencia por partido, aunque el archivo contenga escaneos repetidos.
+- Cuando existen varios escaneos de la misma butaca en un partido, se conserva el primero cronológicamente. Esto cubre el segundo control de acceso de la zona VIP sin duplicar la visita.
+- Boleto Móvil es la fuente autoritativa para orden, zona, sección y asiento. Las discrepancias del padrón se corrigen con trazabilidad y los cambios históricos se enlazan mediante aliases explícitos.
 
 | Serie como local | Fechas de 2026 |
 |---|---|

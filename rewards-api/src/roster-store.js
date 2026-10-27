@@ -225,6 +225,40 @@ export async function persistRoster(client,roster,{ sourceFilename }) {
     throw error;
   }
 
+  const historicalContinuity = await client.query(`
+    SELECT
+      (SELECT count(*)::int
+       FROM rewards_programs p
+       WHERE p.season_code=$1
+         AND p.order_number='15772800'
+         AND regexp_replace(upper(p.section),'[^A-Z0-9]','','g')='103'
+         AND regexp_replace(upper(p.seat),'[^A-Z0-9]','','g') IN ('B1','B2')
+         AND p.active
+         AND p.eligibility_status='eligible') target_programs,
+      (SELECT count(*)::int
+       FROM rewards_program_aliases a
+       JOIN rewards_programs p ON p.id=a.program_id
+       WHERE a.season_code=$1
+         AND a.historical_order_number='15551242'
+         AND a.historical_zone='Butaca Preferente Tercera Base'
+         AND a.historical_section='219'
+         AND a.active
+         AND p.order_number='15772800'
+         AND regexp_replace(upper(p.section),'[^A-Z0-9]','','g')='103'
+         AND (
+           (a.historical_seat='G1' AND regexp_replace(upper(p.seat),'[^A-Z0-9]','','g')='B1')
+           OR
+           (a.historical_seat='G2' AND regexp_replace(upper(p.seat),'[^A-Z0-9]','','g')='B2')
+         )) historical_aliases
+  `,[roster.seasonCode]);
+  const continuity = historicalContinuity.rows[0] || {};
+  if (Number(continuity.target_programs || 0) !== 2
+      || Number(continuity.historical_aliases || 0) !== 2) {
+    const error = new Error('La continuidad histórica de las butacas B1-B2 no quedó completa');
+    error.status = 409;
+    throw error;
+  }
+
   const after = await readRosterState(client,roster.seasonCode);
   if (after.programs !== roster.totals.programs
       || after.orders !== roster.totals.orders

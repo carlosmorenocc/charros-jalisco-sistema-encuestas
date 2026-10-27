@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import ExcelJS from 'exceljs';
 import { createApp } from '../src/app.js';
 import { digest } from '../src/security.js';
 
@@ -31,6 +32,20 @@ function authenticatedUser(csrfToken='csrf-token',role='operator') {
     session_id:'00000000-0000-4000-8000-000000000002',
     csrf_digest:digest(csrfToken,config.sessionKey)
   };
+}
+
+async function accessWorkbook(rows) {
+  const workbook = new ExcelJS.Workbook();
+  const sheet = workbook.addWorksheet('Hoja 1');
+  sheet.addRow(['Reporte de Historial de Accesos']);
+  sheet.addRow([]);
+  sheet.addRow([
+    'INGRESO','TIPO DE REGISTRO','ZONA','SECCIÓN','ASIENTO','NOMBRE',
+    'CORREO ELECTRÓNICO','TELÉFONO','TIPO','COMPRA','CÓDIGO DE BARRAS',
+    'PARÁMETRO','PATROCINADOR','DISPOSITIVO','RONDA','EVENTO LIGADO','PRECIO'
+  ]);
+  rows.forEach((row) => sheet.addRow(row));
+  return Buffer.from(await workbook.xlsx.writeBuffer());
 }
 
 test('el módulo HTTP carga y expone la fábrica de la aplicación',() => {
@@ -252,6 +267,107 @@ test('la API operativa rechaza importaciones que no sean de asistencias',async(t
     assert.equal(response.status,400);
     assert.match((await response.json()).error,/solo se admiten reportes de asistencias/i);
   }
+});
+
+test('la confirmación se bloquea si una asistencia requiere revisión',async(t) => {
+  const csrfToken = 'csrf-token';
+  let connected = false;
+  const pool = {
+    async query(sql) {
+      if (sql.includes('SELECT u.*,s.id session_id')) {
+        return { rowCount:1,rows:[authenticatedUser(csrfToken,'administrator')] };
+      }
+      if (sql.includes('UPDATE rewards_sessions')) return { rowCount:1,rows:[] };
+      if (sql.includes('FROM rewards_program_aliases')) return { rowCount:0,rows:[] };
+      if (sql.includes('SELECT id,order_number,zone,section,seat,segment')) return { rowCount:0,rows:[] };
+      if (sql.includes('SELECT played_on::text played_on')) {
+        return { rowCount:1,rows:[{ played_on:'2026-10-21' }] };
+      }
+      throw new Error(`Consulta inesperada: ${sql}`);
+    },
+    async connect() { connected = true; throw new Error('No debe abrir transacción'); }
+  };
+  const base = await listen(createApp({ pool,config }),t);
+  const event = 'Charros de Jalisco: Abono VIP Charros LMP 2026-2027';
+  const body = await accessWorkbook([
+    ['21/10/26 20:10','Entrada','VIP','210','A-1','Titular','-','-','Abono','123','9','-','-','D','Principal',event,'1']
+  ]);
+  const response = await fetch(`${base}/api/admin/imports/confirm?kind=access&gameId=game-1&reportStatus=closed`,{
+    method:'POST',
+    headers:{
+      cookie:`${SESSION_COOKIE}=session-token; ${CSRF_COOKIE}=${csrfToken}`,
+      'x-csrf-token':csrfToken,
+      'content-type':'application/octet-stream'
+    },
+    body
+  });
+  assert.equal(response.status,409);
+  assert.match((await response.json()).error,/requieren revisión/i);
+  assert.equal(connected,false);
+});
+
+test('un corte posterior conserva en PostgreSQL el escaneo más temprano',async(t) => {
+  const csrfToken = 'csrf-token';
+  const transactionQueries = [];
+  const client = {
+    async query(sql,params=[]) {
+      transactionQueries.push({ sql,params });
+      if (sql === 'BEGIN' || sql === 'COMMIT' || sql === 'ROLLBACK') return { rowCount:null,rows:[] };
+      if (sql.includes('SELECT played_on::text played_on')) {
+        return { rowCount:1,rows:[{ played_on:'2026-10-21' }] };
+      }
+      if (sql.includes('INSERT INTO rewards_imports')) return { rowCount:1,rows:[{ id:'import-2' }] };
+      if (sql.includes('INSERT INTO rewards_attendance')) return { rowCount:0,rows:[] };
+      if (sql.includes('UPDATE rewards_attendance')) return { rowCount:1,rows:[{ id:'attendance-1' }] };
+      if (sql.includes('UPDATE rewards_games')) return { rowCount:1,rows:[] };
+      if (sql.includes('UPDATE rewards_imports SET summary')) return { rowCount:1,rows:[] };
+      if (sql.includes('INSERT INTO rewards_audit')) return { rowCount:1,rows:[] };
+      throw new Error(`Consulta inesperada: ${sql}`);
+    },
+    release() {}
+  };
+  const pool = {
+    async query(sql) {
+      if (sql.includes('SELECT u.*,s.id session_id')) {
+        return { rowCount:1,rows:[authenticatedUser(csrfToken,'administrator')] };
+      }
+      if (sql.includes('UPDATE rewards_sessions')) return { rowCount:1,rows:[] };
+      if (sql.includes('FROM rewards_program_aliases')) return { rowCount:0,rows:[] };
+      if (sql.includes('SELECT id,order_number,zone,section,seat,segment')) {
+        return { rowCount:1,rows:[{
+          id:'program-1',order_number:'123',zone:'VIP',section:'210',seat:'A-1',segment:'VIP'
+        }] };
+      }
+      if (sql.includes('SELECT played_on::text played_on')) {
+        return { rowCount:1,rows:[{ played_on:'2026-10-21' }] };
+      }
+      throw new Error(`Consulta inesperada: ${sql}`);
+    },
+    async connect() { return client; }
+  };
+  const base = await listen(createApp({ pool,config }),t);
+  const event = 'Charros de Jalisco: Abono VIP Charros LMP 2026-2027';
+  const body = await accessWorkbook([
+    ['21/10/26 19:55','Entrada','VIP','210','A-1','Titular','-','-','Abono','123','9','-','-','D','Principal',event,'1']
+  ]);
+  const response = await fetch(`${base}/api/admin/imports/confirm?kind=access&gameId=game-1&reportStatus=partial`,{
+    method:'POST',
+    headers:{
+      cookie:`${SESSION_COOKIE}=session-token; ${CSRF_COOKIE}=${csrfToken}`,
+      'x-csrf-token':csrfToken,
+      'content-type':'application/octet-stream'
+    },
+    body
+  });
+  assert.equal(response.status,201);
+  const result = await response.json();
+  assert.equal(result.summary.inserted,0);
+  assert.equal(result.summary.alreadyCounted,1);
+  assert.equal(result.summary.earlierScanUpdated,1);
+  const update = transactionQueries.find((call) => call.sql.includes('UPDATE rewards_attendance'));
+  assert.equal(update.params[2],'2026-10-21T19:55:00-06:00');
+  assert.match(update.sql,/scanned_at>\$3/);
+  assert.equal(transactionQueries.at(-1).sql,'COMMIT');
 });
 
 test('el bootstrap tecnico permanece oculto y exige su token efimero',async(t) => {

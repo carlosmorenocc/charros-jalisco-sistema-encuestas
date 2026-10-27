@@ -1,5 +1,5 @@
 import React from 'react';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import App from './App.jsx';
 
@@ -10,7 +10,7 @@ afterEach(() => {
 });
 
 describe('vista demostrativa', () => {
-  it('permanece local al consultar y simular una importación', async () => {
+  it('explica la conciliación y bloquea una importación con filas por revisar', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch');
     window.history.replaceState({}, '', '/?demo=1&page=import');
 
@@ -24,9 +24,11 @@ describe('vista demostrativa', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Previsualizar' }));
 
     expect(await screen.findByRole('heading', { name: 'Resultado antes de escribir' })).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Confirmar importación' }));
-
-    await waitFor(() => expect(screen.getByText(/no se guardó información/i)).toBeTruthy());
+    expect(screen.getByText('Coincidencia exacta')).toBeTruthy();
+    expect(screen.getByText('Equivalencia de zona')).toBeTruthy();
+    expect(screen.getByText('Orden y butaca única')).toBeTruthy();
+    expect(screen.getByText(/3 filas requieren revisión/i)).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Confirmar importación' }).disabled).toBe(true);
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 });

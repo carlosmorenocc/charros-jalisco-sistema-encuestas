@@ -5,7 +5,7 @@ import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
 import rateLimit from 'express-rate-limit';
 import { digest, normalizeEmail, randomToken, verifyPassword, hashPassword } from './security.js';
-import { inspectWorkbook, seatKey } from './workbook.js';
+import { inspectWorkbook } from './workbook.js';
 import { SEGMENTS, classifySegment, parseSegments } from './segments.js';
 import { transaction } from './db.js';
 import { validateRosterPayload } from './roster.js';
@@ -519,13 +519,26 @@ export function createApp({ pool, config }) {
     limit:'20mb'
   });
   const inspectAccess = async(buffer) => {
-    const rows = (await pool.query(`
-      SELECT id,order_number,zone,section,seat
-      FROM rewards_programs
-      WHERE active AND eligibility_status='eligible'
-    `)).rows;
-    const knownPrograms = new Map(rows.map((row) => [seatKey(row.order_number,row.zone,row.section,row.seat),row]));
-    return inspectWorkbook(buffer,{ kind:'access',knownPrograms });
+    const [programs,aliases] = await Promise.all([
+      pool.query(`
+        SELECT id,order_number,zone,section,seat,segment
+        FROM rewards_programs
+        WHERE active AND eligibility_status='eligible'
+      `),
+      pool.query(`
+        SELECT p.id,p.segment,
+               a.historical_order_number,a.historical_zone,
+               a.historical_section,a.historical_seat
+        FROM rewards_program_aliases a
+        JOIN rewards_programs p ON p.id=a.program_id
+        WHERE a.active AND p.active AND p.eligibility_status='eligible'
+      `)
+    ]);
+    return inspectWorkbook(buffer,{
+      kind:'access',
+      knownPrograms:programs.rows,
+      knownAliases:aliases.rows
+    });
   };
   const validateAccessDate = async(result,gameId,client=pool) => {
     const game = await client.query('SELECT played_on::text played_on FROM rewards_games WHERE id=$1',[gameId]);
@@ -570,14 +583,20 @@ export function createApp({ pool, config }) {
     }
     const result = await inspectAccess(req.body);
     await validateAccessDate(result,gameId);
+    if (result.review.length) {
+      throw httpError(409,`No se puede confirmar: ${result.review.length} fila(s) requieren revisión`);
+    }
 
     const persisted = await transaction(pool,async(client) => {
       const baseSummary = {
+        sourceRows:result.sourceRows,
         totalRows:result.totalRows,
+        ignoredRows:result.ignoredRows,
         included:result.included.length,
         excluded:result.excluded.length,
         review:result.review.length,
-        duplicates:result.duplicates.length
+        duplicates:result.duplicates.length,
+        matchStrategies:result.matchStrategies
       };
       const imported = await client.query(`
         INSERT INTO rewards_imports(kind,sha256,original_filename,game_id,report_status,summary,imported_by)
@@ -588,6 +607,7 @@ export function createApp({ pool, config }) {
       if (!imported.rowCount) throw httpError(409,'Este archivo ya fue importado');
 
       let insertedCount = 0;
+      let earlierScanUpdatedCount = 0;
       await validateAccessDate(result,gameId,client);
       for (const row of result.included) {
         const attendance = await client.query(`
@@ -597,6 +617,16 @@ export function createApp({ pool, config }) {
           RETURNING id
         `,[row.programId,gameId,imported.rows[0].id,row.scannedAt,row.barcode]);
         insertedCount += attendance.rowCount;
+        if (!attendance.rowCount) {
+          const earlierScan = await client.query(`
+            UPDATE rewards_attendance
+            SET scanned_at=$3,
+                barcode=COALESCE(NULLIF($4,''),barcode)
+            WHERE program_id=$1 AND game_id=$2 AND scanned_at>$3
+            RETURNING id
+          `,[row.programId,gameId,row.scannedAt,row.barcode]);
+          earlierScanUpdatedCount += earlierScan.rowCount;
+        }
       }
       await client.query(`
         UPDATE rewards_games
@@ -615,7 +645,8 @@ export function createApp({ pool, config }) {
       const persistedSummary = {
         ...baseSummary,
         inserted:insertedCount,
-        alreadyCounted:result.included.length - insertedCount
+        alreadyCounted:result.included.length - insertedCount,
+        earlierScanUpdated:earlierScanUpdatedCount
       };
       await client.query('UPDATE rewards_imports SET summary=$1 WHERE id=$2',[JSON.stringify(persistedSummary),imported.rows[0].id]);
       await client.query(`

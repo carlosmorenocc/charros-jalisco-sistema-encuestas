@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 
 const rosterMigrationUrl = new URL('../migrations/004_rewards_roster_normalization.sql',import.meta.url);
+const attendanceMigrationUrl = new URL('../migrations/005_attendance_aliases_and_authoritative_roster_corrections.sql',import.meta.url);
 
 test('la migración operativa configura exactamente los 34 juegos locales',async() => {
   const sql = await fs.readFile(new URL('../migrations/003_operational_rewards.sql',import.meta.url),'utf8');
@@ -85,4 +86,36 @@ test('rewards_programs conserva filas existentes y acepta enlaces normalizados o
   assert.match(alterBlock,/FOREIGN KEY \(holder_id\) REFERENCES rewards_holders\(id\) ON DELETE SET NULL/);
   assert.match(alterBlock,/FOREIGN KEY \(order_id\) REFERENCES rewards_orders\(id\) ON DELETE SET NULL/);
   assert.doesNotMatch(alterBlock,/\b(?:DROP|RENAME|ALTER)\s+(?:COLUMN|CONSTRAINT)\b/);
+});
+
+test('los aliases históricos apuntan a un programa vigente y no duplican su contador',async() => {
+  const sql = await fs.readFile(attendanceMigrationUrl,'utf8');
+  const aliasesBlock = sql.split('CREATE TABLE rewards_program_aliases (')[1].split('\n);')[0];
+
+  assert.match(aliasesBlock,/program_id uuid NOT NULL REFERENCES rewards_programs\(id\) ON DELETE CASCADE/);
+  assert.match(aliasesBlock,/season_code text NOT NULL REFERENCES rewards_seasons\(code\) ON DELETE RESTRICT/);
+  assert.match(aliasesBlock,/historical_order_number text NOT NULL/);
+  assert.match(aliasesBlock,/historical_zone text NOT NULL/);
+  assert.match(aliasesBlock,/historical_section text NOT NULL/);
+  assert.match(aliasesBlock,/historical_seat text NOT NULL/);
+  assert.match(aliasesBlock,/UNIQUE \(\s*season_code,\s*historical_order_number,\s*historical_zone,\s*historical_section,\s*historical_seat\s*\)/s);
+  assert.match(sql,/'15551242','Butaca Preferente Tercera Base','219'/);
+  assert.match(sql,/p\.order_number='15772800'/);
+  assert.match(sql,/CREATE TRIGGER rewards_programs_sync_manuel_historical_aliases/);
+  assert.match(sql,/AFTER INSERT OR UPDATE OF season_code,order_number,section,seat,active,eligibility_status/);
+  assert.match(sql,/Historical continuity is incomplete/);
+  assert.doesNotMatch(sql,/DELETE FROM rewards_(?:programs|attendance|deliveries)/);
+});
+
+test('las correcciones autoritativas preservan programas y fijan las órdenes verificadas',async() => {
+  const sql = await fs.readFile(attendanceMigrationUrl,'utf8');
+
+  assert.match(sql,/WHEN 'D1' THEN 'F1'/);
+  assert.match(sql,/WHEN 'D4' THEN 'F4'/);
+  assert.match(sql,/SET order_number='15243415'/);
+  assert.match(sql,/SET order_number='14957727'/);
+  assert.match(sql,/manual_lock=true/g);
+  assert.match(sql,/duplicated physical seat/);
+  assert.doesNotMatch(sql,/DELETE\s+FROM/i);
+  assert.doesNotMatch(sql,/TRUNCATE/i);
 });

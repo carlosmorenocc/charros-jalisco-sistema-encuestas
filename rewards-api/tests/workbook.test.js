@@ -31,12 +31,103 @@ test('doble escaneo del mismo programa y partido cuenta una sola vez',async()=>{
   assert.equal(result.included.length,1); assert.equal(result.duplicates.length,1);
 });
 
-test('cortesía y compromisos no ingresan al programa',async()=>{
+test('cortesía abono cuenta solo al conciliar con el padrón; compromisos y patrocinadores se excluyen',async()=>{
+  const event='Charros de Jalisco: Abono VIP Charros LMP 2026-2027';
   const result=await inspectWorkbook(await accessWorkbook([
-    ['21/10/26 20:10','Entrada','VIP','210','A-1','-','-','-','Cortesía abono','123','9','-','-','D','Principal','Charros de Jalisco: Abono VIP Charros LMP 2026-2027','-'],
-    ['21/10/26 20:11','Entrada','VIP','210','A-2','-','-','-','Abono','124','8','PATROCINIO','-','D','Principal','Abono Compromisos LMP 2026-27','1']
-  ]),{kind:'access',knownPrograms:new Map()});
-  assert.equal(result.included.length,0); assert.equal(result.excluded.length,2);
+    ['21/10/26 20:10','Entrada','VIP','210','A-1','-','-','-','Cortesía abono','123','9','-','-','D','Principal',event,'-'],
+    ['21/10/26 20:11','Entrada','VIP','210','A-2','-','-','-','Cortesía abono','124','8','-','-','D','Principal',event,'-'],
+    ['21/10/26 20:12','Entrada','VIP','210','A-3','-','-','-','Abono','125','7','-','PATROCINADOR ACTIVO','D','Principal',event,'1'],
+    ['21/10/26 20:13','Entrada','VIP','210','A-4','-','-','-','Abono','126','6','PATROCINIO','-','D','Principal','Abono Compromisos LMP 2026-27','1']
+  ]),{
+    kind:'access',
+    knownPrograms:[{ id:'program-1',order_number:'123',zone:'VIP',section:'210',seat:'A-1',segment:'VIP' }]
+  });
+  assert.equal(result.included.length,1);
+  assert.equal(result.included[0].programId,'program-1');
+  assert.equal(result.review.length,1);
+  assert.match(result.review[0].reason,/no localizada/i);
+  assert.equal(result.excluded.length,2);
+  assert.ok(result.excluded.some((row)=>/patrocinador/i.test(row.reason)));
+  assert.ok(result.excluded.some((row)=>/evento|producto/i.test(row.reason)));
+});
+
+test('conciliación jerárquica usa solo coincidencias únicas y de segmento compatible',async()=>{
+  const event='Charros de Jalisco: Abono VIP Charros LMP 2026-2027';
+  const rows=[
+    ['21/10/26 20:01','Entrada','VIP','110','A-1','-','-','-','Abono','1','1','-','-','D','Principal',event,'1'],
+    ['21/10/26 20:02','Entrada','VIP Lateral','111','A-2','-','-','-','Abono','2','2','-','-','D','Principal',event,'1'],
+    ['21/10/26 20:03','Entrada','VIP','999','A-3','-','-','-','Abono','3','3','-','-','D','Principal',event,'1'],
+    ['21/10/26 20:04','Entrada','VIP','999','A-4','-','-','-','Abono','4','4','-','-','D','Principal',event,'1'],
+    ['21/10/26 20:05','Entrada','VIP','999','A-5','-','-','-','Abono','5','5','-','-','D','Principal',event,'1']
+  ];
+  const knownPrograms=[
+    { id:'exact',order_number:'1',zone:'VIP',section:'110',seat:'A-1',segment:'VIP' },
+    { id:'zone-alias',order_number:'2',zone:'VIP',section:'111',seat:'A-2',segment:'VIP' },
+    { id:'unique-seat',order_number:'3',zone:'VIP',section:'112',seat:'A-3',segment:'VIP' },
+    { id:'ambiguous-a',order_number:'4',zone:'VIP',section:'113',seat:'A-4',segment:'VIP' },
+    { id:'ambiguous-b',order_number:'4',zone:'VIP',section:'114',seat:'A-4',segment:'VIP' },
+    { id:'wrong-segment',order_number:'5',zone:'Planta Alta Central',section:'115',seat:'A-5',segment:'GENERAL' }
+  ];
+  const result=await inspectWorkbook(await accessWorkbook(rows),{kind:'access',knownPrograms});
+  assert.deepEqual(result.included.map((row)=>row.matchStrategy),[
+    'exact','order_section_seat_alias','order_seat_unique'
+  ]);
+  assert.deepEqual(result.matchStrategies,{
+    exact:1,historical_alias:0,order_section_seat_alias:1,order_seat_unique:1
+  });
+  assert.equal(result.review.length,2);
+});
+
+test('el alias histórico exacto tiene prioridad y conserva el programa actual',async()=>{
+  const event='Charros de Jalisco: Abono Preferente Charros LMP 2026-2027';
+  const row=['21/10/26 20:10','Entrada','Butaca Preferente Tercera Base','219','G1','-','-','-','Abono','15551242','9','-','-','D','Principal',event,'1'];
+  const result=await inspectWorkbook(await accessWorkbook([row]),{
+    kind:'access',
+    knownPrograms:[
+      { id:'program-exact-old',order_number:'15551242',zone:'Butaca Preferente Tercera Base',section:'219',seat:'G1',segment:'PREFERENTE' }
+    ],
+    knownAliases:[{
+      id:'program-current',segment:'PREFERENTE',historical_order_number:'15551242',
+      historical_zone:'Butaca Preferente Tercera Base',historical_section:'219',historical_seat:'G1'
+    }]
+  });
+  assert.equal(result.included[0].programId,'program-current');
+  assert.equal(result.included[0].matchStrategy,'historical_alias');
+});
+
+test('deduplica por programa y conserva el escaneo más temprano aunque venga después',async()=>{
+  const event='Charros de Jalisco: Abono VIP Charros LMP 2026-2027';
+  const base=['Entrada','VIP','210','A-1','-','-','-','Abono','123','9','-','-','D','Principal',event,'1'];
+  const result=await inspectWorkbook(await accessWorkbook([
+    ['21/10/26 20:15',...base],
+    ['21/10/26 20:05',...base]
+  ]),{
+    kind:'access',
+    knownPrograms:[{ id:'program-1',order_number:'123',zone:'VIP',section:'210',seat:'A-1',segment:'VIP' }]
+  });
+  assert.equal(result.included.length,1);
+  assert.equal(result.included[0].scannedAt,'2026-10-21T20:05:00-06:00');
+  assert.equal(result.duplicates.length,1);
+  assert.equal(result.duplicates[0].keptScannedAt,'2026-10-21T20:05:00-06:00');
+});
+
+test('ignora el pie informativo del reporte y no lo manda a excluidos ni revisión',async()=>{
+  const event='Charros de Jalisco: Abono VIP Charros LMP 2026-2027';
+  const valid=['21/10/26 20:10','Entrada','VIP','210','A-1','-','-','-','Abono','123','9','-','-','D','Principal',event,'1'];
+  const result=await inspectWorkbook(await accessWorkbook([
+    valid,
+    ['FILTROS APLICADOS'],
+    ['EVENTO','FECHA EVENTO'],
+    ['Inauguración: Jaguares vs Charros','21/10/26']
+  ]),{
+    kind:'access',
+    knownPrograms:[{ id:'program-1',order_number:'123',zone:'VIP',section:'210',seat:'A-1',segment:'VIP' }]
+  });
+  assert.equal(result.sourceRows,4);
+  assert.equal(result.totalRows,1);
+  assert.equal(result.ignoredRows,3);
+  assert.equal(result.excluded.length,0);
+  assert.equal(result.review.length,0);
 });
 
 test('suites, colaborador y precios cero o uno se excluyen aunque vengan formateados',async()=>{

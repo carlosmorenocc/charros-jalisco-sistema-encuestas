@@ -10,7 +10,22 @@ const DEMO_GAMES = Array.from({ length: 34 }, (_, index) => ({
 const DEMO_PREVIEW = {
   totalRows: 120,
   counts: { included: 112, excluded: 5, review: 3, duplicates: 0 },
+  matchStrategies: { exact: 100, order_section_seat_alias: 10, order_seat_unique: 2 },
   sha256: 'vista-local-sin-escritura',
+};
+
+const PREVIEW_METRICS = [
+  { key: 'included', label: 'Incluidas', description: 'Contarán como visita' },
+  { key: 'excluded', label: 'Excluidas', description: 'No pertenecen al programa' },
+  { key: 'duplicates', label: 'Duplicadas', description: 'No suman otra visita' },
+  { key: 'review', label: 'Por revisar', description: 'Deben resolverse' },
+];
+
+const MATCH_STRATEGY_LABELS = {
+  exact: 'Coincidencia exacta',
+  historical_alias: 'Continuidad histórica',
+  order_section_seat_alias: 'Equivalencia de zona',
+  order_seat_unique: 'Orden y butaca única',
 };
 
 export default function ImportPanel({ demo = false }) {
@@ -23,6 +38,10 @@ export default function ImportPanel({ demo = false }) {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
+  const reviewCount = Number(preview?.counts?.review || 0);
+  const hasPendingReview = reviewCount > 0;
+  const matchStrategies = Object.entries(preview?.matchStrategies || {})
+    .filter(([, count]) => Number(count) > 0);
 
   useEffect(() => {
     if (demo) return undefined;
@@ -36,6 +55,10 @@ export default function ImportPanel({ demo = false }) {
   }, [demo]);
 
   const run = async (confirm = false) => {
+    if (confirm && hasPendingReview) {
+      setError('Resuelve las filas por revisar antes de confirmar la importación.');
+      return;
+    }
     setBusy(true);
     setError('');
     setNotice('');
@@ -121,18 +144,49 @@ export default function ImportPanel({ demo = false }) {
       {preview ? (
         <div className="preview">
           <h3>Resultado antes de escribir</h3>
-          {[
-            ['Filas', preview.totalRows],
-            ['Incluidas', preview.counts.included],
-            ['Excluidas', preview.counts.excluded],
-            ['Por revisar', preview.counts.review],
-            ['Duplicadas', preview.counts.duplicates],
-          ].map(([label, value]) => (
-            <div key={label}><b>{value}</b><span>{label}</span></div>
-          ))}
-          <small>SHA-256: {preview.sha256}</small>
+          <div className="preview-summary" aria-label="Resumen de la revisión">
+            <div className="preview-metric total">
+              <b>{preview.totalRows}</b>
+              <span>Filas leídas</span>
+              <small>Total del reporte</small>
+            </div>
+            {PREVIEW_METRICS.map(({ key, label, description }) => (
+              <div className={`preview-metric ${key}`} key={key}>
+                <b>{preview.counts?.[key] || 0}</b>
+                <span>{label}</span>
+                <small>{description}</small>
+              </div>
+            ))}
+          </div>
+          {matchStrategies.length ? (
+            <section className="match-strategies" aria-labelledby="match-strategies-title">
+              <h4 id="match-strategies-title">Cómo se conciliaron las incluidas</h4>
+              <p className="hint">Estas estrategias explican cómo se vinculó cada acceso con el padrón.</p>
+              <div className="strategy-grid">
+                {matchStrategies.map(([strategy, count]) => (
+                  <div className="strategy-item" key={strategy}>
+                    <b>{count}</b>
+                    <span>{MATCH_STRATEGY_LABELS[strategy] || strategy}</span>
+                  </div>
+                ))}
+              </div>
+            </section>
+          ) : null}
+          <small className="preview-hash">SHA-256: {preview.sha256}</small>
           <p>Verifica el partido y el estado del corte. La confirmación se ejecutará en una sola transacción.</p>
-          <button className="confirm" type="button" disabled={busy || !gameId} onClick={() => run(true)}>
+          {hasPendingReview ? (
+            <p className="review-blocker" role="status">
+              ⚠ {reviewCount} {reviewCount === 1 ? 'fila requiere' : 'filas requieren'} revisión. Resuélvela antes de confirmar.
+            </p>
+          ) : (
+            <p className="preview-ready" role="status">✓ Sin filas pendientes de revisión.</p>
+          )}
+          <button
+            className="confirm"
+            type="button"
+            disabled={busy || !gameId || hasPendingReview}
+            onClick={() => run(true)}
+          >
             {busy ? 'Guardando…' : 'Confirmar importación'}
           </button>
         </div>
