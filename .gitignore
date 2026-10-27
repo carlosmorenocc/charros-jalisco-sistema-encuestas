@@ -34,3 +34,4 @@ rewards-web/.env.*
 !rewards-web/.env.example
 rewards-web/dist/
 rewards-web/.vercel/
+.qa-edge-profile*/

@@ -1,0 +1,66 @@
+# Reglas de negocio
+
+## Temporada
+
+- Temporada: `LMP-2026-27`.
+- Alcance: 34 juegos de temporada regular como local, del 13 de octubre al 30 de diciembre de 2026.
+- Playoffs no incluidos.
+- Cada abono/butaca constituye un programa independiente.
+- Una butaca puede sumar como máximo una asistencia por partido, aunque el archivo contenga escaneos repetidos.
+
+| Serie como local | Fechas de 2026 |
+|---|---|
+| Jaguares de Nayarit | 13 oct; 20–22 nov |
+| Mayos de Navojoa | 20–22 oct; 10–12 nov |
+| Cañeros de Los Mochis | 27–29 oct |
+| Algodoneros de Guasave | 3–5 nov |
+| Venados de Mazatlán | 27–29 nov; 21–23 dic |
+| Tomateros de Culiacán | 4–6 dic |
+| Yaquis de Obregón | 11–13 dic |
+| Naranjeros de Hermosillo | 18–20 dic |
+| Águilas de Mexicali | 28–30 dic |
+
+## Segmentación
+
+El segmento se persiste en PostgreSQL; el frontend no vuelve a inferirlo.
+
+| Segmento | Zonas y alias aceptados |
+|---|---|
+| VIP | VIP; VIP Lateral |
+| Preferente | Premier/Premiere 1ra–3ra; Planta Baja Central; Lateral Premier/Premiere 1ra–3ra; Butaca Preferente 1ra–3ra; Planta Baja 1ra–3ra |
+| General | Lateral Preferente 1ra–3ra; Lateral 1ra–3ra; Planta Alta; Planta Alta 1ra–3ra |
+
+`Lateral Preferente` pertenece a **General**, conforme al material oficial.
+
+## Hitos y canje
+
+Existen 15 hitos pares: 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28 y 30.
+
+- El hito `N` se alcanza al registrar `N` asistencias.
+- Se habilita para entrega desde la asistencia `N + 1`. Ejemplo: el hito 2 puede canjearse cuando ya existen 3 asistencias conciliadas.
+- La regla `N + 1` también aplica a correcciones o entregas históricas; ningún cliente de la API puede anticipar un canje.
+- Una entrega activa sombrea el hito.
+- Un segundo clic confirmado revierte la entrega de forma lógica y conserva actor, fecha y motivo en la trazabilidad.
+- Administrador y usuarios de consulta pueden registrar o corregir entregas.
+
+## Catálogo
+
+| Hito | Beneficio |
+|---:|---|
+| 2 | Cerveza doble de cortesía |
+| 4 | Dos cervezas Charros Brew en concesión |
+| 6 | Destilado de cortesía |
+| 8 | 20% de descuento en Charros Team Store |
+| 10 | Acceso a práctica de bateo |
+| 12 | Pase doble a Zona Grill |
+| 14 | Visita guiada al Estadio Panamericano |
+| 16 | Pase doble a juego para dos invitados |
+| 18 | Invitado especial en CharrosTV |
+| 20 | Sorteo de bat de colección usado en juego |
+| 22 | Pelota oficial autografiada |
+| 24 | 35% de descuento en el próximo abono |
+| 26 | Jersey firmado por jugadores |
+| 28 | Lanzamiento de primera bola grupal |
+| 30 | Convivencia en Zona Grill con jugadores y asado |
+
+El único beneficio sujeto a sorteo es el hito 20; el hito 18 es una entrega directa.

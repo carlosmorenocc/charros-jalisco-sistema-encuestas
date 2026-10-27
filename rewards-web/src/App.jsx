@@ -1,15 +1,159 @@
-import React,{useEffect,useState}from'react';
-import{api}from'./api.js';
-import ImportPanel from'./ImportPanel.jsx';
-import PasswordChange from'./PasswordChange.jsx';
-import AdminPanel from'./AdminPanel.jsx';
-const DEMO=[{id:'d1',holder_name:'ADALBERTO TORRES ELIZALDE',order_number:'15799002',zone:'VIP',section:'107',seat:'B-5',visits:4},{id:'d2',holder_name:'MARIO HUMBERTO LAMARQUE OSUNA',order_number:'15793649',zone:'PLANTA ALTA CENTRAL',section:'410-S1',seat:'B-2',visits:3},{id:'d3',holder_name:'DANIEL ELIZALDE RODRIGUEZ',order_number:'15756498',zone:'VIP',section:'112',seat:'B-10',visits:2}];
-const REWARDS=[[2,'Cerveza doble de cortesía','direct'],[4,'Dos cervezas Charros Brew','direct'],[6,'Destilado de cortesía','direct'],[8,'20% en Charros Team Store','direct'],[10,'Acceso a práctica de bateo','direct'],[12,'Pase doble a Zona Grill','direct'],[14,'Visita guiada al estadio','direct'],[16,'Pase doble a juego','direct'],[18,'Sorteo CharrosTV','raffle'],[20,'Sorteo bat de colección','raffle'],[22,'Pelota autografiada','direct'],[24,'35% en próximo abono','direct'],[26,'Jersey firmado','direct'],[28,'Primera bola grupal','direct'],[30,'Convivencia Zona Grill','direct']];
+import React, { useEffect, useState } from 'react';
+import { api, clearApiSession } from './api.js';
+import AppHeader from './AppHeader.jsx';
+import ImportPanel from './ImportPanel.jsx';
+import Login from './Login.jsx';
+import PasswordChange from './PasswordChange.jsx';
+import SubscribersPanel from './SubscribersPanel.jsx';
+import SummaryPanel from './SummaryPanel.jsx';
 
-function Login({onLogin}){const[email,setEmail]=useState(''),[password,setPassword]=useState(''),[error,setError]=useState('');return <main className="login"><section className="login-card"><img src="/club-charros.png" alt="Club Charros"/><p className="eyebrow">OPERACIÓN INTERNA</p><h1>Programa de Recompensas</h1><p>Acceso individual para el equipo autorizado.</p><form onSubmit={async e=>{e.preventDefault();try{onLogin((await api('/api/auth/login',{method:'POST',body:{email,password}})).user)}catch(x){setError(x.message)}}}><label>Correo institucional<input type="email" value={email} onChange={e=>setEmail(e.target.value)} required/></label><label>Contraseña<input type="password" value={password} onChange={e=>setPassword(e.target.value)} required/></label>{error&&<div className="error">⚠ {error}</div>}<button>Ingresar de forma segura</button></form></section></main>}
+const DEMO_ITEMS = [
+  {
+    id: 'd1',
+    holder_name: 'ABONADO DEMO UNO',
+    holder_email: 'demo.uno@example.invalid',
+    holder_phone: '33 •••• 0001',
+    order_number: 'DEMO-0001',
+    segment: 'VIP',
+    zone: 'VIP',
+    section: 'DEMO-A',
+    seat: '01',
+    visits: 4,
+    delivered_milestones: [2],
+  },
+  {
+    id: 'd2',
+    holder_name: 'ABONADO DEMO DOS',
+    holder_email: 'demo.dos@example.invalid',
+    order_number: 'DEMO-0002',
+    segment: 'GENERAL',
+    zone: 'PLANTA ALTA CENTRAL',
+    section: 'DEMO-B',
+    seat: '02',
+    visits: 3,
+    delivered_milestones: [],
+  },
+  {
+    id: 'd3',
+    holder_name: 'ABONADO DEMO TRES',
+    holder_phone: '33 •••• 0003',
+    order_number: 'DEMO-0003',
+    segment: 'VIP',
+    zone: 'VIP',
+    section: 'DEMO-C',
+    seat: '03',
+    visits: 2,
+    delivered_milestones: [],
+  },
+];
 
-function HistoricalDelivery({programId,milestone,onSaved}){const[open,setOpen]=useState(false),[unknown,setUnknown]=useState(true),[date,setDate]=useState(''),[reason,setReason]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState('');if(!open)return <button className="secondary" onClick={()=>setOpen(true)}>Capturar entrega histórica</button>;return <div className="historical-form"><label><input type="checkbox" checked={unknown} onChange={e=>setUnknown(e.target.checked)}/> Fecha desconocida</label>{!unknown&&<input aria-label="Fecha de entrega" type="datetime-local" value={date} onChange={e=>setDate(e.target.value)}/>}<input aria-label="Nota histórica" placeholder="Nota o fuente" value={reason} onChange={e=>setReason(e.target.value)}/>{error&&<small className="error">{error}</small>}<button disabled={busy||!unknown&&!date} onClick={async()=>{setBusy(true);setError('');try{await api(`/api/programs/${programId}/deliveries`,{method:'POST',body:{milestone,historical:true,unknownDate:unknown,deliveredAt:date||null,reason}});await onSaved();setOpen(false)}catch(x){setError(x.message)}finally{setBusy(false)}}}>Guardar sin revisar</button></div>}
+function Hero() {
+  return (
+    <section className="hero">
+      <div>
+        <p className="eyebrow">TEMPORADA REGULAR · 34 PARTIDOS</p>
+        <h1>Cada juego cuenta.</h1>
+        <p>Más visitas, más recompensas.</p>
+      </div>
+      <div className="cut">
+        <span><i className="dot online" />Sesión segura activa</span>
+        <b>LMP 2026–2027</b>
+      </div>
+    </section>
+  );
+}
 
-function Drawer({item,onClose,live}){const[currentId,setCurrentId]=useState(item.id),[detail,setDetail]=useState(null),[notice,setNotice]=useState('');useEffect(()=>{setNotice('');if(live){setDetail(null);api(`/api/programs/${currentId}`).then(setDetail).catch(x=>setNotice(x.message))}},[currentId,live]);const p=detail?.program||item,rewards=detail?.rewards||REWARDS.map(([milestone,benefit,benefit_type])=>({milestone,benefit,benefit_type}));const reload=async()=>setDetail(await api(`/api/programs/${p.id}`));return <div className="overlay" onClick={onClose}><aside role="dialog" aria-modal="true" aria-label={`Perfil de ${p.holder_name}`} onClick={e=>e.stopPropagation()}><button className="close" aria-label="Cerrar perfil" onClick={onClose}>×</button><p className="eyebrow">PERFIL DEL COMPRADOR</p><h2>{p.holder_name}</h2><p>Orden {p.order_number}</p>{detail?.seats?.length>1&&<div className="seat-selector" aria-label="Butacas de la compra">{detail.seats.map(seat=><button className={seat.id===p.id?'active':''} key={seat.id} onClick={()=>setCurrentId(seat.id)}><b>{seat.section} · {seat.seat}</b><span>{seat.zone}</span><small>{seat.visits} visitas</small></button>)}</div>}<div className="seat"><b>{p.zone}</b><span>{p.section} · {p.seat}</span><strong>{p.visits}<small> visitas</small></strong></div>{notice&&<div className={notice.startsWith('✓')?'success':'error'}>{notice}</div>}<h3>Ruta de recompensas</h3><p className="hint">El canje se habilita en la asistencia posterior al hito.</p><div className="rewards">{rewards.map(r=>{const earned=p.visits>=r.milestone,redeemable=p.visits>=r.milestone+1;return <article className={earned?'earned':''} key={r.milestone}><b>VISITA {String(r.milestone).padStart(2,'0')}</b><strong>{r.benefit}</strong><span>{r.benefit_type==='raffle'?'◈ Participación en sorteo':r.status==='historical_unreviewed'?'⚠ Entrega histórica por revisar':r.status==='delivered'?'✓ Cupón entregado':earned?'✓ Hito alcanzado':'○ Pendiente'}</span><button disabled={!redeemable||Boolean(r.status)} onClick={async()=>{try{await api(`/api/programs/${p.id}/deliveries`,{method:'POST',body:{milestone:r.milestone}});setNotice('✓ Cupón registrado correctamente.');await reload()}catch(x){setNotice(x.message)}}}>{r.status?'Registrado':redeemable?'Registrar cupón':'Aún no canjeable'}</button>{earned&&!r.status&&<HistoricalDelivery programId={p.id} milestone={r.milestone} onSaved={async()=>{setNotice('✓ Entrega histórica registrada para revisión.');await reload()}}/>}</article>})}</div><h3>Historial de asistencia</h3><div className="attendance-history">{detail?.attendance?.length?detail.attendance.map(game=><article key={game.sequence_number}><b>✓ Juego {game.sequence_number}</b><span>{game.display_name}</span><small>{new Date(game.scanned_at).toLocaleString('es-MX')}</small></article>):<div className="empty">Sin asistencias comprobadas.</div>}</div></aside></div>}
+export default function App() {
+  const demo = import.meta.env.DEV && location.search.includes('demo');
+  const demoParams = new URLSearchParams(location.search);
+  const demoPage = demoParams.get('page');
+  const [user, setUser] = useState(() => (demo
+    ? { displayName: 'Vista sintética', email: 'demo@charros.local', role: 'administrator' }
+    : null));
+  const [authStatus, setAuthStatus] = useState(demo ? 'authenticated' : 'checking');
+  const [page, setPage] = useState(demoPage || 'summary');
 
-export default function App(){const demo=import.meta.env.DEV&&location.search.includes('demo');const[user,setUser]=useState(demo?{displayName:'Vista sintética',role:'administrator'}:null),[page,setPage]=useState(demo?(new URLSearchParams(location.search).get('page')||'summary'):'summary'),[online,setOnline]=useState(false),[summary,setSummary]=useState({programs:604,visits:1632,historicalPending:0,processedGames:4,cutoff:'2026-10-22T23:59:00-06:00',distribution:[{visits:0,total:62},{visits:1,total:68},{visits:2,total:98},{visits:3,total:136},{visits:4,total:240}]}),[items,setItems]=useState(DEMO),[selected,setSelected]=useState(demo&&new URLSearchParams(location.search).has('profile')?DEMO[0]:null),[query,setQuery]=useState(''),[zone,setZone]=useState(''),[min,setMin]=useState(0),[max,setMax]=useState(34),[zones,setZones]=useState([]);useEffect(()=>{if(!demo)api('/api/auth/session').then(x=>{setUser(x.user);setOnline(true)}).catch(()=>{})},[demo]);useEffect(()=>{if(!user||demo)return;Promise.all([api('/api/summary'),api('/api/zones')]).then(([s,z])=>{setSummary(s);setZones(z.items);setOnline(true)}).catch(()=>setOnline(false))},[user,demo]);useEffect(()=>{if(!user||demo)return;const t=setTimeout(()=>api(`/api/programs?q=${encodeURIComponent(query)}&zone=${encodeURIComponent(zone)}&minVisits=${min}&maxVisits=${max}`).then(x=>setItems(x.items)),180);return()=>clearTimeout(t)},[user,demo,query,zone,min,max]);if(!user)return <Login onLogin={x=>{setUser(x);setOnline(true)}}/>;if(user.mustChangePassword)return <PasswordChange user={user} onDone={()=>setUser({...user,mustChangePassword:false})}/>;const maxBar=Math.max(...summary.distribution.map(x=>x.total),1),tabs=[['summary','Resumen'],['programs','Abonados'],...(user.role==='administrator'?[['import','Importar'],['audit','Auditoría']]:[])];return <div className="app"><header><img src="/club-charros.png" alt="Club Charros"/><div><strong>Club Charros</strong><span>Programa de Recompensas</span></div><nav>{tabs.map(([id,label])=><button key={id} onClick={()=>setPage(id)} className={page===id?'active':''}>{label}</button>)}</nav><div className="user">{user.displayName}<small>{user.role==='administrator'?'Administrador':'Operador'}</small></div></header><main className="content"><div className="hero"><div><p className="eyebrow">TEMPORADA REGULAR · 34 PARTIDOS</p><h1>Cada juego cuenta.</h1><p>Más visitas, más recompensas.</p></div><div className="cut"><span><i className={online?'dot online':'dot'}/>{online?'Base independiente conectada':'Datos sintéticos de revisión'}</span><b>Corte: {summary.cutoff?new Date(summary.cutoff).toLocaleDateString('es-MX',{day:'numeric',month:'short',year:'numeric'}):'Sin accesos'}</b></div></div>{page==='summary'&&<><section className="metrics"><article><span>Butacas participantes</span><b>{summary.programs}</b><small>programas independientes</small></article><article><span>Asistencias comprobadas</span><b>{summary.visits}</b><small>máximo una por partido</small></article><article><span>Juegos procesados</span><b>{summary.processedGames ?? 0} / 34</b><small>temporada regular</small></article><article className="gold"><span>Entregas por revisar</span><b>{summary.historicalPending}</b><small>históricas</small></article></section><section className="panel"><div className="panel-title"><div><p className="eyebrow">AVANCE GENERAL</p><h2>Distribución de visitas</h2></div><span>{summary.programs} butacas</span></div>{summary.distribution.map(x=><div className="bar" key={x.visits}><label>{x.visits} visitas <b>{x.total}</b></label><i><em style={{width:`${x.total/maxBar*100}%`}}/></i></div>)}</section></>}{page==='programs'&&<section className="panel"><div className="panel-title"><div><p className="eyebrow">PADRÓN OPERATIVO</p><h2>Buscar y filtrar butacas</h2></div><span>{items.length} resultados</span></div><div className="filters"><input className="search" placeholder="Nombre, orden o ubicación…" value={query} onChange={e=>setQuery(e.target.value)}/><select value={zone} onChange={e=>setZone(e.target.value)}><option value="">Todas las zonas</option>{zones.map(x=><option key={x}>{x}</option>)}</select><label>Mín. visitas<input type="number" min="0" max="34" value={min} onChange={e=>setMin(e.target.value)}/></label><label>Máx. visitas<input type="number" min="0" max="34" value={max} onChange={e=>setMax(e.target.value)}/></label></div><div className="table">{items.map(x=><button className="row" key={x.id} onClick={()=>setSelected(x)}><span><b>{x.holder_name}</b><small>Orden {x.order_number}</small></span><span>{x.zone}<small>{x.section} · {x.seat}</small></span><strong>{x.visits} visitas</strong><i>Ver perfil →</i></button>)}</div></section>}{page==='import'&&<ImportPanel/>}{page==='audit'&&<AdminPanel/>}</main>{selected&&<Drawer item={selected} onClose={()=>setSelected(null)} live={!demo}/>}</div>}
+  useEffect(() => {
+    if (demo) return undefined;
+
+    const controller = new AbortController();
+    api('/api/auth/session', { signal: controller.signal })
+      .then((response) => {
+        setUser(response.user);
+        setPage(response.user.role === 'administrator' ? 'summary' : 'programs');
+        setAuthStatus('authenticated');
+      })
+      .catch((reason) => {
+        if (reason.name !== 'AbortError') setAuthStatus('anonymous');
+      });
+    return () => controller.abort();
+  }, [demo]);
+
+  useEffect(() => {
+    if (demo) return undefined;
+    const resetSession = () => {
+      clearApiSession();
+      setUser(null);
+      setAuthStatus('anonymous');
+      setPage('summary');
+    };
+    window.addEventListener('rewards:unauthorized', resetSession);
+    return () => window.removeEventListener('rewards:unauthorized', resetSession);
+  }, [demo]);
+
+  const login = (nextUser) => {
+    setUser(nextUser);
+    setPage(nextUser.role === 'administrator' ? 'summary' : 'programs');
+    setAuthStatus('authenticated');
+  };
+
+  const logout = async () => {
+    if (!demo) await api('/api/auth/logout', { method: 'POST' });
+    clearApiSession();
+    setUser(null);
+    setAuthStatus('anonymous');
+    setPage('summary');
+  };
+
+  if (authStatus === 'checking') {
+    return (
+      <main className="login session-loading" aria-busy="true">
+        <section className="login-card">
+          <img src="/club-charros.png" alt="Club Charros" />
+          <p>Verificando sesión segura…</p>
+        </section>
+      </main>
+    );
+  }
+
+  if (!user) return <Login onLogin={login} />;
+
+  if (user.mustChangePassword) {
+    return (
+      <PasswordChange
+        user={user}
+        onDone={() => setUser((current) => ({ ...current, mustChangePassword: false }))}
+      />
+    );
+  }
+
+  const isAdmin = user.role === 'administrator';
+
+  return (
+    <div className="app">
+      <AppHeader user={user} page={page} onPageChange={setPage} onLogout={logout} demo={demo} />
+      <main className="content">
+        <Hero />
+        {page === 'summary' && isAdmin ? <SummaryPanel demo={demo} /> : null}
+        {page === 'programs' ? (
+          <SubscribersPanel
+            demo={demo}
+            demoItems={DEMO_ITEMS}
+            initialSelected={demo && demoParams.has('profile') ? DEMO_ITEMS[0] : null}
+          />
+        ) : null}
+        {page === 'import' && isAdmin ? <ImportPanel demo={demo} /> : null}
+      </main>
+    </div>
+  );
+}

@@ -1,14 +1,15 @@
 # Verificación visual sintética
 
-Fecha: 24 de octubre de 2026.
+Fecha: 27 de octubre de 2026.
 
 Se ejecutó el frontend local con Vite y se abrió en Google Chrome headless. No se usaron archivos personales ni servicios del CRM.
 
 ## Resoluciones verificadas
 
-- 1366 × 768: resumen y listado con filtros visibles, sin texto cortado ni desbordamiento horizontal.
-- 1920 × 1080: resumen y perfil lateral; la fila de recompensas conserva tarjetas legibles y navegación horizontal.
-- El perfil mantiene la ubicación, contador individual, acciones con texto e historial separado.
+- 1366 × 768: resumen y listado con búsqueda y filtros acumulativos visibles, sin desbordamiento horizontal.
+- 1920 × 1080: resumen y perfil lateral; la ruta en forma de serpiente muestra los 15 hitos del 2 al 30.
+- El perfil mantiene titular, contacto, orden, ubicación, contador individual, estado del canje e historial separado.
+- La navegación contiene únicamente Resumen, Abonados e Importar para administrador; la vista de Auditoría fue retirada.
 - La interfaz respeta `prefers-reduced-motion`.
 
 ## Capturas
@@ -18,4 +19,4 @@ Se ejecutó el frontend local con Vite y se abrió en Google Chrome headless. No
 - `screenshots/abonados-1366x768.png`
 - `screenshots/perfil-1920x1080.png`
 
-Estas capturas corresponden exclusivamente a `?demo=1`. La validación end-to-end con PostgreSQL central, sesiones reales e importaciones confirmadas se realizará antes de autorizar el despliegue institucional.
+Estas capturas corresponden exclusivamente a `?demo=1` y usan identidades `ABONADO DEMO`, correos `.invalid`, órdenes y butacas ficticias. La validación end-to-end con PostgreSQL central, sesiones reales e importaciones confirmadas se realizará después del despliegue controlado.

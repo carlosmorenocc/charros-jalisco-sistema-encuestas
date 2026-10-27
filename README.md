@@ -4,6 +4,13 @@ Landing page oficial para capturar opiniones y datos de aficionados de Charros d
 
 **Slogan:** "Únete al Club más Charro"
 
+## Programa de recompensas Club Charros
+
+La rama `feat/programa-recompensas-lmp-26-27` incluye una aplicación independiente para conciliar las asistencias de 34 juegos y registrar entregas por butaca. La guía técnica y operativa comienza en [`docs/rewards/INDEX.md`](docs/rewards/INDEX.md); no es necesario recorrer los módulos del CRM o de encuestas para trabajar en recompensas.
+
+- [`rewards-web/`](rewards-web/) — interfaz de consulta e importación en Vercel.
+- [`rewards-api/`](rewards-api/) — API, migraciones y conciliación en Render/PostgreSQL.
+
 ## CRM privado de abonados
 
 La rama `feat/crm-abonados-lmp-26-27` incorpora un CRM separado de las encuestas
