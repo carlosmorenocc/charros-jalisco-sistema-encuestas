@@ -24,4 +24,4 @@
 - Logout revoca la sesión en PostgreSQL y elimina las cookies del navegador.
 - Toda contraseña temporal obliga a crear una definitiva de al menos 12 caracteres.
 
-Las cuentas operativas aprobadas son Carlos Moreno (administrador), César Carrasco, Mariette Dueñas y Blanca Ruvalcaba (consulta). Los correos se normalizan a minúsculas.
+Las cuentas operativas aprobadas son Carlos Moreno (administrador), César Carrasco, Mariette Dueñas y Esmeralda Ruvalcaba (consulta). Los correos se normalizan a minúsculas.
