@@ -32,7 +32,9 @@ export function loadConfig() {
     cookieSameSite: process.env.SESSION_COOKIE_SAME_SITE || (production ? 'none' : 'lax'),
     sessionKey: required('SESSION_HASH_KEY'),
     passwordPepper: required('PASSWORD_PEPPER'),
-    auditKey: required('AUDIT_HASH_KEY')
+    auditKey: required('AUDIT_HASH_KEY'),
+    rosterImportEnabled: process.env.REWARDS_ROSTER_IMPORT_ENABLED === 'true',
+    rosterImportToken: String(process.env.REWARDS_ROSTER_IMPORT_TOKEN || '').trim()
   };
   for (const key of ['sessionKey', 'passwordPepper', 'auditKey']) {
     if (config[key].length < 32) throw new Error(`${key} must contain at least 32 characters`);
@@ -45,6 +47,9 @@ export function loadConfig() {
   }
   if (config.cookieSameSite === 'none' && !config.cookieSecure) {
     throw new Error('SameSite=None requires secure cookies');
+  }
+  if (config.rosterImportEnabled && config.rosterImportToken.length < 32) {
+    throw new Error('REWARDS_ROSTER_IMPORT_TOKEN must contain at least 32 characters while roster import is enabled');
   }
   return config;
 }

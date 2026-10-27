@@ -47,3 +47,22 @@ test('rechaza comodines, rutas y orígenes no HTTPS en producción', () => {
     assert.throws(() => loadConfig(),/HTTPS CORS origin/);
   });
 });
+
+test('la carga tecnica del padron exige un token efimero robusto cuando esta habilitada', () => {
+  withEnvironment({
+    CORS_ORIGINS:'https://rewards.example',
+    REWARDS_ROSTER_IMPORT_ENABLED:'true',
+    REWARDS_ROSTER_IMPORT_TOKEN:'corto'
+  },() => {
+    assert.throws(() => loadConfig(),/REWARDS_ROSTER_IMPORT_TOKEN/);
+  });
+
+  withEnvironment({
+    CORS_ORIGINS:'https://rewards.example',
+    REWARDS_ROSTER_IMPORT_ENABLED:'false',
+    REWARDS_ROSTER_IMPORT_TOKEN:''
+  },() => {
+    const config = loadConfig();
+    assert.equal(config.rosterImportEnabled,false);
+  });
+});

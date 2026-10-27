@@ -15,7 +15,10 @@ const canonical = (value) => plain(value)
   .toUpperCase()
   .replace(/\s+/g, ' ')
   .trim();
-const seatKey = (order, zone, section, seat) => [order,zone,section,seat].map(canonical).join('|');
+const canonicalSeat = (value) => canonical(value).replace(/[^A-Z0-9]/g,'');
+const seatKey = (order, zone, section, seat) => [
+  canonical(order),canonical(zone),canonical(section),canonicalSeat(seat)
+].join('|');
 const numeric = (value) => Number(plain(value).replace(/[$,\s]/g,''));
 
 function parseAccessTimestamp(value) {

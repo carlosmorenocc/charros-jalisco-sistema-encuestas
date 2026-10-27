@@ -8,6 +8,8 @@ import { digest, normalizeEmail, randomToken, verifyPassword, hashPassword } fro
 import { inspectWorkbook, seatKey } from './workbook.js';
 import { SEGMENTS, classifySegment, parseSegments } from './segments.js';
 import { transaction } from './db.js';
+import { validateRosterPayload } from './roster.js';
+import { persistRoster, previewRoster } from './roster-store.js';
 
 const safeUser = (row) => ({
   id: row.id,
@@ -38,7 +40,7 @@ export function createApp({ pool, config }) {
     },
     credentials: true
   }));
-  app.use(express.json({ limit: '256kb' }));
+  app.use(express.json({ limit: '1mb' }));
   app.use(cookieParser());
 
   const sessionCookie = {
@@ -87,10 +89,44 @@ export function createApp({ pool, config }) {
     ? next()
     : res.status(403).json({ error:'Permiso de administrador requerido' });
 
+  const rosterBootstrapAuth = (req,res,next) => {
+    if (!config.rosterImportEnabled) return res.status(404).json({ error:'Ruta no disponible' });
+    const authorization = String(req.get('authorization') || '');
+    const token = authorization.startsWith('Bearer ') ? authorization.slice(7).trim() : '';
+    const expected = String(config.rosterImportToken || '');
+    const providedBuffer = Buffer.from(token);
+    const expectedBuffer = Buffer.from(expected);
+    if (!token || providedBuffer.length !== expectedBuffer.length
+        || !crypto.timingSafeEqual(providedBuffer,expectedBuffer)) {
+      return res.status(401).json({ error:'AutorizaciÃ³n tÃ©cnica invÃ¡lida' });
+    }
+    next();
+  };
+
   app.get('/ready',async(_req,res) => {
     await pool.query('SELECT 1');
     res.json({ ok:true,service:'charros-rewards-api' });
   });
+
+  app.post(
+    '/api/internal/roster-bootstrap',
+    rateLimit({ windowMs:15*60*1000,limit:10,standardHeaders:'draft-8',legacyHeaders:false }),
+    rosterBootstrapAuth,
+    async(req,res) => {
+      const mode = String(req.query.mode || '');
+      if (!['preview','confirm'].includes(mode)) {
+        return res.status(400).json({ error:'Selecciona mode=preview o mode=confirm' });
+      }
+      const roster = validateRosterPayload(req.body);
+      if (mode === 'preview') {
+        return res.json({ ok:true,mode, ...(await previewRoster(pool,roster)) });
+      }
+      const result = await transaction(pool,(client) => persistRoster(client,roster,{
+        sourceFilename:roster.sourceFilename
+      }));
+      res.status(result.alreadyImported ? 200 : 201).json({ ok:true,mode,...result,sha256:roster.sha256 });
+    }
+  );
 
   app.post('/api/auth/login',rateLimit({ windowMs:15*60*1000,limit:5,standardHeaders:'draft-8',legacyHeaders:false }),async(req,res) => {
     const email = normalizeEmail(req.body?.email);

@@ -253,3 +253,42 @@ test('la API operativa rechaza importaciones que no sean de asistencias',async(t
     assert.match((await response.json()).error,/solo se admiten reportes de asistencias/i);
   }
 });
+
+test('el bootstrap tecnico permanece oculto y exige su token efimero',async(t) => {
+  const pool = {
+    async query() { throw new Error('No debe consultar PostgreSQL'); }
+  };
+  const disabledBase = await listen(createApp({ pool,config }),t);
+  const disabled = await fetch(`${disabledBase}/api/internal/roster-bootstrap?mode=preview`,{
+    method:'POST',
+    headers:{ 'content-type':'application/json' },
+    body:'{}'
+  });
+  assert.equal(disabled.status,404);
+
+  const enabledConfig = {
+    ...config,
+    rosterImportEnabled:true,
+    rosterImportToken:'token-tecnico-robusto-de-prueba-123456'
+  };
+  const enabledBase = await listen(createApp({ pool,config:enabledConfig }),t);
+  const unauthorized = await fetch(`${enabledBase}/api/internal/roster-bootstrap?mode=preview`,{
+    method:'POST',
+    headers:{
+      authorization:'Bearer token-equivocado',
+      'content-type':'application/json'
+    },
+    body:'{}'
+  });
+  assert.equal(unauthorized.status,401);
+
+  const invalidPayload = await fetch(`${enabledBase}/api/internal/roster-bootstrap?mode=preview`,{
+    method:'POST',
+    headers:{
+      authorization:`Bearer ${enabledConfig.rosterImportToken}`,
+      'content-type':'application/json'
+    },
+    body:'{}'
+  });
+  assert.equal(invalidPayload.status,400);
+});

@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 
+const rosterMigrationUrl = new URL('../migrations/004_rewards_roster_normalization.sql',import.meta.url);
+
 test('la migración operativa configura exactamente los 34 juegos locales',async() => {
   const sql = await fs.readFile(new URL('../migrations/003_operational_rewards.sql',import.meta.url),'utf8');
   const gamesBlock = sql.split('INSERT INTO rewards_games')[1].split('ON CONFLICT (played_on)')[0];
@@ -23,4 +25,64 @@ test('el catálogo conserva como sorteo únicamente el hito 20',async() => {
   assert.match(catalogBlock,/\(18,'Invitado especial en CharrosTV','direct'\)/);
   assert.match(catalogBlock,/\(20,'Sorteo de bat de colección usado en juego','raffle'\)/);
   assert.equal((catalogBlock.match(/'raffle'/g) || []).length,1);
+});
+
+test('la normalización crea titulares sin deduplicar sus datos de contacto',async() => {
+  const sql = await fs.readFile(rosterMigrationUrl,'utf8');
+  const holdersBlock = sql.split('CREATE TABLE rewards_holders (')[1].split('\n);')[0];
+
+  for (const column of [
+    'id uuid PRIMARY KEY DEFAULT gen_random_uuid()',
+    'identity_key text NOT NULL UNIQUE',
+    'display_name text NOT NULL',
+    'active boolean NOT NULL DEFAULT true',
+    'created_at timestamptz NOT NULL DEFAULT now()',
+    'updated_at timestamptz NOT NULL DEFAULT now()'
+  ]) {
+    assert.ok(holdersBlock.includes(column),`falta ${column}`);
+  }
+  assert.match(holdersBlock,/\n  email text,/);
+  assert.match(holdersBlock,/\n  phone text,/);
+  assert.doesNotMatch(holdersBlock,/(?:email|phone) text[^,\n]*UNIQUE/);
+  assert.doesNotMatch(holdersBlock,/UNIQUE \((?:email|phone)\)/);
+});
+
+test('la normalización separa las órdenes por temporada y comprador opcional',async() => {
+  const sql = await fs.readFile(rosterMigrationUrl,'utf8');
+  const ordersBlock = sql.split('CREATE TABLE rewards_orders (')[1].split('\n);')[0];
+
+  for (const column of [
+    'id uuid PRIMARY KEY DEFAULT gen_random_uuid()',
+    'season_code text NOT NULL',
+    'order_number text NOT NULL',
+    'purchase_code text',
+    'buyer_holder_id uuid',
+    'seller text',
+    'discount_label text',
+    'purchased_at timestamptz',
+    'payment_type text',
+    'source_event text',
+    'active boolean NOT NULL DEFAULT true',
+    'created_at timestamptz NOT NULL DEFAULT now()',
+    'updated_at timestamptz NOT NULL DEFAULT now()'
+  ]) {
+    assert.ok(ordersBlock.includes(column),`falta ${column}`);
+  }
+  assert.match(ordersBlock,/FOREIGN KEY \(season_code\) REFERENCES rewards_seasons\(code\) ON DELETE RESTRICT/);
+  assert.match(ordersBlock,/FOREIGN KEY \(buyer_holder_id\) REFERENCES rewards_holders\(id\) ON DELETE SET NULL/);
+  assert.match(ordersBlock,/UNIQUE \(season_code,order_number\)/);
+  assert.doesNotMatch(ordersBlock,/buyer_holder_id uuid NOT NULL/);
+});
+
+test('rewards_programs conserva filas existentes y acepta enlaces normalizados opcionales',async() => {
+  const sql = await fs.readFile(rosterMigrationUrl,'utf8');
+  const alterBlock = sql.split('ALTER TABLE rewards_programs')[1].split(';')[0];
+
+  assert.match(alterBlock,/ADD COLUMN holder_id uuid,/);
+  assert.match(alterBlock,/ADD COLUMN order_id uuid,/);
+  assert.match(alterBlock,/ADD COLUMN source_reference text,/);
+  assert.doesNotMatch(alterBlock,/ADD COLUMN (?:holder_id|order_id|source_reference) [^,\n]*NOT NULL/);
+  assert.match(alterBlock,/FOREIGN KEY \(holder_id\) REFERENCES rewards_holders\(id\) ON DELETE SET NULL/);
+  assert.match(alterBlock,/FOREIGN KEY \(order_id\) REFERENCES rewards_orders\(id\) ON DELETE SET NULL/);
+  assert.doesNotMatch(alterBlock,/\b(?:DROP|RENAME|ALTER)\s+(?:COLUMN|CONSTRAINT)\b/);
 });

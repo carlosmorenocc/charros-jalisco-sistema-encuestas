@@ -17,6 +17,13 @@ async function salesWorkbook(rows) {
   rows.forEach(row=>sheet.addRow(row)); return workbook.xlsx.writeBuffer();
 }
 
+test('la llave de conciliacion tolera guiones y espacios de formato en la butaca',() => {
+  assert.equal(
+    seatKey('123','VIP','210','AA-2'),
+    seatKey('123','VIP','210',' AA 2 ')
+  );
+});
+
 test('doble escaneo del mismo programa y partido cuenta una sola vez',async()=>{
   const row=['21/10/26 20:10','Entrada','VIP','210','A-1','TITULAR','-','-','Abono','123','99999999999999999999','-','-','D','Principal','Charros de Jalisco: Abono VIP Charros LMP 2026-2027','1'];
   const key=seatKey('123','VIP','210','A-1');
