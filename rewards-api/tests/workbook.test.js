@@ -51,6 +51,84 @@ test('cortesía abono cuenta solo al conciliar con el padrón; compromisos y pat
   assert.ok(result.excluded.some((row)=>/evento|producto/i.test(row.reason)));
 });
 
+test('la cortesía giveaway autorizada entra solo por coincidencia exacta y condiciones cerradas',async()=>{
+  const event='Abono Compromisos LMP 2026-27';
+  const row=['21/10/26 20:10','Entrada','Planta Alta Central','SYNTH-S1','A-1','-','-','-','Cortesía abono','GIVEAWAY-1','9','-','-','D','Principal',event,'-'];
+  const result=await inspectWorkbook(await accessWorkbook([row]),{
+    kind:'access',
+    knownPrograms:[{
+      id:'giveaway-program',order_number:'GIVEAWAY-1',zone:'Planta Alta Central',
+      section:'SYNTH-S1',seat:'A-1',segment:'GENERAL',
+      eligibility_exception:'authorized_giveaway_courtesy'
+    }]
+  });
+  assert.equal(result.included.length,1);
+  assert.equal(result.included[0].programId,'giveaway-program');
+  assert.equal(result.included[0].matchStrategy,'exact');
+  assert.equal(result.excluded.length,0);
+  assert.equal(result.review.length,0);
+});
+
+test('un compromiso o cortesía estándar no entra sin la excepción autorizada',async()=>{
+  const event='Abono Compromisos LMP 2026-27';
+  const row=['21/10/26 20:10','Entrada','Planta Alta Central','SYNTH-S1','A-1','-','-','-','Cortesía abono','STANDARD-1','9','-','-','D','Principal',event,'-'];
+  const result=await inspectWorkbook(await accessWorkbook([row]),{
+    kind:'access',
+    knownPrograms:[{
+      id:'standard-program',order_number:'STANDARD-1',zone:'Planta Alta Central',
+      section:'SYNTH-S1',seat:'A-1',segment:'GENERAL'
+    }]
+  });
+  assert.equal(result.included.length,0);
+  assert.equal(result.excluded.length,1);
+  assert.match(result.excluded[0].reason,/evento|producto/i);
+});
+
+test('la excepción giveaway no omite el descarte cuando existe patrocinador',async()=>{
+  const event='Abono Compromisos LMP 2026-27';
+  const row=['21/10/26 20:10','Entrada','Planta Alta Central','SYNTH-S1','A-1','-','-','-','Cortesía abono','GIVEAWAY-2','9','-','PATROCINADOR ACTIVO','D','Principal',event,'-'];
+  const result=await inspectWorkbook(await accessWorkbook([row]),{
+    kind:'access',
+    knownPrograms:[{
+      id:'sponsored-program',order_number:'GIVEAWAY-2',zone:'Planta Alta Central',
+      section:'SYNTH-S1',seat:'A-1',segment:'GENERAL',
+      eligibility_exception:'authorized_giveaway_courtesy'
+    }]
+  });
+  assert.equal(result.included.length,0);
+  assert.equal(result.excluded.length,1);
+});
+
+test('la excepción giveaway no omite el descarte de suites',async()=>{
+  const event='Abono Compromisos LMP 2026-27';
+  const row=['21/10/26 20:10','Entrada','Suite sintética','SYNTH-S1','A-1','-','-','-','Cortesía abono','GIVEAWAY-3','9','-','-','D','Principal',event,'-'];
+  const result=await inspectWorkbook(await accessWorkbook([row]),{
+    kind:'access',
+    knownPrograms:[{
+      id:'suite-program',order_number:'GIVEAWAY-3',zone:'Suite sintética',
+      section:'SYNTH-S1',seat:'A-1',segment:'GENERAL',
+      eligibility_exception:'authorized_giveaway_courtesy'
+    }]
+  });
+  assert.equal(result.included.length,0);
+  assert.equal(result.excluded.length,1);
+});
+
+test('la excepción giveaway no se aplica por alias o conciliación aproximada',async()=>{
+  const event='Abono Compromisos LMP 2026-27';
+  const row=['21/10/26 20:10','Entrada','Planta Alta Central alterna','SYNTH-S1','A-1','-','-','-','Cortesía abono','GIVEAWAY-4','9','-','-','D','Principal',event,'-'];
+  const result=await inspectWorkbook(await accessWorkbook([row]),{
+    kind:'access',
+    knownPrograms:[{
+      id:'alias-program',order_number:'GIVEAWAY-4',zone:'Planta Alta Central',
+      section:'SYNTH-S1',seat:'A-1',segment:'GENERAL',
+      eligibility_exception:'authorized_giveaway_courtesy'
+    }]
+  });
+  assert.equal(result.included.length,0);
+  assert.equal(result.excluded.length,1);
+});
+
 test('conciliación jerárquica usa solo coincidencias únicas y de segmento compatible',async()=>{
   const event='Charros de Jalisco: Abono VIP Charros LMP 2026-2027';
   const rows=[

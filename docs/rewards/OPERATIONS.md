@@ -45,6 +45,24 @@ El secreto es un JSON de versión 1 con temporada, orden origen, orden destino, 
 
 Si cualquier guarda difiere, el arranque falla y no confirma ninguna corrección. El diagnóstico publica únicamente un código técnico de lista cerrada. Un fallo de consulta se identifica solo por su etapa `DB_*`; cualquier otro fallo se reduce a `UNEXPECTED_ERROR`. Nunca se imprimen mensaje, detalle, consulta, parámetros ni valores operativos. El script es idempotente para un despliegue repetido. La bitácora conserva únicamente el UUID interno, la cantidad y un código de motivo de lista cerrada; no copia órdenes, correo ni controles derivados de esos valores.
 
+## Alta excepcional de un programa autorizado
+
+Una cortesía de abono de giveaway autorizada se incorpora con el prearranque transaccional del API, sin reabrir `roster-bootstrap`. Los datos operativos completos se suministran temporalmente en el secreto `REWARDS_PROGRAM_ENROLLMENT`; nunca se codifican en migraciones, pruebas, documentación, tickets o logs.
+
+El payload versionado debe identificar temporada, titular, orden y una sola butaca, declarar `authorized_giveaway_courtesy`, incluir un código de motivo no personal y, si corresponde reconstruir visitas, enumerar cada asistencia mediante la pareja exacta SHA-256 de importación + fecha de juego junto con sus datos operativos. Correo y teléfono pueden ser nulos cuando la fuente autoritativa no los contiene; no se completan mediante una unión silenciosa por nombre.
+
+Procedimiento:
+
+1. Confirma respaldo, entorno y commit, y verifica fuera del repositorio que la butaca no colisiona con un programa activo, alias u otra orden.
+2. Genera el JSON fuera de Git y configura `REWARDS_PROGRAM_ENROLLMENT` únicamente en el API personal autorizado.
+3. Despliega. El prearranque adquiere un bloqueo asesor y valida esquema, temporada, lista cerrada, unicidad de titular/orden/programa y controles de cada importación antes de escribir.
+4. En una sola transacción crea o reutiliza de forma idempotente el titular y la orden, crea exactamente un programa bloqueado para cambios automáticos y registra únicamente las asistencias históricas cuyo SHA-256 y fecha coinciden con importaciones confirmadas.
+5. Comprueba el resultado mediante agregados y un diagnóstico de lista cerrada; nunca expongas datos personales, órdenes, butacas, códigos de barras ni el payload en logs.
+6. Elimina inmediatamente `REWARDS_PROGRAM_ENROLLMENT`, vuelve a desplegar sin el secreto y verifica `/ready`.
+7. Confirma en la interfaz que existe un solo programa, que el contador histórico esperado es correcto y que la excepción no altera otros compromisos, patrocinadores o suites.
+
+La ejecución es idempotente: repetir exactamente el mismo payload no duplica titular, orden, programa ni asistencias. Una colisión, una diferencia parcial, un digest/fecha inexistente o cualquier guarda incumplida revierte toda la transacción y detiene el arranque con un código técnico no sensible. La bitácora solo conserva UUID interno del programa, cantidad agregada y código de motivo. Para corregir datos después del alta se usa un procedimiento técnico explícito; no se reutiliza el secreto ni se amplía la excepción de forma global.
+
 ## Cuentas
 
 El script `rewards-api/scripts/provision-users.js` crea o restablece exclusivamente las cuentas permitidas. Solicita la contraseña de forma interactiva, fuerza su cambio en el primer ingreso y revoca sesiones anteriores.

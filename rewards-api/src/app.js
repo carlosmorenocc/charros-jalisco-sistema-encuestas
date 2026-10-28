@@ -521,7 +521,7 @@ export function createApp({ pool, config }) {
   const inspectAccess = async(buffer) => {
     const [programs,aliases] = await Promise.all([
       pool.query(`
-        SELECT id,order_number,zone,section,seat,segment
+        SELECT id,order_number,zone,section,seat,segment,eligibility_exception
         FROM rewards_programs
         WHERE active AND eligibility_status='eligible'
       `),

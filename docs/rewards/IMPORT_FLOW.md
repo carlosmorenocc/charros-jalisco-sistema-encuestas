@@ -30,8 +30,14 @@ Para cada partido, el administrador sigue este flujo en `Importar`:
 
 El API concilia cada acceso contra una sola butaca activa. Primero busca orden + zona + sección + asiento; después admite una equivalencia única de nombre de zona y, como último recurso, una coincidencia única de orden + asiento compatible con el segmento. Los cambios históricos de orden o butaca solo se aceptan mediante `rewards_program_aliases`: nunca se infieren por nombre, correo o teléfono.
 
-Se aceptan filas `Abono` de los productos aprobados y también `Cortesía abono` cuando esa fila concilia con una butaca activa del padrón; esto conserva los abonos 2x1. Se excluyen boletos de ocasión, cortesías ordinarias, suites, compromisos, patrocinadores y colaboradores. Una fila con patrocinador informado se excluye incluso si su tipo o evento parece elegible.
+Se aceptan filas `Abono` de los productos aprobados y también `Cortesía abono` cuando esa fila concilia con una butaca activa ordinaria del padrón; esto conserva los abonos 2x1. Se excluyen boletos de ocasión, cortesías ordinarias, suites, compromisos, patrocinadores y colaboradores. Una fila con patrocinador informado se excluye incluso si su tipo o evento parece elegible.
+
+La única excepción al descarte por producto de compromiso es un programa marcado explícitamente con `authorized_giveaway_courtesy`. El bypass se evalúa después de obtener una coincidencia exacta por orden + zona + sección + asiento y exige, al mismo tiempo, tipo `Cortesía abono`, el producto de compromiso autorizado, patrocinador vacío y una ubicación que no sea suite. Si la coincidencia provino de alias, equivalencia de zona, orden + asiento u otra estrategia de respaldo, la fila permanece excluida. La excepción tampoco autoriza a otros programas de la misma orden o titular y no modifica la exclusión general de compromisos, patrocinadores o suites.
 
 Los escaneos repetidos se agrupan por programa + partido, no por dispositivo ni ronda, y se conserva la hora de ingreso más temprana. Un mismo archivo no puede confirmarse dos veces y la restricción programa + partido impide sumar dos veces una butaca entre cortes. La confirmación se bloquea si queda al menos una fila `Por revisar`. Un corte parcial posterior debe provenir de una nueva exportación; un corte cerrado no vuelve a estado parcial.
 
 No se deben contar suites, compromisos, patrocinios, colaborador ni modalidades excluidas del padrón aprobado. Solo un administrador puede realizar ambas cargas y nunca se deben reutilizar credenciales, tablas o archivos del CRM.
+
+## Alta excepcional y reconstrucción histórica
+
+Cuando la Dirección autorice una cortesía de giveaway específica, el programa se incorpora mediante el prearranque de un solo uso descrito en `OPERATIONS.md`; no se reabre ni reemplaza el padrón. La reconstrucción histórica solo acepta asistencias respaldadas por una importación ya confirmada y por la pareja exacta de SHA-256 del archivo + fecha del partido. El procedimiento no infiere asistencias por nombre, correo o teléfono y la restricción programa + partido conserva la idempotencia.

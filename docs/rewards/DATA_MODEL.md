@@ -9,7 +9,7 @@ La base es PostgreSQL independiente del CRM. Todas las tablas del módulo usan e
 | `rewards_seasons` | Configuración de temporada | 34 juegos regulares para `LMP-2026-27` |
 | `rewards_holders` | Titulares normalizados | Una identidad operativa puede tener varias órdenes y butacas |
 | `rewards_orders` | Compra y metadatos comerciales | Orden única por temporada; enlaza todas sus butacas |
-| `rewards_programs` | Una fila por abono/butaca | Única por temporada + orden + zona + sección + asiento; conserva segmento y datos del titular |
+| `rewards_programs` | Una fila por abono/butaca | Única por temporada + orden + zona + sección + asiento; conserva segmento, datos del titular y una excepción de elegibilidad opcional de lista cerrada |
 | `rewards_program_aliases` | Llaves históricas de acceso | Una llave anterior apunta de forma explícita a un solo programa vigente |
 | `rewards_games` | Calendario local | Fecha y secuencia únicas; estado programado, parcial o cerrado |
 | `rewards_imports` | Trazabilidad de archivos | SHA-256 único; evita importar dos veces el mismo archivo |
@@ -21,3 +21,9 @@ La base es PostgreSQL independiente del CRM. Todas las tablas del módulo usan e
 La identidad operativa no se deduplica por correo o teléfono porque un comprador puede controlar varias butacas y familiares pueden compartir datos de contacto.
 
 Las correcciones verificadas con Boleto Móvil conservan el `id` y `permanent_key` del programa cuando solo cambia su dato comercial. Si una butaca fue reasignada y ya registró accesos con una orden anterior, la llave anterior se guarda en `rewards_program_aliases`; las asistencias nuevas e históricas terminan en el mismo `program_id` y, por tanto, en un solo contador de recompensas.
+
+### Excepción de elegibilidad del programa
+
+`rewards_programs.eligibility_exception` es nullable. Su dominio está restringido por la base de datos y actualmente solo admite `authorized_giveaway_courtesy`; `NULL` representa el comportamiento ordinario. El campo pertenece al programa/butaca, no al titular ni a toda la orden, para impedir que la autorización se propague a otros asientos.
+
+La presencia del valor no basta para contar una asistencia. El importador exige además coincidencia exacta de la llave comercial y valida tipo, producto, patrocinio y ausencia de suite. Por ello, aliases y estrategias de conciliación de respaldo no heredan la excepción. El alta o cambio de este campo se realiza únicamente mediante el procedimiento transaccional documentado en `OPERATIONS.md`, con trazabilidad no personal.

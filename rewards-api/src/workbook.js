@@ -26,6 +26,8 @@ const orderSectionSeatKey = (order, section, seat) => [
 const orderSeatKey = (order, seat) => [canonical(order),canonicalSeat(seat)].join('|');
 const numeric = (value) => Number(plain(value).replace(/[$,\s]/g,''));
 const eligibleEvents = new Set([...ELIGIBLE_EVENTS].map(canonical));
+const AUTHORIZED_GIVEAWAY_COURTESY = 'authorized_giveaway_courtesy';
+const GIVEAWAY_COURTESY_EVENT = canonical('Abono Compromisos LMP 2026-27');
 
 function parseAccessTimestamp(value) {
   const match = plain(value).match(/^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
@@ -103,7 +105,8 @@ function createProgramMatcher(knownPrograms,knownAliases) {
       zone:field(row,'zone'),
       section:field(row,'section'),
       seat:field(row,'seat'),
-      segment:field(row,'segment')
+      segment:field(row,'segment'),
+      eligibilityException:field(row,'eligibilityException','eligibility_exception')
     };
     if (!program.id || !program.orderNumber || !program.section || !program.seat) continue;
     exact.set(seatKey(program.orderNumber,program.zone,program.section,program.seat),program);
@@ -170,6 +173,15 @@ function accessExclusion(row) {
   return null;
 }
 
+function isAuthorizedGiveawayCourtesy(row,match) {
+  return match?.matchStrategy === 'exact'
+    && plain(field(match.program,'eligibilityException','eligibility_exception')) === AUTHORIZED_GIVEAWAY_COURTESY
+    && canonical(row.TIPO) === 'CORTESIA ABONO'
+    && canonical(row['EVENTO LIGADO']) === GIVEAWAY_COURTESY_EVENT
+    && isMarkerEmpty(row.PATROCINADOR)
+    && !/SUITE/.test(canonical(row.ZONA));
+}
+
 function accessRecord(row,timestamp,match,key,segment) {
   return {
     key,
@@ -222,10 +234,6 @@ export async function inspectWorkbook(buffer, { kind, knownPrograms = new Map(),
     const timestamp = parseAccessTimestamp(row.INGRESO);
     if (timestamp) observedDates.add(timestamp.scanDate);
     const key = seatKey(row.COMPRA, row.ZONA, row.SECCION, row.ASIENTO);
-    const exclusion = accessExclusion(row);
-    if (exclusion) { excluded.push({ key, reason:exclusion }); continue; }
-    if (!timestamp) { review.push({ key, reason: 'Fecha de ingreso inválida' }); continue; }
-
     const segment = classifySegment(row.ZONA,row['EVENTO LIGADO']);
     const match = matchProgram({
       order:row.COMPRA,
@@ -234,6 +242,12 @@ export async function inspectWorkbook(buffer, { kind, knownPrograms = new Map(),
       seat:row.ASIENTO,
       segment
     });
+    const exclusion = accessExclusion(row);
+    if (exclusion && !isAuthorizedGiveawayCourtesy(row,match)) {
+      excluded.push({ key, reason:exclusion });
+      continue;
+    }
+    if (!timestamp) { review.push({ key, reason: 'Fecha de ingreso inválida' }); continue; }
     if (!match) {
       review.push({ key, segment, reason: 'Butaca no localizada de forma única en el padrón' });
       continue;

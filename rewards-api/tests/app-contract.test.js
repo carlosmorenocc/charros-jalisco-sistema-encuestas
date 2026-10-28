@@ -279,7 +279,10 @@ test('la confirmación se bloquea si una asistencia requiere revisión',async(t)
       }
       if (sql.includes('UPDATE rewards_sessions')) return { rowCount:1,rows:[] };
       if (sql.includes('FROM rewards_program_aliases')) return { rowCount:0,rows:[] };
-      if (sql.includes('SELECT id,order_number,zone,section,seat,segment')) return { rowCount:0,rows:[] };
+      if (sql.includes('SELECT id,order_number,zone,section,seat,segment')) {
+        assert.match(sql,/eligibility_exception/u);
+        return { rowCount:0,rows:[] };
+      }
       if (sql.includes('SELECT played_on::text played_on')) {
         return { rowCount:1,rows:[{ played_on:'2026-10-21' }] };
       }
@@ -334,6 +337,7 @@ test('un corte posterior conserva en PostgreSQL el escaneo más temprano',async(
       if (sql.includes('UPDATE rewards_sessions')) return { rowCount:1,rows:[] };
       if (sql.includes('FROM rewards_program_aliases')) return { rowCount:0,rows:[] };
       if (sql.includes('SELECT id,order_number,zone,section,seat,segment')) {
+        assert.match(sql,/eligibility_exception/u);
         return { rowCount:1,rows:[{
           id:'program-1',order_number:'123',zone:'VIP',section:'210',seat:'A-1',segment:'VIP'
         }] };

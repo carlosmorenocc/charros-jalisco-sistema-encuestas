@@ -34,6 +34,18 @@ El segmento se persiste en PostgreSQL; el frontend no vuelve a inferirlo.
 
 `Lateral Preferente` pertenece a **General**, conforme al material oficial.
 
+## Excepción cerrada de elegibilidad
+
+Existe una sola clase de excepción operativa para una cortesía de abono de giveaway autorizada. La autorización pertenece a una butaca/programa específico y se persiste mediante el valor cerrado `authorized_giveaway_courtesy`; no habilita por categoría a otras cortesías, compromisos ni filas semejantes.
+
+- La fila de acceso solo puede usar la excepción cuando coincide de forma exacta con el programa autorizado por orden, zona, sección y asiento.
+- El tipo debe ser exactamente `Cortesía abono`, el producto debe corresponder al compromiso autorizado, el patrocinador debe estar vacío y la ubicación no puede ser una suite.
+- Una coincidencia por alias, equivalencia de zona, orden + asiento, nombre, correo, teléfono o cualquier estrategia de respaldo no puede activar la excepción.
+- Patrocinios, suites, otros compromisos y cualquier fila no exacta siguen excluidos, aunque apunten al mismo titular.
+- El programa conserva las mismas reglas de asistencia única por partido, hitos, canje `N + 1` y trazabilidad que el resto del padrón.
+
+Toda nueva excepción requiere una decisión de negocio explícita, una revisión de código y una ampliación deliberada de la lista cerrada. Nunca se autoriza mediante texto libre ni ampliando globalmente los eventos excluidos.
+
 ## Hitos y canje
 
 Existen 15 hitos pares: 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28 y 30.
