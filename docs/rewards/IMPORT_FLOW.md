@@ -15,6 +15,8 @@ El orden es obligatorio: primero se carga una sola vez el padrón aprobado media
 
 Si la respuesta de confirmación se pierde, reintenta solamente el payload idéntico mientras la ventana siga abierta; la idempotencia por SHA-256 permite comprobar el resultado sin duplicarlo. Después de cargar asistencias, no se debe reemplazar el padrón, truncar tablas ni reabrir el bootstrap para aplicar correcciones: cualquier cambio requiere respaldo, trazabilidad y un procedimiento técnico específico.
 
+Cuando Boleto Móvil confirme una discrepancia puntual después del bootstrap, usa el procedimiento temporal de corrección autoritativa descrito en `OPERATIONS.md`. Sus valores privados se suministran como secreto efímero; nunca se codifican en una migración ni en el repositorio.
+
 ## Historiales de asistencia por interfaz
 
 Para cada partido, el administrador sigue este flujo en `Importar`:

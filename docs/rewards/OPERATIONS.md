@@ -30,6 +30,21 @@ cd rewards-web && npm ci && npm test && npm run build
 
 Las migraciones son acumulativas e inmutables. Nunca edites una migración ya aplicada; agrega la siguiente numeración.
 
+## Corrección autoritativa puntual
+
+Una discrepancia comercial confirmada después de cargar asistencias se corrige en sitio con el prearranque transaccional del API; no se reemplaza el padrón ni se crean programas nuevos. El valor completo vive temporalmente en el secreto `REWARDS_ORDER_CORRECTION` de Render y nunca se copia a Git, documentación, tickets o logs.
+
+El secreto es un JSON de versión 1 con temporada, orden origen, orden destino, cantidad esperada de programas, SHA-256 del conjunto zona/sección/butaca, SHA-256 de la identidad actual, correo corregido y un código de motivo no personal. El proceso:
+
+1. genera los dos controles SHA-256 fuera del repositorio;
+2. configura el secreto solo en el API personal autorizado;
+3. despliega y exige coincidencia exacta de orden, programas, titular y controles;
+4. renombra la misma orden y actualiza los mismos programas dentro de una transacción, conservando IDs, asistencias y canjes;
+5. verifica el resultado agregado y elimina inmediatamente el secreto;
+6. vuelve a desplegar sin el secreto y comprueba `/ready`.
+
+Si cualquier guarda difiere, el arranque falla y PostgreSQL revierte la transacción completa. El script es idempotente para un despliegue repetido y no imprime los valores operativos. La bitácora conserva únicamente el UUID interno, la cantidad y un código de motivo de lista cerrada; no copia órdenes, correo ni controles derivados de esos valores.
+
 ## Cuentas
 
 El script `rewards-api/scripts/provision-users.js` crea o restablece exclusivamente las cuentas permitidas. Solicita la contraseña de forma interactiva, fuerza su cambio en el primer ingreso y revoca sesiones anteriores.
