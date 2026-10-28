@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import ExcelJS from 'exceljs';
-import { createApp } from '../src/app.js';
-import { digest } from '../src/security.js';
+import { createApp,projectCurrentDeliveryHistory } from '../src/app.js';
+import { digest,hashPassword } from '../src/security.js';
 
 const SESSION_COOKIE = 'charros_rewards_session';
 const CSRF_COOKIE = 'charros_rewards_csrf';
@@ -71,6 +71,65 @@ test('CORS responde únicamente a orígenes de la lista cerrada',async(t) => {
   assert.equal(rejected.headers.get('access-control-allow-origin'),null);
 });
 
+test('cinco usuarios pueden iniciar sesión correctamente desde la misma red',async(t) => {
+  const password = 'Contraseña-operativa-2026';
+  const passwordHash = await hashPassword(password,config.passwordPepper);
+  const pool = {
+    async query(sql,params=[]) {
+      if (sql.includes('SELECT * FROM rewards_users')) {
+        const email = params[0];
+        return { rowCount:1,rows:[{
+          id:`user-${email}`,
+          email,
+          display_name:email.split('@')[0],
+          role:'operator',
+          must_change_password:false,
+          active:true,
+          password_hash:passwordHash
+        }] };
+      }
+      if (sql.includes('INSERT INTO rewards_sessions')) return { rowCount:1,rows:[] };
+      throw new Error(`Consulta inesperada: ${sql}`);
+    }
+  };
+  const base = await listen(createApp({ pool,config }),t);
+  for (let index = 1; index <= 5; index += 1) {
+    const response = await fetch(`${base}/api/auth/login`,{
+      method:'POST',
+      headers:{ 'content-type':'application/json' },
+      body:JSON.stringify({ email:`operador${index}@charrosdejalisco.com`,password })
+    });
+    assert.equal(response.status,200);
+    await response.json();
+  }
+});
+
+test('el sexto intento fallido de la misma cuenta y red se bloquea temporalmente',async(t) => {
+  const pool = {
+    async query(sql) {
+      if (sql.includes('SELECT * FROM rewards_users')) return { rowCount:0,rows:[] };
+      throw new Error(`Consulta inesperada: ${sql}`);
+    }
+  };
+  const base = await listen(createApp({ pool,config }),t);
+  for (let attempt = 1; attempt <= 5; attempt += 1) {
+    const response = await fetch(`${base}/api/auth/login`,{
+      method:'POST',
+      headers:{ 'content-type':'application/json' },
+      body:JSON.stringify({ email:'cuenta@charrosdejalisco.com',password:'incorrecta' })
+    });
+    assert.equal(response.status,401);
+    await response.json();
+  }
+  const blocked = await fetch(`${base}/api/auth/login`,{
+    method:'POST',
+    headers:{ 'content-type':'application/json' },
+    body:JSON.stringify({ email:'cuenta@charrosdejalisco.com',password:'incorrecta' })
+  });
+  assert.equal(blocked.status,429);
+  assert.match((await blocked.json()).error,/esta cuenta/i);
+});
+
 test('lista abonados con filtros OR, total real y paginación',async(t) => {
   const calls = [];
   const pool = {
@@ -137,11 +196,15 @@ test('el resumen cuenta únicamente entregas activas',async(t) => {
   assert.equal(body.historicalPending,undefined);
 });
 
-test('el detalle conserva entregas activas y expone el historial completo con reversiones',async(t) => {
+test('el detalle usa un solo snapshot y expone una sola versión vigente por hito',async(t) => {
   const calls = [];
   const pool = {
     async query(sql) {
       calls.push(sql);
+      if (['BEGIN','COMMIT','ROLLBACK'].includes(sql)
+          || sql === 'SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY') {
+        return { rowCount:null,rows:[] };
+      }
       if (sql.includes('SELECT u.*,s.id session_id')) return { rowCount:1,rows:[authenticatedUser()] };
       if (sql.includes('UPDATE rewards_sessions')) return { rowCount:1,rows:[] };
       if (sql.includes('SELECT p.id,p.season_code')) {
@@ -157,7 +220,11 @@ test('el detalle conserva entregas activas y expone el historial completo con re
             status:'delivered',recipient_name:'Titular del abono',delivered_at:'2026-10-22T18:00:00.000Z',
             known_date:true,reason:null,delivered_by:'user-1',delivered_by_name:'Operador'
           },
-          { milestone:4,benefit:'Beneficio 4',benefit_type:'direct',delivery_id:null }
+          {
+            milestone:4,benefit:'Beneficio 4',benefit_type:'direct',delivery_id:'delivery-4-current',
+            status:'delivered',recipient_name:'Destinatario corregido',delivered_at:'2026-10-13T18:00:00.000Z',
+            known_date:true,reason:null,delivered_by:'user-3',delivered_by_name:'Operador final'
+          }
         ] };
       }
       if (sql.includes('p.order_number=$1')) {
@@ -167,29 +234,50 @@ test('el detalle conserva entregas activas y expone el historial completo con re
         return { rowCount:1,rows:[{ sequence_number:1,display_name:'Juego 1',played_on:'2026-10-13' }] };
       }
       if (sql.includes('FROM rewards_deliveries d')) {
-        return { rowCount:3,rows:[
+        return { rowCount:5,rows:[
           {
             id:'delivery-active',milestone:2,benefit:'Beneficio 2',benefit_type:'direct',
             status:'delivered',recipient_name:'Titular del abono',delivered_at:'2026-10-22T18:00:00.000Z',
             known_date:true,reason:null,delivered_by:'user-1',delivered_by_name:'Operador',
-            reversed_at:null,reversed_by:null,reversed_by_name:null,reversal_reason:null
+            reversed_at:null,reversed_by:null,reversed_by_name:null,reversal_reason:null,
+            created_at:'2026-10-22T18:00:00.000Z'
           },
           {
-            id:'delivery-reversed',milestone:4,benefit:'Beneficio 4',benefit_type:'direct',
+            id:'delivery-4-old',milestone:4,benefit:'Beneficio 4',benefit_type:'direct',
             status:'reversed',recipient_name:'Familiar autorizado',delivered_at:'2026-10-21T18:00:00.000Z',
             known_date:true,reason:null,delivered_by:'user-1',delivered_by_name:'Operador',
-            reversed_at:'2026-10-23T18:00:00.000Z',reversed_by:'user-2',
-            reversed_by_name:'Administración',reversal_reason:'Entrega capturada por error'
+            reversed_at:'2026-10-21T19:00:00.000Z',reversed_by:'user-2',
+            reversed_by_name:'Administración',reversal_reason:'Primera corrección',
+            created_at:'2026-10-20T18:00:00.000Z'
+          },
+          {
+            id:'delivery-4-wrong',milestone:4,benefit:'Beneficio 4',benefit_type:'direct',
+            status:'reversed',recipient_name:'Destinatario incorrecto',delivered_at:'2026-10-22T18:00:00.000Z',
+            known_date:true,reason:null,delivered_by:'user-2',delivered_by_name:'Administración',
+            reversed_at:'2026-10-23T18:00:00.000Z',reversed_by:'user-3',
+            reversed_by_name:'Operador final',reversal_reason:'Segunda corrección',
+            created_at:'2026-10-22T18:00:00.000Z'
+          },
+          {
+            id:'delivery-4-current',milestone:4,benefit:'Beneficio 4',benefit_type:'direct',
+            status:'delivered',recipient_name:'Destinatario corregido',delivered_at:'2026-10-13T18:00:00.000Z',
+            known_date:true,reason:null,delivered_by:'user-3',delivered_by_name:'Operador final',
+            reversed_at:null,reversed_by:null,reversed_by_name:null,reversal_reason:null,
+            created_at:'2026-10-24T18:00:00.000Z'
           },
           {
             id:'delivery-legacy',milestone:6,benefit:'Beneficio 6',benefit_type:'direct',
             status:'historical_unreviewed',recipient_name:null,delivered_at:null,
             known_date:false,reason:'Registro anterior',delivered_by:'user-1',delivered_by_name:'Operador',
-            reversed_at:null,reversed_by:null,reversed_by_name:null,reversal_reason:null
+            reversed_at:null,reversed_by:null,reversed_by_name:null,reversal_reason:null,
+            created_at:'2026-10-20T18:00:00.000Z'
           }
         ] };
       }
       throw new Error(`Consulta inesperada: ${sql}`);
+    },
+    async connect() {
+      return { query:(...args) => pool.query(...args),release() {} };
     }
   };
   const base = await listen(createApp({ pool,config }),t);
@@ -199,34 +287,63 @@ test('el detalle conserva entregas activas y expone el historial completo con re
   assert.equal(response.status,200);
   const body = await response.json();
   assert.equal(body.rewards.length,2);
-  assert.deepEqual(body.deliveries,[{
-    id:'delivery-active',milestone:2,status:'delivered',deliveredAt:'2026-10-22T18:00:00.000Z',
-    knownDate:true,reason:null,deliveredBy:'user-1',deliveredByName:'Operador',
-    recipientName:'Titular del abono'
-  }]);
+  assert.equal(body.deliveries.length,2);
   assert.equal(body.deliveryHistory.length,3);
-  assert.deepEqual(body.deliveryHistory[1],{
-    id:'delivery-reversed',milestone:4,benefit:'Beneficio 4',benefitType:'direct',status:'reversed',
-    recipientName:'Familiar autorizado',deliveredAt:'2026-10-21T18:00:00.000Z',knownDate:true,
-    reason:null,deliveredBy:'user-1',deliveredByName:'Operador',
-    reversedAt:'2026-10-23T18:00:00.000Z',reversedBy:'user-2',
-    reversedByName:'Administración',reversalReason:'Entrega capturada por error'
-  });
-  assert.equal(body.deliveryHistory[2].recipientName,null);
+  const milestoneFour = body.deliveryHistory.find((delivery) => delivery.milestone === 4);
+  assert.equal(milestoneFour.id,'delivery-4-current');
+  assert.equal(milestoneFour.status,'delivered');
+  assert.equal(milestoneFour.recipientName,'Destinatario corregido');
+  assert.equal(milestoneFour.versionCount,3);
+  assert.equal(milestoneFour.correctionCount,2);
+  assert.equal(milestoneFour.lastChangedAt,'2026-10-24T18:00:00.000Z');
+  assert.equal(body.deliveryHistory.find((delivery) => delivery.milestone === 6).recipientName,null);
   const historyQuery = calls.find((sql) => sql.includes('FROM rewards_deliveries d'));
   assert.match(historyQuery,/reversed_user\.display_name reversed_by_name/u);
-  assert.match(historyQuery,/ORDER BY COALESCE\(d\.reversed_at,d\.delivered_at,d\.created_at\) DESC/u);
+  assert.match(historyQuery,/\(d\.status<>'reversed'\) DESC/u);
+  assert.match(historyQuery,/d\.created_at DESC,d\.id DESC/u);
+  assert.ok(calls.indexOf('BEGIN') < calls.indexOf('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY'));
+  assert.ok(calls.indexOf('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY') < calls.indexOf('COMMIT'));
+});
+
+test('la proyección conserva solo la corrección más reciente cuando no hay entrega activa',() => {
+  const common = {
+    milestone:2,benefit:'Beneficio 2',benefit_type:'direct',status:'reversed',
+    known_date:true,reason:null,delivered_by:'user-1',delivered_by_name:'Operador',
+    reversed_by:'user-2',reversed_by_name:'Supervisor'
+  };
+  const result = projectCurrentDeliveryHistory([
+    {
+      ...common,id:'10000000-0000-4000-8000-000000000001',recipient_name:'Primera persona',
+      delivered_at:'2026-10-20T12:00:00.000Z',created_at:'2026-10-20T12:00:00.000Z',
+      reversed_at:'2026-10-21T12:00:00.000Z',reversal_reason:'Primera corrección'
+    },
+    {
+      ...common,id:'20000000-0000-4000-8000-000000000002',recipient_name:'Segunda persona',
+      delivered_at:'2026-10-22T12:00:00.000Z',created_at:'2026-10-22T12:00:00.000Z',
+      reversed_at:'2026-10-23T12:00:00.000Z',reversal_reason:'Corrección definitiva'
+    }
+  ]);
+  assert.equal(result.length,1);
+  assert.equal(result[0].id,'20000000-0000-4000-8000-000000000002');
+  assert.equal(result[0].recipientName,'Segunda persona');
+  assert.equal(result[0].versionCount,2);
+  assert.equal(result[0].correctionCount,2);
+  assert.equal(result[0].lastChangedAt,'2026-10-23T12:00:00.000Z');
 });
 
 test('un operador puede revertir una entrega y la corrección queda auditada',async(t) => {
   const csrfToken = 'csrf-token';
+  const deliveryId = '10000000-0000-4000-8000-000000000001';
   const transactionQueries = [];
   const client = {
     async query(sql,params=[]) {
       transactionQueries.push({ sql,params });
       if (sql === 'BEGIN' || sql === 'COMMIT' || sql === 'ROLLBACK') return { rowCount:null,rows:[] };
+      if (sql.includes('FROM rewards_programs') && sql.includes('FOR UPDATE')) {
+        return { rowCount:1,rows:[{ id:'program-1' }] };
+      }
       if (sql.includes('FROM rewards_deliveries') && sql.includes('FOR UPDATE')) {
-        return { rowCount:1,rows:[{ id:'delivery-1',program_id:'program-1',milestone:4 }] };
+        return { rowCount:1,rows:[{ id:deliveryId,program_id:'program-1',milestone:4 }] };
       }
       return { rowCount:1,rows:[] };
     },
@@ -248,12 +365,178 @@ test('un operador puede revertir una entrega y la corrección queda auditada',as
       'x-csrf-token':csrfToken,
       'content-type':'application/json'
     },
-    body:JSON.stringify({ reason:'Corrección operativa desde el perfil del abonado' })
+    body:JSON.stringify({ reason:'Corrección operativa desde el perfil del abonado',deliveryId })
   });
   assert.equal(response.status,204);
   assert.ok(transactionQueries.some((call) => call.sql.includes("SET status='reversed'")));
+  assert.ok(transactionQueries.some((call) => call.sql.includes('id=$3') && call.params[2] === deliveryId));
   assert.ok(transactionQueries.some((call) => call.sql.includes("'delivery.reversed'")));
   assert.equal(transactionQueries.at(-1).sql,'COMMIT');
+});
+
+test('una corrección de cliente antiguo sin deliveryId se rechaza sin tocar la base',async(t) => {
+  const csrfToken = 'csrf-token';
+  let connections = 0;
+  const pool = {
+    async query(sql) {
+      if (sql.includes('SELECT u.*,s.id session_id')) return { rowCount:1,rows:[authenticatedUser(csrfToken)] };
+      if (sql.includes('UPDATE rewards_sessions')) return { rowCount:1,rows:[] };
+      throw new Error(`Consulta inesperada: ${sql}`);
+    },
+    async connect() {
+      connections += 1;
+      throw new Error('No debe abrir una transacción sin precondición de versión');
+    }
+  };
+  const base = await listen(createApp({ pool,config }),t);
+  const response = await fetch(`${base}/api/programs/program-1/deliveries/4`,{
+    method:'DELETE',
+    headers:{
+      cookie:`${SESSION_COOKIE}=session-token; ${CSRF_COOKIE}=${csrfToken}`,
+      'x-csrf-token':csrfToken,
+      'content-type':'application/json'
+    },
+    body:JSON.stringify({ reason:'Intento desde una vista anterior' })
+  });
+  assert.equal(response.status,409);
+  assert.match((await response.json()).error,/actualiza el perfil/i);
+  assert.equal(connections,0);
+});
+
+test('una corrección obsoleta no revierte una reentrega creada por otra sesión',async(t) => {
+  const csrfToken = 'csrf-token';
+  const staleDeliveryId = '10000000-0000-4000-8000-000000000001';
+  const transactionQueries = [];
+  const client = {
+    async query(sql,params=[]) {
+      transactionQueries.push({ sql,params });
+      if (sql === 'BEGIN' || sql === 'COMMIT' || sql === 'ROLLBACK') return { rowCount:null,rows:[] };
+      if (sql.includes('FROM rewards_programs') && sql.includes('FOR UPDATE')) {
+        return { rowCount:1,rows:[{ id:'program-1' }] };
+      }
+      if (sql.includes('FROM rewards_deliveries') && sql.includes('FOR UPDATE')) {
+        assert.equal(params[2],staleDeliveryId);
+        return { rowCount:0,rows:[] };
+      }
+      throw new Error(`Consulta inesperada: ${sql}`);
+    },
+    release() {}
+  };
+  const pool = {
+    async query(sql) {
+      if (sql.includes('SELECT u.*,s.id session_id')) return { rowCount:1,rows:[authenticatedUser(csrfToken)] };
+      if (sql.includes('UPDATE rewards_sessions')) return { rowCount:1,rows:[] };
+      throw new Error(`Consulta inesperada: ${sql}`);
+    },
+    async connect() { return client; }
+  };
+  const base = await listen(createApp({ pool,config }),t);
+  const response = await fetch(`${base}/api/programs/program-1/deliveries/4`,{
+    method:'DELETE',
+    headers:{
+      cookie:`${SESSION_COOKIE}=session-token; ${CSRF_COOKIE}=${csrfToken}`,
+      'x-csrf-token':csrfToken,
+      'content-type':'application/json'
+    },
+    body:JSON.stringify({ reason:'Corrección desde vista obsoleta',deliveryId:staleDeliveryId })
+  });
+  assert.equal(response.status,409);
+  assert.match((await response.json()).error,/otra sesión/i);
+  assert.equal(transactionQueries.at(-1).sql,'ROLLBACK');
+  assert.equal(transactionQueries.some((call) => call.sql.includes('UPDATE rewards_deliveries')),false);
+  assert.equal(transactionQueries.some((call) => call.sql.includes('INSERT INTO rewards_audit')),false);
+});
+
+test('una entrega obsoleta no revive un hito corregido por otra sesión (ABA)',async(t) => {
+  const csrfToken = 'csrf-token';
+  const latestCorrectedId = '40000000-0000-4000-8000-000000000004';
+  const transactionQueries = [];
+  const client = {
+    async query(sql,params=[]) {
+      transactionQueries.push({ sql,params });
+      if (sql === 'BEGIN' || sql === 'COMMIT' || sql === 'ROLLBACK') return { rowCount:null,rows:[] };
+      if (sql.includes('FROM rewards_programs') && sql.includes('FOR UPDATE')) {
+        return { rowCount:1,rows:[{ id:'program-1' }] };
+      }
+      if (sql.includes('FROM rewards_deliveries') && sql.includes('idempotency_key')) {
+        return { rowCount:0,rows:[] };
+      }
+      if (sql.includes('FROM rewards_deliveries') && sql.includes('ORDER BY COALESCE')) {
+        return { rowCount:1,rows:[{ id:latestCorrectedId }] };
+      }
+      throw new Error(`Consulta inesperada: ${sql}`);
+    },
+    release() {}
+  };
+  const pool = {
+    async query(sql) {
+      if (sql.includes('SELECT u.*,s.id session_id')) return { rowCount:1,rows:[authenticatedUser(csrfToken)] };
+      if (sql.includes('UPDATE rewards_sessions')) return { rowCount:1,rows:[] };
+      throw new Error(`Consulta inesperada: ${sql}`);
+    },
+    async connect() { return client; }
+  };
+  const base = await listen(createApp({ pool,config }),t);
+  const response = await fetch(`${base}/api/programs/program-1/deliveries`,{
+    method:'POST',
+    headers:{
+      cookie:`${SESSION_COOKIE}=session-token; ${CSRF_COOKIE}=${csrfToken}`,
+      'x-csrf-token':csrfToken,
+      'content-type':'application/json',
+      'idempotency-key':'50000000-0000-4000-8000-000000000005'
+    },
+    body:JSON.stringify({
+      milestone:2,
+      recipientName:'Persona desde vista anterior',
+      expectedLatestDeliveryId:null
+    })
+  });
+  assert.equal(response.status,409);
+  assert.match((await response.json()).error,/otra sesión/i);
+  assert.equal(transactionQueries.at(-1).sql,'ROLLBACK');
+  assert.equal(transactionQueries.some((call) => call.sql.includes('INSERT INTO rewards_deliveries')),false);
+});
+
+test('un cliente antiguo sin versión esperada no puede crear una entrega nueva',async(t) => {
+  const csrfToken = 'csrf-token';
+  const transactionQueries = [];
+  const client = {
+    async query(sql,params=[]) {
+      transactionQueries.push({ sql,params });
+      if (sql === 'BEGIN' || sql === 'COMMIT' || sql === 'ROLLBACK') return { rowCount:null,rows:[] };
+      if (sql.includes('FROM rewards_programs') && sql.includes('FOR UPDATE')) {
+        return { rowCount:1,rows:[{ id:'program-1' }] };
+      }
+      if (sql.includes('FROM rewards_deliveries') && sql.includes('idempotency_key')) {
+        return { rowCount:0,rows:[] };
+      }
+      throw new Error(`Consulta inesperada: ${sql}`);
+    },
+    release() {}
+  };
+  const pool = {
+    async query(sql) {
+      if (sql.includes('SELECT u.*,s.id session_id')) return { rowCount:1,rows:[authenticatedUser(csrfToken)] };
+      if (sql.includes('UPDATE rewards_sessions')) return { rowCount:1,rows:[] };
+      throw new Error(`Consulta inesperada: ${sql}`);
+    },
+    async connect() { return client; }
+  };
+  const base = await listen(createApp({ pool,config }),t);
+  const response = await fetch(`${base}/api/programs/program-1/deliveries`,{
+    method:'POST',
+    headers:{
+      cookie:`${SESSION_COOKIE}=session-token; ${CSRF_COOKIE}=${csrfToken}`,
+      'x-csrf-token':csrfToken,
+      'content-type':'application/json'
+    },
+    body:JSON.stringify({ milestone:2,recipientName:'Persona autorizada' })
+  });
+  assert.equal(response.status,409);
+  assert.match((await response.json()).error,/actualiza el perfil/i);
+  assert.equal(transactionQueries.at(-1).sql,'ROLLBACK');
+  assert.equal(transactionQueries.some((call) => call.sql.includes('ORDER BY COALESCE')),false);
+  assert.equal(transactionQueries.some((call) => call.sql.includes('INSERT INTO rewards_deliveries')),false);
 });
 
 async function postDeliveryAtVisits(t,visits,{
@@ -270,6 +553,12 @@ async function postDeliveryAtVisits(t,visits,{
       if (sql === 'BEGIN' || sql === 'COMMIT' || sql === 'ROLLBACK') return { rowCount:null,rows:[] };
       if (sql.includes('FROM rewards_programs') && sql.includes('FOR UPDATE')) {
         return { rowCount:1,rows:[{ id:'program-1' }] };
+      }
+      if (sql.includes('FROM rewards_deliveries') && sql.includes('idempotency_key')) {
+        return { rowCount:0,rows:[] };
+      }
+      if (sql.includes('FROM rewards_deliveries') && sql.includes('ORDER BY COALESCE')) {
+        return { rowCount:0,rows:[] };
       }
       if (sql.includes('FROM rewards_catalog')) return { rowCount:1,rows:[{ milestone:2 }] };
       if (sql.includes('count(DISTINCT game_id)')) return { rowCount:1,rows:[{ visits }] };
@@ -303,7 +592,14 @@ async function postDeliveryAtVisits(t,visits,{
       'x-csrf-token':csrfToken,
       'content-type':'application/json'
     },
-    body:JSON.stringify({ milestone:2,historical,unknownDate:historical,recipientName,...payload })
+    body:JSON.stringify({
+      milestone:2,
+      historical,
+      unknownDate:historical,
+      recipientName,
+      expectedLatestDeliveryId:null,
+      ...payload
+    })
   });
   return { response,transactionQueries };
 }
@@ -348,6 +644,42 @@ test('la entrega exige un destinatario válido antes de abrir una transacción',
   assert.equal(connections,0);
 });
 
+test('la entrega rechaza una llave idempotente inválida antes de abrir una transacción',async(t) => {
+  const csrfToken = 'csrf-token';
+  let connections = 0;
+  const pool = {
+    async query(sql) {
+      if (sql.includes('SELECT u.*,s.id session_id')) {
+        return { rowCount:1,rows:[authenticatedUser(csrfToken)] };
+      }
+      if (sql.includes('UPDATE rewards_sessions')) return { rowCount:1,rows:[] };
+      throw new Error(`Consulta inesperada: ${sql}`);
+    },
+    async connect() {
+      connections += 1;
+      throw new Error('No debe abrir transacción con una llave inválida');
+    }
+  };
+  const base = await listen(createApp({ pool,config }),t);
+  const response = await fetch(`${base}/api/programs/program-1/deliveries`,{
+    method:'POST',
+    headers:{
+      cookie:`${SESSION_COOKIE}=session-token; ${CSRF_COOKIE}=${csrfToken}`,
+      'x-csrf-token':csrfToken,
+      'content-type':'application/json',
+      'idempotency-key':'no-es-un-uuid'
+    },
+    body:JSON.stringify({
+      milestone:2,
+      recipientName:'Persona autorizada',
+      expectedLatestDeliveryId:null
+    })
+  });
+  assert.equal(response.status,400);
+  assert.match((await response.json()).error,/llave de confirmación/i);
+  assert.equal(connections,0);
+});
+
 test('la entrega guarda el destinatario normalizado y el actor y la fecha del servidor',async(t) => {
   const delivery = await postDeliveryAtVisits(t,3,{
     recipientName:'  Familiar autorizado  ',
@@ -367,6 +699,73 @@ test('la entrega guarda el destinatario normalizado y el actor y la fecha del se
   assert.notEqual(insert.params[3].toISOString(),'2000-01-01T00:00:00.000Z');
   assert.equal(insert.params[5],true);
   assert.equal(insert.params[8],'Familiar autorizado');
+});
+
+test('un retry con la misma llave idempotente devuelve la entrega original sin duplicar auditoría',async(t) => {
+  const csrfToken = 'csrf-token';
+  const idempotencyKey = '30000000-0000-4000-8000-000000000003';
+  const transactionQueries = [];
+  const client = {
+    async query(sql,params=[]) {
+      transactionQueries.push({ sql,params });
+      if (sql === 'BEGIN' || sql === 'COMMIT' || sql === 'ROLLBACK') return { rowCount:null,rows:[] };
+      if (sql.includes('FROM rewards_programs') && sql.includes('FOR UPDATE')) {
+        return { rowCount:1,rows:[{ id:'program-1' }] };
+      }
+      if (sql.includes('FROM rewards_catalog')) return { rowCount:1,rows:[{ milestone:2 }] };
+      if (sql.includes('count(DISTINCT game_id)')) return { rowCount:1,rows:[{ visits:3 }] };
+      if (sql.includes('INSERT INTO rewards_deliveries')) return { rowCount:0,rows:[] };
+      if (sql.includes('FROM rewards_deliveries') && sql.includes('idempotency_key')) {
+        assert.deepEqual(params,[authenticatedUser().id,idempotencyKey]);
+        return { rowCount:1,rows:[{
+          id:'delivery-original',program_id:'program-1',milestone:2,status:'delivered',
+          recipient_name:'Persona autorizada',known_date:true,reason:null,
+          idempotency_key:idempotencyKey
+        }] };
+      }
+      throw new Error(`Consulta inesperada: ${sql}`);
+    },
+    release() {}
+  };
+  const pool = {
+    async query(sql) {
+      if (sql.includes('SELECT u.*,s.id session_id')) return { rowCount:1,rows:[authenticatedUser(csrfToken)] };
+      if (sql.includes('UPDATE rewards_sessions')) return { rowCount:1,rows:[] };
+      throw new Error(`Consulta inesperada: ${sql}`);
+    },
+    async connect() { return client; }
+  };
+  const base = await listen(createApp({ pool,config }),t);
+  const response = await fetch(`${base}/api/programs/program-1/deliveries`,{
+    method:'POST',
+    headers:{
+      cookie:`${SESSION_COOKIE}=session-token; ${CSRF_COOKIE}=${csrfToken}`,
+      'x-csrf-token':csrfToken,
+      'content-type':'application/json',
+      'idempotency-key':idempotencyKey
+    },
+    body:JSON.stringify({ milestone:2,recipientName:'Persona autorizada' })
+  });
+  assert.equal(response.status,200);
+  const body = await response.json();
+  assert.equal(body.id,'delivery-original');
+  assert.equal(body.idempotentReplay,true);
+  assert.equal(transactionQueries.some((call) => call.sql.includes('INSERT INTO rewards_audit')),false);
+  assert.equal(transactionQueries.at(-1).sql,'COMMIT');
+
+  const changedPayload = await fetch(`${base}/api/programs/program-1/deliveries`,{
+    method:'POST',
+    headers:{
+      cookie:`${SESSION_COOKIE}=session-token; ${CSRF_COOKIE}=${csrfToken}`,
+      'x-csrf-token':csrfToken,
+      'content-type':'application/json',
+      'idempotency-key':idempotencyKey
+    },
+    body:JSON.stringify({ milestone:2,recipientName:'Otra persona' })
+  });
+  assert.equal(changedPayload.status,409);
+  assert.match((await changedPayload.json()).error,/datos diferentes/i);
+  assert.equal(transactionQueries.at(-1).sql,'ROLLBACK');
 });
 
 test('la entrega histórica conserva su fecha explícita y también exige destinatario',async(t) => {

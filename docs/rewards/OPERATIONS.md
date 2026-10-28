@@ -81,6 +81,10 @@ npm run provision -- --email correo@charrosdejalisco.com
 - Antes de un cambio de esquema, confirma respaldo y plan persistente de PostgreSQL.
 - Rewards no está declarado en el `render.yaml` raíz, que pertenece al CRM; su servicio está configurado directamente en Render y estos valores deben compararse con la tabla anterior después de cualquier traspaso.
 
+El inicio de sesión permite que el equipo comparta la misma red: los accesos correctos no consumen la cuota de fallos. Se limitan 30 intentos fallidos por IP y 5 por combinación IP + correo durante 15 minutos.
+
+Cuando un cambio haga obligatorios nuevos identificadores de versión en las mutaciones, publica primero el frontend compatible y después el API. De esta forma, una pestaña antigua puede recibir un conflicto seguro y solicitar actualización, pero nunca modificar una entrega distinta.
+
 ## Secuencia de publicación
 
 1. Ejecuta pruebas y build local de ambos módulos.

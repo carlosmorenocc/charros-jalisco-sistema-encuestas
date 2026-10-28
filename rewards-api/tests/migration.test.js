@@ -5,6 +5,18 @@ import fs from 'node:fs/promises';
 const rosterMigrationUrl = new URL('../migrations/004_rewards_roster_normalization.sql',import.meta.url);
 const attendanceMigrationUrl = new URL('../migrations/005_attendance_aliases_and_authoritative_roster_corrections.sql',import.meta.url);
 
+test('PostgreSQL garantiza una sola entrega activa por programa e hito',async() => {
+  const sql = await fs.readFile(new URL('../migrations/001_rewards_core.sql',import.meta.url),'utf8');
+  assert.match(
+    sql,
+    /CREATE UNIQUE INDEX rewards_delivery_active_unique ON rewards_deliveries\(program_id,milestone\) WHERE status <> 'reversed';/u
+  );
+  assert.match(
+    sql,
+    /CREATE UNIQUE INDEX rewards_delivery_idempotency_unique ON rewards_deliveries\(delivered_by,idempotency_key\) WHERE idempotency_key IS NOT NULL;/u
+  );
+});
+
 test('la migración operativa configura exactamente los 34 juegos locales',async() => {
   const sql = await fs.readFile(new URL('../migrations/003_operational_rewards.sql',import.meta.url),'utf8');
   const gamesBlock = sql.split('INSERT INTO rewards_games')[1].split('ON CONFLICT (played_on)')[0];

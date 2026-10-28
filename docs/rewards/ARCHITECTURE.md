@@ -26,8 +26,8 @@ charros-rewards-postgres (PostgreSQL en Render)
 
 | Componente | Responsabilidad |
 |---|---|
-| `rewards-web` | Login, resumen, búsqueda, filtros, perfil, entregas reversibles e importación administrativa |
-| `rewards-api/src/app.js` | Autenticación, autorización, consultas, entregas, importaciones y auditoría |
+| `rewards-web` | Login, resumen, búsqueda, filtros, perfil, entregas reversibles, sincronización de cambios concurrentes e importación administrativa |
+| `rewards-api/src/app.js` | Autenticación, autorización, consultas consistentes, entregas idempotentes con control de versión, importaciones y auditoría |
 | `rewards-api/src/workbook.js` | Lectura, normalización, exclusiones y conciliación de Excel |
 | `rewards-api/src/segments.js` | Fuente única de clasificación VIP/Preferente/General |
 | `rewards-api/migrations/` | Esquema acumulativo, catálogo y calendario |
@@ -41,5 +41,7 @@ charros-rewards-postgres (PostgreSQL en Render)
 - Temporada configurada: `LMP-2026-27`, 34 juegos regulares como local y sin playoffs.
 
 En producción deben mantenerse `SESSION_COOKIE_SECURE=true` y `SESSION_COOKIE_SAME_SITE=none`, porque Vercel y Render usan dominios distintos. `CORS_ORIGIN` debe contener únicamente el dominio HTTPS exacto del frontend.
+
+El detalle de una butaca se lee en una transacción `REPEATABLE READ` para no mezclar versiones durante una entrega. Mientras el perfil está abierto, el frontend actualiza su estado al recuperar foco y cada 15 segundos cuando la pestaña está visible. PostgreSQL sigue siendo la autoridad: un conflicto concurrente provoca resincronización y nunca una confirmación local falsa.
 
 Consulta [INDEX.md](INDEX.md) para abrir solo la documentación necesaria de cada flujo.

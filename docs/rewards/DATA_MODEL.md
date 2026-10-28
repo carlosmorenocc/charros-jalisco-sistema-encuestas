@@ -15,7 +15,7 @@ La base es PostgreSQL independiente del CRM. Todas las tablas del módulo usan e
 | `rewards_imports` | Trazabilidad de archivos | SHA-256 único; evita importar dos veces el mismo archivo |
 | `rewards_attendance` | Asistencia conciliada | Única por programa + juego |
 | `rewards_catalog` | Hitos pares del 2 al 30 | Beneficio y tipo directo/sorteo |
-| `rewards_deliveries` | Entregas, destinatarios y reversiones | Solo una entrega no revertida por programa + hito; cada nueva entrega conserva destinatario, fecha y actor |
+| `rewards_deliveries` | Versiones de entrega, destinatarios y reversiones | Solo una entrega no revertida por programa + hito; cada versión conserva destinatario, fecha, actor e idempotencia |
 | `rewards_audit` | Bitácora interna | Registra importaciones, entregas y correcciones; no necesita vista pública |
 
 La identidad operativa no se deduplica por correo o teléfono porque un comprador puede controlar varias butacas y familiares pueden compartir datos de contacto.
@@ -24,7 +24,11 @@ La identidad operativa no se deduplica por correo o teléfono porque un comprado
 
 Cada fila de `rewards_deliveries` pertenece a una butaca/programa y a un hito. `recipient_name` identifica a quien recibió físicamente el beneficio; no sustituye al titular ni modifica la identidad del programa. Para toda nueva entrega es obligatorio, se normaliza antes de persistirlo y la fecha de entrega se genera en el servidor.
 
-Las filas históricas creadas antes de incorporar este dato pueden conservar `recipient_name = NULL`: la interfaz las presenta como “Destinatario no registrado” y nunca infiere que el titular fue quien recibió. Una reversión marca la fila original, conserva sus datos y permite crear una nueva entrega corregida. El estado activo de los círculos considera únicamente la entrega no revertida; el historial incluye ambas.
+Las filas históricas creadas antes de incorporar este dato pueden conservar `recipient_name = NULL`: la interfaz las presenta como “Destinatario no registrado” y nunca infiere que el titular fue quien recibió. Una reversión marca la fila original, conserva sus datos y permite crear una nueva entrega corregida. El estado activo de los círculos considera únicamente la entrega no revertida.
+
+La API proyecta esas filas como un único estado operativo por hito: prefiere la entrega activa y, si no existe, devuelve la corrección más reciente. Incluye `versionCount` y `correctionCount` para informar que hubo ajustes sin repetir tarjetas en pantalla. Esta proyección no compacta ni elimina filas de PostgreSQL ni entradas de `rewards_audit`.
+
+El índice parcial `rewards_delivery_active_unique` impide más de una entrega activa por programa e hito. Las mutaciones se serializan con el bloqueo del programa y usan precondiciones de versión: `deliveryId` para corregir y `expectedLatestDeliveryId` para entregar. Así, una sesión desactualizada recibe conflicto y nunca modifica una versión que no vio. `idempotency_key` permite recuperar exactamente la misma confirmación sin una segunda inserción; un payload diferente con la misma llave se rechaza.
 
 Las correcciones verificadas con Boleto Móvil conservan el `id` y `permanent_key` del programa cuando solo cambia su dato comercial. Si una butaca fue reasignada y ya registró accesos con una orden anterior, la llave anterior se guarda en `rewards_program_aliases`; las asistencias nuevas e históricas terminan en el mismo `program_id` y, por tanto, en un solo contador de recompensas.
 

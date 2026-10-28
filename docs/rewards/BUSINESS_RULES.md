@@ -56,8 +56,10 @@ Existen 15 hitos pares: 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28 y 30.
 - Una entrega activa sombrea el hito.
 - Toda nueva entrega debe registrar el nombre de la persona que recibe el beneficio. Puede ser el titular de la butaca o una persona autorizada por él.
 - La fecha y hora de entrega las asigna el servidor al confirmar; el cliente no puede modificarlas. También se conserva la cuenta institucional que realizó el registro.
-- Un segundo clic confirmado revierte la entrega de forma lógica y conserva actor, fecha y motivo en la trazabilidad.
-- Una corrección no elimina la entrega original. El historial muestra tanto la entrega corregida como una eventual entrega posterior, cada una con destinatario, fecha y actor propios.
+- Un segundo clic confirmado revierte la entrega de forma lógica y conserva actor, fecha y motivo en la trazabilidad interna.
+- Una corrección no elimina la entrega original. La vista operativa mantiene una sola tarjeta por hito y la reemplaza automáticamente con su estado vigente o su última versión corregida; PostgreSQL conserva por separado todas las versiones, destinatarios, fechas y actores para auditoría.
+- Cada entrega y corrección valida la versión exacta que el usuario tenía abierta. Si otra sesión la cambió primero, la operación obsoleta no modifica datos y el perfil se sincroniza con la versión vigente.
+- El reintento de una misma confirmación usa una llave idempotente: una respuesta perdida puede recuperarse sin duplicar la entrega, pero la misma llave no puede reutilizarse con datos distintos.
 - Administrador y usuarios de consulta pueden registrar o corregir entregas.
 
 ## Catálogo

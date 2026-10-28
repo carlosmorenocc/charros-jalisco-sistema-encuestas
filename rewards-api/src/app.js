@@ -3,7 +3,7 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
-import rateLimit from 'express-rate-limit';
+import rateLimit,{ ipKeyGenerator } from 'express-rate-limit';
 import { digest, normalizeEmail, randomToken, verifyPassword, hashPassword } from './security.js';
 import { inspectWorkbook } from './workbook.js';
 import { SEGMENTS, classifySegment, parseSegments } from './segments.js';
@@ -40,6 +40,67 @@ const normalizeRecipientName = (value) => {
     throw httpError(400,'El nombre de quien recibe la recompensa contiene caracteres no permitidos');
   }
   return recipientName;
+};
+
+const deliveryVersionTimestamp = (delivery) => {
+  const value = delivery.status === 'reversed'
+    ? (delivery.reversed_at || delivery.created_at || delivery.delivered_at)
+    : (delivery.created_at || delivery.delivered_at);
+  const timestamp = value ? new Date(value).getTime() : 0;
+  return Number.isFinite(timestamp) ? timestamp : 0;
+};
+
+const isNewerDeliveryVersion = (candidate,current) => {
+  const candidateActive = candidate.status !== 'reversed';
+  const currentActive = current.status !== 'reversed';
+  if (candidateActive !== currentActive) return candidateActive;
+  const timestampDifference = deliveryVersionTimestamp(candidate) - deliveryVersionTimestamp(current);
+  if (timestampDifference !== 0) return timestampDifference > 0;
+  return String(candidate.id).localeCompare(String(current.id)) > 0;
+};
+
+export const projectCurrentDeliveryHistory = (rows) => {
+  const milestones = new Map();
+  for (const delivery of rows) {
+    const existing = milestones.get(delivery.milestone) || {
+      current:delivery,
+      versionCount:0,
+      correctionCount:0
+    };
+    existing.versionCount += 1;
+    if (delivery.status === 'reversed') existing.correctionCount += 1;
+    if (isNewerDeliveryVersion(delivery,existing.current)) existing.current = delivery;
+    milestones.set(delivery.milestone,existing);
+  }
+  return [...milestones.values()]
+    .map(({ current,versionCount,correctionCount }) => ({
+      id:current.id,
+      milestone:current.milestone,
+      benefit:current.benefit,
+      benefitType:current.benefit_type,
+      status:current.status,
+      recipientName:current.recipient_name ?? null,
+      deliveredAt:current.delivered_at,
+      knownDate:current.known_date,
+      reason:current.reason,
+      deliveredBy:current.delivered_by,
+      deliveredByName:current.delivered_by_name,
+      reversedAt:current.reversed_at,
+      reversedBy:current.reversed_by,
+      reversedByName:current.reversed_by_name,
+      reversalReason:current.reversal_reason,
+      createdAt:current.created_at,
+      lastChangedAt:current.status === 'reversed'
+        ? (current.reversed_at || current.created_at)
+        : current.created_at,
+      versionCount,
+      correctionCount
+    }))
+    .sort((left,right) => {
+      const timestampDifference = new Date(right.lastChangedAt || 0).getTime()
+        - new Date(left.lastChangedAt || 0).getTime();
+      return timestampDifference || right.milestone - left.milestone;
+    });
 };
 
 export function createApp({ pool, config }) {
@@ -120,6 +181,24 @@ export function createApp({ pool, config }) {
     next();
   };
 
+  const loginIpLimiter = rateLimit({
+    windowMs:15*60*1000,
+    limit:30,
+    standardHeaders:'draft-8',
+    legacyHeaders:false,
+    skipSuccessfulRequests:true,
+    message:{ error:'Demasiados intentos fallidos desde esta red; espera 15 minutos' }
+  });
+  const loginAccountLimiter = rateLimit({
+    windowMs:15*60*1000,
+    limit:5,
+    standardHeaders:'draft-8',
+    legacyHeaders:false,
+    skipSuccessfulRequests:true,
+    keyGenerator:(req) => `${ipKeyGenerator(req.ip)}:${normalizeEmail(req.body?.email) || 'sin-correo'}`,
+    message:{ error:'Demasiados intentos fallidos para esta cuenta; espera 15 minutos' }
+  });
+
   app.get('/ready',async(_req,res) => {
     await pool.query('SELECT 1');
     res.json({ ok:true,service:'charros-rewards-api' });
@@ -145,7 +224,7 @@ export function createApp({ pool, config }) {
     }
   );
 
-  app.post('/api/auth/login',rateLimit({ windowMs:15*60*1000,limit:5,standardHeaders:'draft-8',legacyHeaders:false }),async(req,res) => {
+  app.post('/api/auth/login',loginIpLimiter,loginAccountLimiter,async(req,res) => {
     const email = normalizeEmail(req.body?.email);
     const password = String(req.body?.password || '');
     if (!email || !password) return res.status(400).json({ error:'Correo y contraseña son obligatorios' });
@@ -325,18 +404,19 @@ export function createApp({ pool, config }) {
   });
 
   app.get('/api/programs/:id',authenticate,async(req,res) => {
-    const result = await pool.query(`
-      SELECT p.id,p.season_code,p.holder_name,p.holder_email,p.holder_phone,p.order_number,
-             p.purchase_code,p.segment,p.zone,p.section,p.seat,p.source_event,
-             count(DISTINCT a.game_id)::int visits
-      FROM rewards_programs p
-      LEFT JOIN rewards_attendance a ON a.program_id=p.id
-      WHERE p.id=$1 AND p.active AND p.eligibility_status='eligible'
-      GROUP BY p.id
-    `,[req.params.id]);
-    if (!result.rowCount) return res.status(404).json({ error:'Abono no encontrado' });
-    const [rewards,seats,attendance,deliveryHistory] = await Promise.all([
-      pool.query(`
+    const detail = await transaction(pool,async(client) => {
+      await client.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY');
+      const result = await client.query(`
+        SELECT p.id,p.season_code,p.holder_name,p.holder_email,p.holder_phone,p.order_number,
+               p.purchase_code,p.segment,p.zone,p.section,p.seat,p.source_event,
+               count(DISTINCT a.game_id)::int visits
+        FROM rewards_programs p
+        LEFT JOIN rewards_attendance a ON a.program_id=p.id
+        WHERE p.id=$1 AND p.active AND p.eligibility_status='eligible'
+        GROUP BY p.id
+      `,[req.params.id]);
+      if (!result.rowCount) throw httpError(404,'Abono no encontrado');
+      const rewards = await client.query(`
         SELECT c.*,d.id delivery_id,d.status,d.delivered_at,d.known_date,
                d.reason,d.recipient_name,d.delivered_by,u.display_name delivered_by_name
         FROM rewards_catalog c
@@ -344,8 +424,8 @@ export function createApp({ pool, config }) {
           ON d.program_id=$1 AND d.milestone=c.milestone AND d.status<>'reversed'
         LEFT JOIN rewards_users u ON u.id=d.delivered_by
         ORDER BY c.milestone
-      `,[req.params.id]),
-      pool.query(`
+      `,[req.params.id]);
+      const seats = await client.query(`
         SELECT p.id,p.segment,p.zone,p.section,p.seat,count(DISTINCT a.game_id)::int visits
         FROM rewards_programs p
         LEFT JOIN rewards_attendance a ON a.program_id=p.id
@@ -355,30 +435,33 @@ export function createApp({ pool, config }) {
           AND p.season_code=$2
         GROUP BY p.id
         ORDER BY p.zone,p.section,p.seat
-      `,[result.rows[0].order_number,result.rows[0].season_code]),
-      pool.query(`
+      `,[result.rows[0].order_number,result.rows[0].season_code]);
+      const attendance = await client.query(`
         SELECT g.sequence_number,g.display_name,g.played_on,a.scanned_at
         FROM rewards_attendance a
         JOIN rewards_games g ON g.id=a.game_id
         WHERE a.program_id=$1
         ORDER BY g.sequence_number
-      `,[req.params.id]),
-      pool.query(`
+      `,[req.params.id]);
+      const deliveryHistory = await client.query(`
         SELECT d.id,d.milestone,c.benefit,c.benefit_type,d.status,d.recipient_name,
                d.delivered_at,d.known_date,d.reason,d.delivered_by,
                delivered_user.display_name delivered_by_name,
                d.reversed_at,d.reversed_by,reversed_user.display_name reversed_by_name,
-               d.reversal_reason
+               d.reversal_reason,d.created_at
         FROM rewards_deliveries d
         JOIN rewards_catalog c ON c.milestone=d.milestone
         LEFT JOIN rewards_users delivered_user ON delivered_user.id=d.delivered_by
         LEFT JOIN rewards_users reversed_user ON reversed_user.id=d.reversed_by
         WHERE d.program_id=$1
-        ORDER BY COALESCE(d.reversed_at,d.delivered_at,d.created_at) DESC,
-                 d.created_at DESC,d.milestone DESC
-      `,[req.params.id])
-    ]);
-    const deliveries = rewards.rows
+        ORDER BY d.milestone,
+                 (d.status<>'reversed') DESC,
+                 CASE WHEN d.status='reversed' THEN d.reversed_at ELSE d.created_at END DESC NULLS LAST,
+                 d.created_at DESC,d.id DESC
+      `,[req.params.id]);
+      return { result,rewards,seats,attendance,deliveryHistory };
+    });
+    const deliveries = detail.rewards.rows
       .filter((reward) => reward.delivery_id)
       .map((reward) => ({
         id:reward.delivery_id,
@@ -391,30 +474,14 @@ export function createApp({ pool, config }) {
         deliveredByName:reward.delivered_by_name,
         recipientName:reward.recipient_name ?? null
       }));
-    const deliveryHistoryItems = deliveryHistory.rows.map((delivery) => ({
-      id:delivery.id,
-      milestone:delivery.milestone,
-      benefit:delivery.benefit,
-      benefitType:delivery.benefit_type,
-      status:delivery.status,
-      recipientName:delivery.recipient_name ?? null,
-      deliveredAt:delivery.delivered_at,
-      knownDate:delivery.known_date,
-      reason:delivery.reason,
-      deliveredBy:delivery.delivered_by,
-      deliveredByName:delivery.delivered_by_name,
-      reversedAt:delivery.reversed_at,
-      reversedBy:delivery.reversed_by,
-      reversedByName:delivery.reversed_by_name,
-      reversalReason:delivery.reversal_reason
-    }));
+    const deliveryHistoryItems = projectCurrentDeliveryHistory(detail.deliveryHistory.rows);
     res.json({
-      program:result.rows[0],
-      rewards:rewards.rows,
+      program:detail.result.rows[0],
+      rewards:detail.rewards.rows,
       deliveries,
       deliveryHistory:deliveryHistoryItems,
-      seats:seats.rows,
-      attendance:attendance.rows
+      seats:detail.seats.rows,
+      attendance:detail.attendance.rows
     });
   });
 
@@ -438,8 +505,37 @@ export function createApp({ pool, config }) {
         return res.status(400).json({ error:'Indica la fecha conocida de la entrega histórica' });
       }
     }
+    const deliveryReason = String(req.body?.reason || '').trim() || null;
     const requestedIdempotency = req.get('idempotency-key');
+    if (requestedIdempotency && !isUuid(requestedIdempotency)) {
+      return res.status(400).json({ error:'La llave de confirmación no es válida' });
+    }
     const idempotency = isUuid(requestedIdempotency) ? requestedIdempotency : crypto.randomUUID();
+    const hasExpectedLatestDeliveryId = Object.prototype.hasOwnProperty.call(
+      req.body || {},
+      'expectedLatestDeliveryId'
+    );
+    const expectedLatestDeliveryId = req.body?.expectedLatestDeliveryId === null
+      ? null
+      : String(req.body?.expectedLatestDeliveryId || '').trim();
+    const validExpectedLatestDeliveryId = hasExpectedLatestDeliveryId
+      && (expectedLatestDeliveryId === null || isUuid(expectedLatestDeliveryId));
+    const matchesIdempotentRequest = (existing) => {
+      if (existing.program_id !== req.params.id
+          || existing.milestone !== milestone
+          || existing.status !== status
+          || existing.known_date !== knownDate
+          || existing.recipient_name !== recipientName
+          || (existing.reason ?? null) !== deliveryReason) {
+        return false;
+      }
+      if (!historical) return true;
+      const existingTimestamp = existing.delivered_at
+        ? new Date(existing.delivered_at).getTime()
+        : null;
+      const requestedTimestamp = deliveredAt ? deliveredAt.getTime() : null;
+      return existingTimestamp === requestedTimestamp;
+    };
     const delivery = await transaction(pool,async(client) => {
       const program = await client.query(`
         SELECT id
@@ -448,6 +544,31 @@ export function createApp({ pool, config }) {
         FOR UPDATE
       `,[req.params.id]);
       if (!program.rowCount) throw httpError(404,'Abono no encontrado');
+      const existingIdempotent = await client.query(`
+        SELECT *
+        FROM rewards_deliveries
+        WHERE delivered_by=$1 AND idempotency_key=$2
+      `,[req.user.id,idempotency]);
+      if (existingIdempotent.rowCount) {
+        if (matchesIdempotentRequest(existingIdempotent.rows[0])) {
+          return { ...existingIdempotent.rows[0],idempotentReplay:true };
+        }
+        throw httpError(409,'La llave de confirmación ya fue utilizada con datos diferentes');
+      }
+      if (!validExpectedLatestDeliveryId) {
+        throw httpError(409,'Actualiza el perfil antes de entregar: falta identificar la versión vigente del hito');
+      }
+      const latestVersion = await client.query(`
+        SELECT id
+        FROM rewards_deliveries
+        WHERE program_id=$1 AND milestone=$2
+        ORDER BY COALESCE(reversed_at,created_at) DESC,created_at DESC,id DESC
+        LIMIT 1
+      `,[req.params.id,milestone]);
+      const latestDeliveryId = latestVersion.rows[0]?.id ?? null;
+      if (latestDeliveryId !== expectedLatestDeliveryId) {
+        throw httpError(409,'La entrega cambió desde otra sesión; actualiza el perfil antes de continuar');
+      }
       const catalog = await client.query('SELECT milestone FROM rewards_catalog WHERE milestone=$1',[milestone]);
       if (!catalog.rowCount) throw httpError(400,'Hito de recompensa inválido');
       const eligibility = await client.query(`
@@ -461,41 +582,69 @@ export function createApp({ pool, config }) {
       const inserted = await client.query(`
         INSERT INTO rewards_deliveries(
           program_id,milestone,status,delivered_at,delivered_by,known_date,reason,idempotency_key,
-          recipient_name
+          recipient_name,created_at
         )
-        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,clock_timestamp())
         ON CONFLICT DO NOTHING
         RETURNING *
       `,[
         req.params.id,milestone,status,deliveredAt,req.user.id,knownDate,
-        req.body?.reason || null,idempotency,recipientName
+        deliveryReason,idempotency,recipientName
       ]);
-      if (!inserted.rowCount) throw httpError(409,'Esta entrega ya estaba registrada');
+      if (!inserted.rowCount) {
+        const replay = await client.query(`
+          SELECT *
+          FROM rewards_deliveries
+          WHERE delivered_by=$1 AND idempotency_key=$2
+        `,[req.user.id,idempotency]);
+        if (replay.rowCount && matchesIdempotentRequest(replay.rows[0])) {
+          return { ...replay.rows[0],idempotentReplay:true };
+        }
+        throw httpError(409,'Esta entrega ya estaba registrada');
+      }
       await client.query(`
         INSERT INTO rewards_audit(actor_id,action,entity_type,entity_id,metadata)
         VALUES($1,'delivery.recorded','program',$2,$3)
       `,[req.user.id,req.params.id,JSON.stringify({ milestone,status })]);
       return inserted.rows[0];
     });
-    res.status(201).json({ ...delivery,recipientName:delivery.recipient_name });
+    res.status(delivery.idempotentReplay ? 200 : 201).json({
+      ...delivery,
+      recipientName:delivery.recipient_name
+    });
   });
 
   app.delete('/api/programs/:id/deliveries/:milestone',authenticate,csrf,async(req,res) => {
+    const deliveryId = String(req.body?.deliveryId || '').trim();
+    if (!isUuid(deliveryId)) {
+      return res.status(409).json({
+        error:'Actualiza el perfil antes de corregir: falta identificar la versión vigente de la entrega'
+      });
+    }
     const milestone = Number(req.params.milestone);
     if (!Number.isInteger(milestone)) return res.status(400).json({ error:'Hito de recompensa inválido' });
     const reason = String(req.body?.reason || 'Corrección manual desde el perfil').trim();
     await transaction(pool,async(client) => {
+      const program = await client.query(`
+        SELECT id
+        FROM rewards_programs
+        WHERE id=$1
+        FOR UPDATE
+      `,[req.params.id]);
+      if (!program.rowCount) throw httpError(404,'Abono no encontrado');
       const current = await client.query(`
         SELECT id,program_id,milestone
         FROM rewards_deliveries
-        WHERE program_id=$1 AND milestone=$2 AND status<>'reversed'
+        WHERE program_id=$1 AND milestone=$2 AND id=$3 AND status<>'reversed'
         FOR UPDATE
-      `,[req.params.id,milestone]);
-      if (!current.rowCount) throw httpError(404,'Entrega activa no localizada');
+      `,[req.params.id,milestone,deliveryId]);
+      if (!current.rowCount) {
+        throw httpError(409,'La entrega cambió desde otra sesión; actualiza el perfil antes de corregir');
+      }
       await client.query(`
         UPDATE rewards_deliveries
-        SET status='reversed',reversed_at=now(),reversed_by=$1,reversal_reason=$2
-        WHERE id=$3
+        SET status='reversed',reversed_at=clock_timestamp(),reversed_by=$1,reversal_reason=$2
+        WHERE id=$3 AND status<>'reversed'
       `,[req.user.id,reason,current.rows[0].id]);
       await client.query(`
         INSERT INTO rewards_audit(actor_id,action,entity_type,entity_id,reason,metadata)
@@ -530,6 +679,18 @@ export function createApp({ pool, config }) {
   app.post('/api/admin/deliveries/:id/reverse',authenticate,csrf,async(req,res) => {
     const reason = String(req.body?.reason || 'Corrección manual desde el perfil').trim();
     await transaction(pool,async(client) => {
+      const target = await client.query(`
+        SELECT program_id
+        FROM rewards_deliveries
+        WHERE id=$1
+      `,[req.params.id]);
+      if (!target.rowCount) throw httpError(404,'Entrega no localizada');
+      await client.query(`
+        SELECT id
+        FROM rewards_programs
+        WHERE id=$1
+        FOR UPDATE
+      `,[target.rows[0].program_id]);
       const current = await client.query(`
         SELECT id,program_id,milestone
         FROM rewards_deliveries
@@ -539,8 +700,8 @@ export function createApp({ pool, config }) {
       if (!current.rowCount) throw httpError(404,'Entrega no localizada o ya revertida');
       await client.query(`
         UPDATE rewards_deliveries
-        SET status='reversed',reversed_at=now(),reversed_by=$1,reversal_reason=$2
-        WHERE id=$3
+        SET status='reversed',reversed_at=clock_timestamp(),reversed_by=$1,reversal_reason=$2
+        WHERE id=$3 AND status<>'reversed'
       `,[req.user.id,reason,req.params.id]);
       await client.query(`
         INSERT INTO rewards_audit(actor_id,action,entity_type,entity_id,reason,metadata)
