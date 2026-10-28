@@ -163,6 +163,7 @@ test('corrige orden, programas y titular en sitio sin tocar sus identificadores'
   assert.equal(audit.params.includes(targetOrder),false);
   assert.equal(audit.params.includes(correctedEmail),false);
   assert.deepEqual(audit.params,[orderId,2,'boleto-movil-verified']);
+  assert.match(audit.sql,/'programCount',\$2::integer,'reasonCode',\$3::text/u);
   for (const tag of ['orders','programs','holder-program-count','holder']) {
     assert.match(client.calls.find((call) => call.tag === tag).sql,/FOR UPDATE/u);
   }

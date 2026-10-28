@@ -316,7 +316,7 @@ export async function applyAuthoritativeOrderCorrection(client, config) {
     VALUES(
       'roster.authoritative_correction','order',$1,'Verified commercial correction',
       jsonb_build_object(
-        'programCount',$2,'reasonCode',$3
+        'programCount',$2::integer,'reasonCode',$3::text
       )
     )
   `,[
