@@ -2,9 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   applyAuthoritativeOrderCorrection,
+  AuthoritativeCorrectionError,
   holderIdentityKey,
   parseAuthoritativeOrderCorrection,
-  programSetSha256
+  programSetSha256,
+  safeCorrectionFailureLog
 } from '../src/authoritative-order-correction.js';
 
 const sourceOrder = 'ORDER-SOURCE';
@@ -43,6 +45,14 @@ function correction(overrides = {}) {
     reasonCode:'boleto-movil-verified',
     ...overrides
   }));
+}
+
+function assertCorrectionError(action, expectedCode) {
+  assert.throws(action,(error) => (
+    error instanceof AuthoritativeCorrectionError
+    && error.code === expectedCode
+    && error.message === 'Authoritative order correction validation failed.'
+  ));
 }
 
 function fakeClient({ alreadyApplied = false, orderActive = true } = {}) {
@@ -94,17 +104,32 @@ test('la correccion temporal se configura sin guardar datos operativos en el cod
   const parsed = correction();
   assert.equal(parsed.fromOrder,sourceOrder);
   assert.equal(parsed.correctedEmail,correctedEmail);
-  assert.throws(
-    () => correction({ unexpected:'field' }),
-    /unsupported fields/u
-  );
-  assert.throws(
+  assertCorrectionError(() => correction({ unexpected:'field' }),'CONFIG_UNSUPPORTED_FIELD');
+  assertCorrectionError(
     () => correction({ expectedProgramSetSha256:'not-a-digest' }),
-    /SHA-256/u
+    'CONFIG_DIGEST_INVALID'
   );
-  assert.throws(
-    () => correction({ reasonCode:'free-form-value' }),
-    /not supported/u
+  assertCorrectionError(() => correction({ reasonCode:'free-form-value' }),'CONFIG_REASON_INVALID');
+});
+
+test('los diagnosticos no exponen valores privados ni errores inesperados',() => {
+  const known = new AuthoritativeCorrectionError('HOLDER_IDENTITY_MISMATCH');
+  assert.equal(
+    safeCorrectionFailureLog(known),
+    'Authoritative order correction failed [HOLDER_IDENTITY_MISMATCH]; no correction was committed.'
+  );
+  const unexpected = new Error(`${sourceOrder} ${targetOrder} ${correctedEmail}`);
+  const safeMessage = safeCorrectionFailureLog(unexpected);
+  assert.equal(
+    safeMessage,
+    'Authoritative order correction failed [UNEXPECTED_ERROR]; no correction was committed.'
+  );
+  assert.equal(safeMessage.includes(sourceOrder),false);
+  assert.equal(safeMessage.includes(targetOrder),false);
+  assert.equal(safeMessage.includes(correctedEmail),false);
+  assert.equal(
+    safeCorrectionFailureLog({ code:`HOLDER_${correctedEmail}` }),
+    'Authoritative order correction failed [UNEXPECTED_ERROR]; no correction was committed.'
   );
 });
 
@@ -144,6 +169,6 @@ test('rechaza una orden destino inactiva aunque los demas controles coincidan',a
       fakeClient({ alreadyApplied:true,orderActive:false }),
       correction()
     ),
-    /selected order is not active/u
+    (error) => error instanceof AuthoritativeCorrectionError && error.code === 'ORDER_INACTIVE'
   );
 });
