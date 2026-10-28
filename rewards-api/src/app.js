@@ -24,6 +24,23 @@ const parseMilestones = (value) => [...new Set(String(value || '')
   .split(',')
   .map((item) => Number(item))
   .filter((item) => Number.isInteger(item) && item >= 2 && item <= 30 && item % 2 === 0))];
+const MAX_RECIPIENT_NAME_LENGTH = 120;
+const normalizeRecipientName = (value) => {
+  if (typeof value !== 'string') {
+    throw httpError(400,'El nombre de quien recibe la recompensa es obligatorio');
+  }
+  const recipientName = value.trim().normalize('NFC');
+  if (!recipientName) {
+    throw httpError(400,'El nombre de quien recibe la recompensa es obligatorio');
+  }
+  if ([...recipientName].length > MAX_RECIPIENT_NAME_LENGTH) {
+    throw httpError(400,`El nombre de quien recibe la recompensa no puede exceder ${MAX_RECIPIENT_NAME_LENGTH} caracteres`);
+  }
+  if (/\p{Cc}/u.test(recipientName)) {
+    throw httpError(400,'El nombre de quien recibe la recompensa contiene caracteres no permitidos');
+  }
+  return recipientName;
+};
 
 export function createApp({ pool, config }) {
   const app = express();
@@ -318,10 +335,10 @@ export function createApp({ pool, config }) {
       GROUP BY p.id
     `,[req.params.id]);
     if (!result.rowCount) return res.status(404).json({ error:'Abono no encontrado' });
-    const [rewards,seats,attendance] = await Promise.all([
+    const [rewards,seats,attendance,deliveryHistory] = await Promise.all([
       pool.query(`
         SELECT c.*,d.id delivery_id,d.status,d.delivered_at,d.known_date,
-               d.reason,d.delivered_by,u.display_name delivered_by_name
+               d.reason,d.recipient_name,d.delivered_by,u.display_name delivered_by_name
         FROM rewards_catalog c
         LEFT JOIN rewards_deliveries d
           ON d.program_id=$1 AND d.milestone=c.milestone AND d.status<>'reversed'
@@ -345,6 +362,20 @@ export function createApp({ pool, config }) {
         JOIN rewards_games g ON g.id=a.game_id
         WHERE a.program_id=$1
         ORDER BY g.sequence_number
+      `,[req.params.id]),
+      pool.query(`
+        SELECT d.id,d.milestone,c.benefit,c.benefit_type,d.status,d.recipient_name,
+               d.delivered_at,d.known_date,d.reason,d.delivered_by,
+               delivered_user.display_name delivered_by_name,
+               d.reversed_at,d.reversed_by,reversed_user.display_name reversed_by_name,
+               d.reversal_reason
+        FROM rewards_deliveries d
+        JOIN rewards_catalog c ON c.milestone=d.milestone
+        LEFT JOIN rewards_users delivered_user ON delivered_user.id=d.delivered_by
+        LEFT JOIN rewards_users reversed_user ON reversed_user.id=d.reversed_by
+        WHERE d.program_id=$1
+        ORDER BY COALESCE(d.reversed_at,d.delivered_at,d.created_at) DESC,
+                 d.created_at DESC,d.milestone DESC
       `,[req.params.id])
     ]);
     const deliveries = rewards.rows
@@ -357,9 +388,34 @@ export function createApp({ pool, config }) {
         knownDate:reward.known_date,
         reason:reward.reason,
         deliveredBy:reward.delivered_by,
-        deliveredByName:reward.delivered_by_name
+        deliveredByName:reward.delivered_by_name,
+        recipientName:reward.recipient_name ?? null
       }));
-    res.json({ program:result.rows[0],rewards:rewards.rows,deliveries,seats:seats.rows,attendance:attendance.rows });
+    const deliveryHistoryItems = deliveryHistory.rows.map((delivery) => ({
+      id:delivery.id,
+      milestone:delivery.milestone,
+      benefit:delivery.benefit,
+      benefitType:delivery.benefit_type,
+      status:delivery.status,
+      recipientName:delivery.recipient_name ?? null,
+      deliveredAt:delivery.delivered_at,
+      knownDate:delivery.known_date,
+      reason:delivery.reason,
+      deliveredBy:delivery.delivered_by,
+      deliveredByName:delivery.delivered_by_name,
+      reversedAt:delivery.reversed_at,
+      reversedBy:delivery.reversed_by,
+      reversedByName:delivery.reversed_by_name,
+      reversalReason:delivery.reversal_reason
+    }));
+    res.json({
+      program:result.rows[0],
+      rewards:rewards.rows,
+      deliveries,
+      deliveryHistory:deliveryHistoryItems,
+      seats:seats.rows,
+      attendance:attendance.rows
+    });
   });
 
   app.post('/api/programs/:id/deliveries',authenticate,csrf,async(req,res) => {
@@ -371,10 +427,12 @@ export function createApp({ pool, config }) {
     if (historical && req.user.role !== 'administrator') {
       return res.status(403).json({ error:'Sólo un administrador puede registrar entregas históricas' });
     }
+    const recipientName = normalizeRecipientName(req.body?.recipientName);
     const status = historical ? 'historical_unreviewed' : 'delivered';
+    const knownDate = historical ? !Boolean(req.body?.unknownDate) : true;
     let deliveredAt = new Date();
-    if (historical && req.body?.unknownDate) deliveredAt = null;
-    if (historical && !req.body?.unknownDate) {
+    if (historical && !knownDate) deliveredAt = null;
+    if (historical && knownDate) {
       deliveredAt = new Date(req.body?.deliveredAt);
       if (Number.isNaN(deliveredAt.getTime())) {
         return res.status(400).json({ error:'Indica la fecha conocida de la entrega histórica' });
@@ -402,12 +460,16 @@ export function createApp({ pool, config }) {
       }
       const inserted = await client.query(`
         INSERT INTO rewards_deliveries(
-          program_id,milestone,status,delivered_at,delivered_by,known_date,reason,idempotency_key
+          program_id,milestone,status,delivered_at,delivered_by,known_date,reason,idempotency_key,
+          recipient_name
         )
-        VALUES($1,$2,$3,$4,$5,$6,$7,$8)
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)
         ON CONFLICT DO NOTHING
         RETURNING *
-      `,[req.params.id,milestone,status,deliveredAt,req.user.id,!req.body?.unknownDate,req.body?.reason || null,idempotency]);
+      `,[
+        req.params.id,milestone,status,deliveredAt,req.user.id,knownDate,
+        req.body?.reason || null,idempotency,recipientName
+      ]);
       if (!inserted.rowCount) throw httpError(409,'Esta entrega ya estaba registrada');
       await client.query(`
         INSERT INTO rewards_audit(actor_id,action,entity_type,entity_id,metadata)
@@ -415,7 +477,7 @@ export function createApp({ pool, config }) {
       `,[req.user.id,req.params.id,JSON.stringify({ milestone,status })]);
       return inserted.rows[0];
     });
-    res.status(201).json(delivery);
+    res.status(201).json({ ...delivery,recipientName:delivery.recipient_name });
   });
 
   app.delete('/api/programs/:id/deliveries/:milestone',authenticate,csrf,async(req,res) => {

@@ -54,7 +54,10 @@ Existen 15 hitos pares: 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28 y 30.
 - Se habilita para entrega desde la asistencia `N + 1`. Ejemplo: el hito 2 puede canjearse cuando ya existen 3 asistencias conciliadas.
 - La regla `N + 1` también aplica a correcciones o entregas históricas; ningún cliente de la API puede anticipar un canje.
 - Una entrega activa sombrea el hito.
+- Toda nueva entrega debe registrar el nombre de la persona que recibe el beneficio. Puede ser el titular de la butaca o una persona autorizada por él.
+- La fecha y hora de entrega las asigna el servidor al confirmar; el cliente no puede modificarlas. También se conserva la cuenta institucional que realizó el registro.
 - Un segundo clic confirmado revierte la entrega de forma lógica y conserva actor, fecha y motivo en la trazabilidad.
+- Una corrección no elimina la entrega original. El historial muestra tanto la entrega corregida como una eventual entrega posterior, cada una con destinatario, fecha y actor propios.
 - Administrador y usuarios de consulta pueden registrar o corregir entregas.
 
 ## Catálogo
