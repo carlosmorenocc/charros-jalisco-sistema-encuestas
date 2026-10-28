@@ -1,9 +1,77 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from './api.js';
 import ConfirmationDialog from './ConfirmationDialog.jsx';
 import { DEFAULT_REWARDS, getRewardState } from './rewards.js';
 
 const CORRECTION_REASON = 'Corrección operativa desde el perfil del abonado';
+const BACKGROUND_REFRESH_MS = 15_000;
+const CONCURRENT_CHANGE_STATUSES = new Set([404, 409]);
+
+function deliveryChangedAt(delivery) {
+  const value = delivery.lastChangedAt
+    || delivery.reversedAt
+    || delivery.deliveredAt
+    || delivery.createdAt;
+  const timestamp = new Date(value || 0).getTime();
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+export function getCurrentDeliveryHistory(deliveries = []) {
+  const grouped = new Map();
+
+  deliveries.forEach((delivery, index) => {
+    const key = String(delivery.milestone);
+    const group = grouped.get(key) || { current: null, total: 0, corrections: 0 };
+    const current = group.current;
+    const reversed = delivery.status === 'reversed';
+    const candidate = { delivery, index, timestamp: deliveryChangedAt(delivery), reversed };
+    group.total += 1;
+    if (reversed) group.corrections += 1;
+
+    if (!current
+      || (current.reversed && !reversed)
+      || (current.reversed === reversed && candidate.timestamp > current.timestamp)
+      || (current.reversed === reversed
+        && candidate.timestamp === current.timestamp
+        && index < current.index)) {
+      group.current = candidate;
+    }
+    grouped.set(key, group);
+  });
+
+  return [...grouped.values()]
+    .map(({ current, total, corrections }) => ({
+      ...current.delivery,
+      versionCount: current.delivery.versionCount ?? total,
+      correctionCount: current.delivery.correctionCount ?? corrections,
+    }))
+    .sort((left, right) => (
+      deliveryChangedAt(right) - deliveryChangedAt(left)
+      || Number(right.milestone) - Number(left.milestone)
+    ));
+}
+
+function deliverySignature(detail) {
+  const deliveries = getCurrentDeliveryHistory(detail?.deliveryHistory || detail?.deliveries || []);
+  return JSON.stringify(deliveries.map((delivery) => [
+    delivery.milestone,
+    delivery.id,
+    delivery.status,
+    delivery.lastChangedAt,
+    delivery.reversedAt,
+    delivery.deliveredAt,
+    delivery.recipientName,
+  ]));
+}
+
+function createIdempotencyKey() {
+  if (typeof globalThis.crypto?.randomUUID === 'function') return globalThis.crypto.randomUUID();
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (character) => {
+    const random = Math.floor(Math.random() * 16);
+    const value = character === 'x' ? random : ((random & 0x3) | 0x8);
+    return value.toString(16);
+  });
+}
 
 function rewardStatusLabel(state) {
   if (state === 'delivered') return 'Entregada';
@@ -34,12 +102,50 @@ export default function SubscriberDrawer({ item, live = true, onClose, onChanged
   const [confirmation, setConfirmation] = useState(null);
   const [confirmationError, setConfirmationError] = useState('');
   const [busy, setBusy] = useState(false);
+  const detailRef = useRef(null);
+  const currentIdRef = useRef(item.id);
+  const requestRef = useRef({ controller: null, sequence: 0, programId: item.id, priority: null });
+  const busyRef = useRef(false);
 
-  const loadDetail = async (programId, signal) => {
-    const response = await api(`/api/programs/${programId}`, { signal });
-    setDetail(response);
-    return response;
-  };
+  const loadDetail = useCallback(async (
+    programId,
+    { announceChange = false, priority = 'foreground' } = {},
+  ) => {
+    if (priority === 'background'
+      && requestRef.current.controller
+      && requestRef.current.priority === 'foreground') {
+      return null;
+    }
+    requestRef.current.controller?.abort();
+    const controller = new AbortController();
+    const sequence = requestRef.current.sequence + 1;
+    requestRef.current = { controller, sequence, programId, priority };
+    const previousDetail = detailRef.current;
+
+    try {
+      const response = await api(`/api/programs/${programId}`, { signal: controller.signal });
+      const isCurrent = !controller.signal.aborted
+        && requestRef.current.sequence === sequence
+        && currentIdRef.current === programId;
+      if (!isCurrent) return null;
+
+      detailRef.current = response;
+      setDetail(response);
+      setError('');
+      if (announceChange
+        && previousDetail
+        && deliverySignature(previousDetail) !== deliverySignature(response)) {
+        setNotice((current) => current || 'Otra sesión actualizó las entregas. Mostramos la versión vigente.');
+      }
+      return response;
+    } finally {
+      if (requestRef.current.sequence === sequence) {
+        requestRef.current.controller = null;
+        requestRef.current.priority = null;
+        if (currentIdRef.current === programId) setLoading(false);
+      }
+    }
+  }, []);
 
   useEffect(() => {
     setCurrentId(item.id);
@@ -51,20 +157,50 @@ export default function SubscriberDrawer({ item, live = true, onClose, onChanged
       return undefined;
     }
 
-    const controller = new AbortController();
+    currentIdRef.current = currentId;
+    requestRef.current.controller?.abort();
+    detailRef.current = null;
     setLoading(true);
     setDetail(null);
     setError('');
     setNotice('');
-    loadDetail(currentId, controller.signal)
+    setConfirmation(null);
+    setConfirmationError('');
+    loadDetail(currentId)
       .catch((reason) => {
         if (reason.name !== 'AbortError') setError(reason.message);
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
       });
-    return () => controller.abort();
-  }, [currentId, live]);
+    return () => {
+      if (requestRef.current.programId === currentId) requestRef.current.controller?.abort();
+    };
+  }, [currentId, live, loadDetail]);
+
+  useEffect(() => {
+    if (!live) return undefined;
+
+    let lastRefreshAt = 0;
+    const refresh = () => {
+      if (document.visibilityState !== 'visible' || busyRef.current) return;
+      const now = Date.now();
+      if (now - lastRefreshAt < 1_000) return;
+      lastRefreshAt = now;
+      loadDetail(currentId, { announceChange: true, priority: 'background' }).catch((reason) => {
+        if (reason.name !== 'AbortError' && !detailRef.current) setError(reason.message);
+      });
+    };
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === 'visible') refresh();
+    };
+    const timer = window.setInterval(refresh, BACKGROUND_REFRESH_MS);
+    window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', refreshWhenVisible);
+
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener('focus', refresh);
+      document.removeEventListener('visibilitychange', refreshWhenVisible);
+    };
+  }, [currentId, live, loadDetail]);
 
   useEffect(() => {
     const closeOnEscape = (event) => {
@@ -75,29 +211,45 @@ export default function SubscriberDrawer({ item, live = true, onClose, onChanged
   }, [confirmation, onClose]);
 
   const program = detail?.program || item;
+  const detailIsCurrent = !live || detail?.program?.id === currentId;
   const deliveredDemoMilestones = new Set(item.delivered_milestones || []);
+  const fallbackDeliveries = item.deliveries || [];
   const rewards = detail?.rewards || DEFAULT_REWARDS.map((reward) => ({
     ...reward,
     status: deliveredDemoMilestones.has(reward.milestone) ? 'delivered' : null,
+    delivery_id: fallbackDeliveries.find(
+      (delivery) => Number(delivery.milestone) === Number(reward.milestone)
+        && delivery.status !== 'reversed',
+    )?.id || null,
   }));
   const visits = Number(program.visits || 0);
   const segment = program.segment || program.zone || 'Sin segmento';
-  const deliveryHistory = [...(
+  const deliveryHistory = getCurrentDeliveryHistory([
+    ...(
     detail?.deliveryHistory
     || detail?.deliveries
     || item.deliveryHistory
     || item.deliveries
     || []
-  )]
-    .sort((left, right) => {
-      const rightDate = new Date(right.reversedAt || right.deliveredAt || 0).getTime() || 0;
-      const leftDate = new Date(left.reversedAt || left.deliveredAt || 0).getTime() || 0;
-      return rightDate - leftDate || Number(right.milestone) - Number(left.milestone);
-    });
+    ),
+  ]);
 
   const openConfirmation = (action, reward) => {
+    const activeDelivery = (detail?.deliveries || item.deliveries || []).find(
+      (delivery) => Number(delivery.milestone) === Number(reward.milestone)
+        && delivery.status !== 'reversed',
+    );
+    const latestDelivery = deliveryHistory.find(
+      (delivery) => Number(delivery.milestone) === Number(reward.milestone),
+    );
     setConfirmationError('');
-    setConfirmation({ action, reward });
+    setConfirmation({
+      action,
+      reward,
+      deliveryId: reward.delivery_id || reward.deliveryId || activeDelivery?.id || null,
+      expectedLatestDeliveryId: latestDelivery?.id || null,
+      idempotencyKey: action === 'deliver' ? createIdempotencyKey() : null,
+    });
   };
 
   const closeConfirmation = () => {
@@ -106,30 +258,72 @@ export default function SubscriberDrawer({ item, live = true, onClose, onChanged
   };
 
   const confirmRewardChange = async (recipientName) => {
-    const { action, reward } = confirmation;
+    const {
+      action,
+      reward,
+      deliveryId,
+      expectedLatestDeliveryId,
+      idempotencyKey,
+    } = confirmation;
+    busyRef.current = true;
     setBusy(true);
     setError('');
     setConfirmationError('');
     try {
-      if (action === 'undo') {
-        await api(`/api/programs/${program.id}/deliveries/${reward.milestone}`, {
-          method: 'DELETE',
-          body: { reason: CORRECTION_REASON },
-        });
-        setNotice(`Recompensa ${reward.milestone} corregida.`);
-      } else {
-        await api(`/api/programs/${program.id}/deliveries`, {
-          method: 'POST',
-          body: { milestone: reward.milestone, recipientName },
-        });
-        setNotice(`Recompensa ${reward.milestone} entregada.`);
+      try {
+        if (action === 'undo') {
+          if (!deliveryId) {
+            throw new Error('No pudimos identificar la versión activa. Cierra y vuelve a abrir la recompensa.');
+          }
+          await api(`/api/programs/${program.id}/deliveries/${reward.milestone}`, {
+            method: 'DELETE',
+            body: { reason: CORRECTION_REASON, deliveryId },
+          });
+        } else {
+          await api(`/api/programs/${program.id}/deliveries`, {
+            method: 'POST',
+            body: { milestone: reward.milestone, recipientName, expectedLatestDeliveryId },
+            headers: { 'idempotency-key': idempotencyKey },
+          });
+        }
+      } catch (reason) {
+        if (live && CONCURRENT_CHANGE_STATUSES.has(reason.status)) {
+          try {
+            await loadDetail(program.id);
+            setConfirmation(null);
+            setNotice('Otra sesión cambió esta recompensa. Actualizamos el estado vigente y no duplicamos tu operación.');
+            onChanged?.();
+          } catch (refreshError) {
+            setConfirmationError(
+              refreshError.name === 'AbortError'
+                ? 'La recompensa cambió en otra sesión. Vuelve a intentarlo cuando termine la sincronización.'
+                : 'La recompensa cambió en otra sesión, pero no pudimos actualizar la vista. Cierra y vuelve a abrir el perfil.',
+            );
+          }
+        } else {
+          setConfirmationError(reason.message || 'No pudimos guardar la entrega. Intenta nuevamente.');
+        }
+        return;
       }
+
       setConfirmation(null);
-      if (live) await loadDetail(program.id);
+      setNotice(
+        action === 'undo'
+          ? `Recompensa ${reward.milestone} corregida.`
+          : `Recompensa ${reward.milestone} entregada.`,
+      );
       onChanged?.();
-    } catch (reason) {
-      setConfirmationError(reason.message || 'No pudimos guardar la entrega. Intenta nuevamente.');
+      if (live) {
+        try {
+          await loadDetail(program.id);
+        } catch (refreshError) {
+          if (refreshError.name !== 'AbortError') {
+            setError('La entrega sí se guardó, pero no pudimos actualizar la vista. Vuelve a abrir el perfil para verificarla.');
+          }
+        }
+      }
     } finally {
+      busyRef.current = false;
       setBusy(false);
     }
   };
@@ -191,10 +385,10 @@ export default function SubscriberDrawer({ item, live = true, onClose, onChanged
           </div>
         </div>
 
-        <div className="reward-track">
+        <div className="reward-track" aria-busy={live && !detailIsCurrent}>
           {rewards.map((reward) => {
             const state = getRewardState(reward, visits);
-            const disabled = state === 'pending' || state === 'earned';
+            const disabled = state === 'pending' || state === 'earned' || !detailIsCurrent;
             const title = `${reward.benefit}. ${rewardStatusLabel(state)}.`;
             return (
               <div className={`reward-step ${state}`} key={reward.milestone}>
@@ -228,8 +422,8 @@ export default function SubscriberDrawer({ item, live = true, onClose, onChanged
 
         <div className="history-heading">
           <div>
-            <h3>Historial de entregas</h3>
-            <p className="hint">Registro de recompensas entregadas y correcciones, con las más recientes primero.</p>
+            <h3>Estado de entregas</h3>
+            <p className="hint">Una tarjeta vigente por recompensa, siempre con su última versión.</p>
           </div>
         </div>
         <div className="delivery-history">
@@ -237,8 +431,9 @@ export default function SubscriberDrawer({ item, live = true, onClose, onChanged
             const reward = rewards.find(({ milestone }) => Number(milestone) === Number(delivery.milestone));
             const benefit = delivery.benefit || reward?.benefit || 'Beneficio no especificado';
             const reversed = delivery.status === 'reversed';
+            const correctionCount = Number(delivery.correctionCount || 0);
             return (
-              <article className={reversed ? 'reversed' : ''} key={delivery.id || `${delivery.milestone}-${delivery.deliveredAt || 'legacy'}`}>
+              <article className={reversed ? 'reversed' : ''} key={delivery.milestone}>
                 <header>
                   <div>
                     <small>RECOMPENSA</small>
@@ -275,6 +470,11 @@ export default function SubscriberDrawer({ item, live = true, onClose, onChanged
                     </span>
                     {delivery.reversalReason ? <small>{delivery.reversalReason}</small> : null}
                   </div>
+                ) : null}
+                {!reversed && correctionCount ? (
+                  <p className="delivery-version-note">
+                    Versión vigente después de {correctionCount} {correctionCount === 1 ? 'corrección' : 'correcciones'}.
+                  </p>
                 ) : null}
               </article>
             );

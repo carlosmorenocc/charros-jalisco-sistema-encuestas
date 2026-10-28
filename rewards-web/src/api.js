@@ -2,6 +2,15 @@ const BASE = import.meta.env.VITE_REWARDS_API_URL || 'http://localhost:4100';
 
 let csrf = '';
 
+export class ApiError extends Error {
+  constructor(message, status, data) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+    this.data = data;
+  }
+}
+
 async function readResponse(response) {
   if (response.status === 204) return null;
 
@@ -17,7 +26,7 @@ function notifyExpiredSession(response) {
   }
 }
 
-export async function api(path, { method = 'GET', body, signal } = {}) {
+export async function api(path, { method = 'GET', body, signal, headers = {} } = {}) {
   const response = await fetch(`${BASE}${path}`, {
     method,
     credentials: 'include',
@@ -25,6 +34,7 @@ export async function api(path, { method = 'GET', body, signal } = {}) {
     headers: {
       'content-type': 'application/json',
       ...(csrf ? { 'x-csrf-token': csrf } : {}),
+      ...headers,
     },
     body: body ? JSON.stringify(body) : undefined,
   });
@@ -32,7 +42,7 @@ export async function api(path, { method = 'GET', body, signal } = {}) {
 
   if (!response.ok) {
     notifyExpiredSession(response);
-    throw new Error(data?.error || 'No se pudo completar la operación');
+    throw new ApiError(data?.error || 'No se pudo completar la operación', response.status, data);
   }
 
   if (data?.csrfToken) csrf = data.csrfToken;
@@ -54,7 +64,7 @@ export async function upload(path, file) {
 
   if (!response.ok) {
     notifyExpiredSession(response);
-    throw new Error(data?.error || 'No se pudo revisar el archivo');
+    throw new ApiError(data?.error || 'No se pudo revisar el archivo', response.status, data);
   }
 
   return data;
