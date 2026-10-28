@@ -25,6 +25,16 @@ const CORRECTION_ERROR_CODES = new Set([
   'CONFIG_DIGEST_INVALID',
   'CONFIG_EMAIL_INVALID',
   'CONFIG_REASON_INVALID',
+  'DB_LOCK_FAILED',
+  'DB_ORDERS_READ_FAILED',
+  'DB_PROGRAMS_READ_FAILED',
+  'DB_HOLDER_PROGRAMS_READ_FAILED',
+  'DB_HOLDER_READ_FAILED',
+  'DB_IDENTITY_CHECK_FAILED',
+  'DB_ORDER_UPDATE_FAILED',
+  'DB_PROGRAM_UPDATE_FAILED',
+  'DB_HOLDER_UPDATE_FAILED',
+  'DB_AUDIT_WRITE_FAILED',
   'ORDER_STATE_AMBIGUOUS',
   'ORDER_INACTIVE',
   'PROGRAM_COUNT_MISMATCH',
@@ -51,6 +61,15 @@ export class AuthoritativeCorrectionError extends Error {
 
 function fail(code) {
   throw new AuthoritativeCorrectionError(code);
+}
+
+async function guardedQuery(client, failureCode, sql, params = []) {
+  try {
+    return await client.query(sql,params);
+  } catch (error) {
+    if (error instanceof AuthoritativeCorrectionError) throw error;
+    fail(failureCode);
+  }
 }
 
 export function safeCorrectionFailureLog(error) {
@@ -181,12 +200,14 @@ function rowsForOrder(orders, orderNumber) {
 
 export async function applyAuthoritativeOrderCorrection(client, config) {
   if (!config) return { status:'disabled',programCount:0 };
-  await client.query(
+  await guardedQuery(
+    client,
+    'DB_LOCK_FAILED',
     "SELECT pg_advisory_xact_lock(hashtext('rewards-authoritative-order-correction:' || $1))",
     [config.seasonCode]
   );
 
-  const ordersResult = await client.query(`
+  const ordersResult = await guardedQuery(client,'DB_ORDERS_READ_FAILED',`
     /* authoritative-correction:orders */
     SELECT id,order_number,active
     FROM rewards_orders
@@ -203,7 +224,7 @@ export async function applyAuthoritativeOrderCorrection(client, config) {
   const expectedOrder = applying ? config.fromOrder : config.toOrder;
   if (selectedOrder.active !== true) fail('ORDER_INACTIVE');
 
-  const programsResult = await client.query(`
+  const programsResult = await guardedQuery(client,'DB_PROGRAMS_READ_FAILED',`
     /* authoritative-correction:programs */
     SELECT id,order_number,holder_id,holder_email,zone,section,seat,
            active,eligibility_status,manual_lock
@@ -214,7 +235,7 @@ export async function applyAuthoritativeOrderCorrection(client, config) {
   `,[config.seasonCode,selectedOrder.id]);
   const holderId = verifyPrograms(programsResult.rows,config,expectedOrder);
 
-  const holderPrograms = await client.query(`
+  const holderPrograms = await guardedQuery(client,'DB_HOLDER_PROGRAMS_READ_FAILED',`
     /* authoritative-correction:holder-program-count */
     SELECT id
     FROM rewards_programs
@@ -226,7 +247,7 @@ export async function applyAuthoritativeOrderCorrection(client, config) {
     fail('HOLDER_PROGRAM_COUNT_MISMATCH');
   }
 
-  const holderResult = await client.query(`
+  const holderResult = await guardedQuery(client,'DB_HOLDER_READ_FAILED',`
     /* authoritative-correction:holder */
     SELECT id,identity_key,display_name,email,phone
     FROM rewards_holders
@@ -241,7 +262,7 @@ export async function applyAuthoritativeOrderCorrection(client, config) {
     phone:holder.phone
   });
 
-  const identityConflict = await client.query(`
+  const identityConflict = await guardedQuery(client,'DB_IDENTITY_CHECK_FAILED',`
     /* authoritative-correction:identity-conflict */
     SELECT count(*)::int total
     FROM rewards_holders
@@ -265,7 +286,7 @@ export async function applyAuthoritativeOrderCorrection(client, config) {
     fail('HOLDER_IDENTITY_MISMATCH');
   }
   const programIds = programsResult.rows.map((program) => program.id);
-  const orderUpdate = await client.query(`
+  const orderUpdate = await guardedQuery(client,'DB_ORDER_UPDATE_FAILED',`
     /* authoritative-correction:update-order */
     UPDATE rewards_orders
     SET order_number=$1,active=true,updated_at=now()
@@ -273,7 +294,7 @@ export async function applyAuthoritativeOrderCorrection(client, config) {
   `,[config.toOrder,selectedOrder.id,config.fromOrder]);
   if (orderUpdate.rowCount !== 1) fail('ORDER_UPDATE_FAILED');
 
-  const programUpdate = await client.query(`
+  const programUpdate = await guardedQuery(client,'DB_PROGRAM_UPDATE_FAILED',`
     /* authoritative-correction:update-programs */
     UPDATE rewards_programs
     SET order_number=$1,holder_email=$2,manual_lock=true,updated_at=now()
@@ -281,7 +302,7 @@ export async function applyAuthoritativeOrderCorrection(client, config) {
   `,[config.toOrder,config.correctedEmail,programIds]);
   if (programUpdate.rowCount !== config.expectedProgramCount) fail('PROGRAM_UPDATE_FAILED');
 
-  const holderUpdate = await client.query(`
+  const holderUpdate = await guardedQuery(client,'DB_HOLDER_UPDATE_FAILED',`
     /* authoritative-correction:update-holder */
     UPDATE rewards_holders
     SET email=$1,identity_key=$2,updated_at=now()
@@ -289,7 +310,7 @@ export async function applyAuthoritativeOrderCorrection(client, config) {
   `,[config.correctedEmail,correctedIdentityKey,holderId,config.expectedHolderIdentityKey]);
   if (holderUpdate.rowCount !== 1) fail('HOLDER_UPDATE_FAILED');
 
-  await client.query(`
+  await guardedQuery(client,'DB_AUDIT_WRITE_FAILED',`
     /* authoritative-correction:audit */
     INSERT INTO rewards_audit(action,entity_type,entity_id,reason,metadata)
     VALUES(

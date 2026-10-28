@@ -43,7 +43,7 @@ El secreto es un JSON de versión 1 con temporada, orden origen, orden destino, 
 5. verifica el resultado agregado y elimina inmediatamente el secreto;
 6. vuelve a desplegar sin el secreto y comprueba `/ready`.
 
-Si cualquier guarda difiere, el arranque falla y no confirma ninguna corrección. El diagnóstico publica únicamente un código técnico de lista cerrada; los errores inesperados de PostgreSQL se reducen a `UNEXPECTED_ERROR` y nunca imprimen mensaje, detalle, consulta, parámetros ni valores operativos. El script es idempotente para un despliegue repetido. La bitácora conserva únicamente el UUID interno, la cantidad y un código de motivo de lista cerrada; no copia órdenes, correo ni controles derivados de esos valores.
+Si cualquier guarda difiere, el arranque falla y no confirma ninguna corrección. El diagnóstico publica únicamente un código técnico de lista cerrada. Un fallo de consulta se identifica solo por su etapa `DB_*`; cualquier otro fallo se reduce a `UNEXPECTED_ERROR`. Nunca se imprimen mensaje, detalle, consulta, parámetros ni valores operativos. El script es idempotente para un despliegue repetido. La bitácora conserva únicamente el UUID interno, la cantidad y un código de motivo de lista cerrada; no copia órdenes, correo ni controles derivados de esos valores.
 
 ## Cuentas
 

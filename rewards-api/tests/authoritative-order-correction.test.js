@@ -55,7 +55,7 @@ function assertCorrectionError(action, expectedCode) {
   ));
 }
 
-function fakeClient({ alreadyApplied = false, orderActive = true } = {}) {
+function fakeClient({ alreadyApplied = false, orderActive = true, throwAt = null } = {}) {
   const calls = [];
   const correctedIdentityKey = holderIdentityKey({ ...holderProfile,email:correctedEmail });
   const rows = programs.map((program) => alreadyApplied ? {
@@ -69,6 +69,7 @@ function fakeClient({ alreadyApplied = false, orderActive = true } = {}) {
     async query(sql,params = []) {
       const tag = sql.match(/authoritative-correction:([a-z-]+)/u)?.[1] || 'lock';
       calls.push({ tag,params,sql });
+      if (tag === throwAt) throw new Error(`${sourceOrder} ${targetOrder} ${correctedEmail}`);
       if (tag === 'lock') return { rowCount:1,rows:[] };
       if (tag === 'orders') return {
         rowCount:1,
@@ -130,6 +131,19 @@ test('los diagnosticos no exponen valores privados ni errores inesperados',() =>
   assert.equal(
     safeCorrectionFailureLog({ code:`HOLDER_${correctedEmail}` }),
     'Authoritative order correction failed [UNEXPECTED_ERROR]; no correction was committed.'
+  );
+});
+
+test('los errores de PostgreSQL se convierten en una etapa cerrada sin copiar su detalle',async() => {
+  await assert.rejects(
+    applyAuthoritativeOrderCorrection(fakeClient({ throwAt:'programs' }),correction()),
+    (error) => (
+      error instanceof AuthoritativeCorrectionError
+      && error.code === 'DB_PROGRAMS_READ_FAILED'
+      && !error.message.includes(sourceOrder)
+      && !error.message.includes(targetOrder)
+      && !error.message.includes(correctedEmail)
+    )
   );
 });
 
