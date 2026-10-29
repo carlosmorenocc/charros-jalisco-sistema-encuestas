@@ -15,7 +15,15 @@ El orden es obligatorio: primero se carga una sola vez el padrón aprobado media
 
 Si la respuesta de confirmación se pierde, reintenta solamente el payload idéntico mientras la ventana siga abierta; la idempotencia por SHA-256 permite comprobar el resultado sin duplicarlo. Después de cargar asistencias, no se debe reemplazar el padrón, truncar tablas ni reabrir el bootstrap para aplicar correcciones: cualquier cambio requiere respaldo, trazabilidad y un procedimiento técnico específico.
 
-Cuando Boleto Móvil confirme una discrepancia puntual después del bootstrap, usa el procedimiento temporal de corrección autoritativa descrito en `OPERATIONS.md`. Sus valores privados se suministran como secreto efímero; nunca se codifican en una migración ni en el repositorio.
+Cuando Boleto Móvil confirme una discrepancia puntual después del bootstrap, usa el procedimiento temporal específico descrito en `OPERATIONS.md`: corrección de orden para identidad comercial o corrección de sección para una ubicación desactualizada. Sus valores privados se suministran como secretos efímeros; nunca se codifican en una migración ni en el repositorio.
+
+### Correcciones de sección posteriores al bootstrap
+
+Una sección incorrecta del padrón se corrige sobre el mismo programa mediante `REWARDS_PROGRAM_SECTION_CORRECTION`. No se reabre `roster-bootstrap`, no se elimina la fila y no se vuelven a procesar importaciones ya confirmadas. El `program_id` permanece estable, de modo que asistencias, hitos y entregas conservan su historial.
+
+Antes de ejecutar el procedimiento se valida el conjunto completo contra la fuente autoritativa y se simula la ubicación final. Cada programa debe coincidir también con el segmento declarado y con su relación a la orden de la misma temporada. No debe existir otra butaca activa y elegible en la misma ubicación física normalizada, una fila de cualquier estado que choque con la llave única normalizada de destino ni un alias activo que resuelva la nueva llave hacia otro programa. La comprobación física incluye programas de otras órdenes porque la restricción SQL del programa incorpora el número de orden y, por sí sola, no evita esa colisión.
+
+La transacción modifica únicamente la sección y el bloqueo manual del programa. No cambia zona, asiento, orden, titular ni segmento, y no crea un alias para el valor erróneo. Tras la ejecución, verifica que los mismos UUID y claves permanentes conservan los mismos conteos de asistencia, entrega y aliases, que ya no queda ninguna sección anterior en el lote y que una futura previsualización concilia las ubicaciones correctas mediante coincidencia exacta.
 
 ## Historiales de asistencia por interfaz
 

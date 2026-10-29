@@ -22,6 +22,6 @@ test('el prearranque aplica el secreto dentro de una transacción y no imprime s
   assert.doesNotMatch(script,/console\.(?:log|error)\([^)]*error\.(?:message|stack)/u);
   assert.equal(
     packageJson.scripts.prestart,
-    'node scripts/apply-authoritative-order-correction.js && node scripts/apply-program-enrollment.js'
+    'node scripts/apply-authoritative-order-correction.js && node scripts/apply-authoritative-program-section-correction.js && node scripts/apply-program-enrollment.js'
   );
 });

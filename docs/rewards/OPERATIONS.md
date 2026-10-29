@@ -45,6 +45,27 @@ El secreto es un JSON de versión 1 con temporada, orden origen, orden destino, 
 
 Si cualquier guarda difiere, el arranque falla y no confirma ninguna corrección. El diagnóstico publica únicamente un código técnico de lista cerrada. Un fallo de consulta se identifica solo por su etapa `DB_*`; cualquier otro fallo se reduce a `UNEXPECTED_ERROR`. Nunca se imprimen mensaje, detalle, consulta, parámetros ni valores operativos. El script es idempotente para un despliegue repetido. La bitácora conserva únicamente el UUID interno, la cantidad y un código de motivo de lista cerrada; no copia órdenes, correo ni controles derivados de esos valores.
 
+## Corrección autoritativa de secciones de programas
+
+Una sección desactualizada confirmada contra la fuente autoritativa se corrige sobre los programas existentes mediante el prearranque transaccional del API. Este procedimiento no representa un cambio físico de butaca: conserva temporada, orden, titular, zona, asiento y segmento, y modifica únicamente la sección. Tampoco reemplaza el padrón, crea programas o aliases, ni vuelve a importar asistencias.
+
+La solicitud completa se entrega temporalmente en el secreto `REWARDS_PROGRAM_SECTION_CORRECTION`. El JSON de versión 1 admite únicamente `version`, `seasonCode`, `expectedProgramCount`, `reasonCode` y `programs`. Cada elemento de `programs` declara `programId`, `permanentKey`, `orderNumber`, `expectedSegment`, `zone`, `fromSection`, `toSection` y `seat`; `expectedSegment` solo admite `VIP`, `PREFERENTE` o `GENERAL`. La cantidad debe coincidir exactamente con `expectedProgramCount`, entre 1 y 1000, y el único motivo admitido es `boleto-movil-verified`. No se aceptan campos adicionales, UUID repetidos, claves permanentes repetidas, secciones equivalentes después de normalizarlas, llaves de origen duplicadas ni ubicaciones físicas de destino duplicadas dentro de la solicitud. Todos los valores operativos se generan y conservan fuera de Git, documentación, tickets y logs.
+
+Procedimiento:
+
+1. Confirma respaldo, entorno, commit y fuente autoritativa. Obtén fuera del repositorio una fotografía de los UUID internos y de los conteos de asistencias, entregas y aliases de los programas involucrados.
+2. Verifica antes de escribir que todos los UUID y claves permanentes esperados existen una sola vez, pertenecen a la temporada, orden, segmento, zona, sección anterior y asiento declarados, y permanecen activos y elegibles. Cada programa debe conservar además un `order_id` que apunte a una fila de `rewards_orders` con la misma temporada y orden.
+3. Simula el estado final y exige cero colisiones normalizadas con la llave única de programa, incluyendo filas inactivas o excluidas; cero duplicados físicos activos y elegibles, incluso entre órdenes distintas; y cero aliases activos que puedan interceptar una nueva llave y dirigirla a otro programa.
+4. Configura `REWARDS_PROGRAM_SECTION_CORRECTION` únicamente en el API personal autorizado y despliega. El prearranque adquiere un bloqueo asesor y valida el lote completo antes de modificar una fila.
+5. En una sola transacción conserva `id`, `permanent_key`, titular, orden, zona, asiento y segmento; actualiza la sección, activa `manual_lock` y registra una entrada `roster.authoritative_section_correction` por UUID. La auditoría conserva solo el campo corregido y el código de motivo, no las ubicaciones anteriores o nuevas. Si una sola precondición difiere, se revierte todo el lote y el servicio no arranca.
+6. Comprueba que todas las secciones anteriores desaparecieron del conjunto y que todas las nuevas están presentes; compara los UUID y conteos históricos con la fotografía previa, y repite las verificaciones de duplicados físicos y aliases.
+7. Confirma en el listado y en los perfiles que la sección correcta ya se muestra. No es necesario desplegar el frontend porque ambas vistas leen `rewards_programs.section` desde el API.
+8. Elimina inmediatamente `REWARDS_PROGRAM_SECTION_CORRECTION`, vuelve a desplegar sin el secreto y verifica `/ready`.
+
+El procedimiento es idempotente únicamente cuando todos los programas están todavía en `fromSection` o cuando todos están ya en `toSection` con `manual_lock = true`. Un lote mezclado, una sección distinta o una corrección final sin bloqueo detiene el arranque; nunca intenta completar silenciosamente un estado parcial. Si el secreto no está configurado, el prearranque queda deshabilitado sin abrir una conexión. Los fallos solo publican un código técnico de lista cerrada o `UNEXPECTED_ERROR`, y el éxito emite un mensaje genérico sin valores operativos.
+
+`manual_lock` impide que una carga posterior del padrón restaure la sección obsoleta. Las asistencias y entregas conservan el mismo `program_id`, por lo que sus contadores no cambian. La sección anterior no se registra como alias: era un dato incorrecto del padrón, no una identidad histórica válida.
+
 ## Alta excepcional de un programa autorizado
 
 Una cortesía de abono de giveaway autorizada se incorpora con el prearranque transaccional del API, sin reabrir `roster-bootstrap`. Los datos operativos completos se suministran temporalmente en el secreto `REWARDS_PROGRAM_ENROLLMENT`; nunca se codifican en migraciones, pruebas, documentación, tickets o logs.

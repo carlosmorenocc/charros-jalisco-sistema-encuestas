@@ -6,7 +6,7 @@
   "engines": { "node": ">=20" },
   "scripts": {
     "dev": "node --watch src/server.js",
-    "prestart": "node scripts/apply-authoritative-order-correction.js && node scripts/apply-program-enrollment.js",
+    "prestart": "node scripts/apply-authoritative-order-correction.js && node scripts/apply-authoritative-program-section-correction.js && node scripts/apply-program-enrollment.js",
     "start": "node src/server.js",
     "migrate": "node scripts/migrate.js",
     "provision": "node scripts/provision-users.js",

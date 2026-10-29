@@ -32,6 +32,14 @@ El índice parcial `rewards_delivery_active_unique` impide más de una entrega a
 
 Las correcciones verificadas con Boleto Móvil conservan el `id` y `permanent_key` del programa cuando solo cambia su dato comercial. Si una butaca fue reasignada y ya registró accesos con una orden anterior, la llave anterior se guarda en `rewards_program_aliases`; las asistencias nuevas e históricas terminan en el mismo `program_id` y, por tanto, en un solo contador de recompensas.
 
+### Correcciones autoritativas de sección
+
+`rewards_programs.section` es un atributo comercial corregible; la identidad estable de una butaca participante es su `id` y `permanent_key`. Cuando la fuente autoritativa confirma que solo la sección estaba desactualizada, el procedimiento `REWARDS_PROGRAM_SECTION_CORRECTION` conserva programa, titular, orden, zona, asiento y segmento. Antes de escribir coteja el segmento esperado y exige que `order_id` resuelva a `rewards_orders` con la misma temporada y número de orden. Después actualiza la sección y establece `manual_lock = true` para impedir que una carga posterior del padrón restaure el dato obsoleto.
+
+`rewards_attendance`, `rewards_deliveries`, `rewards_transfers` y `rewards_program_aliases` se relacionan por `program_id`; por ello, una corrección de sección no mueve ni recrea asistencias, hitos o entregas. La sección anterior no se convierte en alias porque no representa una ubicación histórica válida. Los aliases se reservan para llaves que sí fueron válidas y deben conservar continuidad entre una identidad histórica y el programa vigente.
+
+La unicidad de `rewards_programs` incluye temporada, orden, zona, sección y asiento. Esa restricción evita una llave comercial exacta dentro de la misma orden, pero no basta para detectar variantes de formato ni que dos órdenes ocupen la misma butaca física. Antes de una corrección por lote se proyectan las nuevas secciones y se exige que no exista otra llave normalizada de la misma orden, incluso si la fila en conflicto está inactiva o excluida. Por separado, se normalizan zona, sección y asiento de los programas activos y elegibles para impedir duplicados físicos entre órdenes. También se comprueba que ningún alias activo con la nueva llave apunte a otro programa, porque la conciliación de asistencias evalúa aliases históricos antes que la coincidencia vigente.
+
 ### Excepción de elegibilidad del programa
 
 `rewards_programs.eligibility_exception` es nullable. Su dominio está restringido por la base de datos y actualmente solo admite `authorized_giveaway_courtesy`; `NULL` representa el comportamiento ordinario. El campo pertenece al programa/butaca, no al titular ni a toda la orden, para impedir que la autorización se propague a otros asientos.
