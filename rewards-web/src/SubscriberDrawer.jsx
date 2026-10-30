@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from './api.js';
 import ConfirmationDialog from './ConfirmationDialog.jsx';
-import { DEFAULT_REWARDS, getRewardState } from './rewards.js';
+import { canDeliverReward, DEFAULT_REWARDS, getRewardState } from './rewards.js';
 
 const CORRECTION_REASON = 'Corrección operativa desde el perfil del abonado';
 const BACKGROUND_REFRESH_MS = 15_000;
@@ -73,10 +73,14 @@ function createIdempotencyKey() {
   });
 }
 
-function rewardStatusLabel(state) {
+function rewardStatusLabel(state, deliverable = false) {
   if (state === 'delivered') return 'Entregada';
   if (state === 'available') return 'Disponible para entregar';
-  if (state === 'earned') return 'Hito alcanzado · disponible en la siguiente visita';
+  if (state === 'earned') {
+    return deliverable
+      ? 'Hito alcanzado · entrega disponible'
+      : 'Hito alcanzado · entrega aún no habilitada';
+  }
   return 'Pendiente';
 }
 
@@ -377,7 +381,10 @@ export default function SubscriberDrawer({ item, live = true, onClose, onChanged
         <div className="reward-heading">
           <div>
             <h3>Ruta de recompensas</h3>
-            <p className="hint">Cada recompensa se habilita en la asistencia posterior al hito.</p>
+            <p className="hint">
+              Al alcanzar el hito, el círculo dorado queda habilitado para registrar la entrega.
+              {' '}El siguiente acceso se sumará cuando se cargue el reporte del partido.
+            </p>
           </div>
           <div className="reward-legend" aria-label="Estados de recompensas">
             <span><i className="legend-dot available" />Disponible</span>
@@ -388,8 +395,10 @@ export default function SubscriberDrawer({ item, live = true, onClose, onChanged
         <div className="reward-track" aria-busy={live && !detailIsCurrent}>
           {rewards.map((reward) => {
             const state = getRewardState(reward, visits);
-            const disabled = state === 'pending' || state === 'earned' || !detailIsCurrent;
-            const title = `${reward.benefit}. ${rewardStatusLabel(state)}.`;
+            const deliverable = canDeliverReward(reward, visits);
+            const disabled = (state !== 'delivered' && !deliverable) || !detailIsCurrent;
+            const statusLabel = rewardStatusLabel(state, deliverable);
+            const title = `${reward.benefit}. ${statusLabel}.`;
             return (
               <div className={`reward-step ${state}`} key={reward.milestone}>
                 <button
@@ -403,7 +412,7 @@ export default function SubscriberDrawer({ item, live = true, onClose, onChanged
                   {reward.milestone}
                 </button>
                 <strong>{reward.benefit}</strong>
-                <small>{rewardStatusLabel(state)}</small>
+                <small>{statusLabel}</small>
               </div>
             );
           })}

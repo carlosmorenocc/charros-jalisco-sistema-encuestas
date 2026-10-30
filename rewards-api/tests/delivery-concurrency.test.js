@@ -86,10 +86,10 @@ function concurrentDeliveryPool({ activeDelivery=null }={}) {
             return { rowCount:1,rows:[{ id:'program-1' }] };
           }
           if (sql.includes('FROM rewards_catalog')) {
-            return { rowCount:1,rows:[{ milestone:2 }] };
+            return { rowCount:1,rows:[{ milestone:2,redeem_from_offset:0 }] };
           }
           if (sql.includes('count(DISTINCT game_id)')) {
-            return { rowCount:1,rows:[{ visits:3 }] };
+            return { rowCount:1,rows:[{ visits:2 }] };
           }
           if (sql.includes('INSERT INTO rewards_deliveries')) {
             const wasEmpty = state.activeDelivery === null;
@@ -160,7 +160,7 @@ const requestHeaders = (index) => ({
   'idempotency-key':`30000000-0000-4000-8000-00000000000${index}`
 });
 
-test('cinco usuarios concurrentes registran exactamente una entrega activa',async(t) => {
+test('cinco usuarios concurrentes registran exactamente una entrega activa al alcanzar el hito',async(t) => {
   const { pool,state } = concurrentDeliveryPool();
   const base = await listen(createApp({ pool,config }),t);
   const responses = await Promise.all([1,2,3,4,5].map((index) => fetch(

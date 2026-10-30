@@ -42,7 +42,7 @@ Existe una sola clase de excepción operativa para una cortesía de abono de giv
 - El tipo debe ser exactamente `Cortesía abono`, el producto debe corresponder al compromiso autorizado, el patrocinador debe estar vacío y la ubicación no puede ser una suite.
 - Una coincidencia por alias, equivalencia de zona, orden + asiento, nombre, correo, teléfono o cualquier estrategia de respaldo no puede activar la excepción.
 - Patrocinios, suites, otros compromisos y cualquier fila no exacta siguen excluidos, aunque apunten al mismo titular.
-- El programa conserva las mismas reglas de asistencia única por partido, hitos, canje `N + 1` y trazabilidad que el resto del padrón.
+- El programa conserva las mismas reglas de asistencia única por partido, hitos, entrega al alcanzar `N` asistencias y trazabilidad que el resto del padrón.
 
 Toda nueva excepción requiere una decisión de negocio explícita, una revisión de código y una ampliación deliberada de la lista cerrada. Nunca se autoriza mediante texto libre ni ampliando globalmente los eventos excluidos.
 
@@ -51,8 +51,10 @@ Toda nueva excepción requiere una decisión de negocio explícita, una revisió
 Existen 15 hitos pares: 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28 y 30.
 
 - El hito `N` se alcanza al registrar `N` asistencias.
-- Se habilita para entrega desde la asistencia `N + 1`. Ejemplo: el hito 2 puede canjearse cuando ya existen 3 asistencias conciliadas.
-- La regla `N + 1` también aplica a correcciones o entregas históricas; ningún cliente de la API puede anticipar un canje.
+- Se habilita para entrega desde que existen `N` asistencias conciliadas. Ejemplo: el hito 4 puede entregarse cuando el contador confirmado llega a 4.
+- Esta habilitación permite atender al abonado en su siguiente visita física aunque el reporte de acceso de ese partido todavía no se haya importado. No agrega una asistencia, no presume el acceso pendiente y no modifica el contador: únicamente reconoce que el hito ya quedó cumplido con los reportes conciliados disponibles.
+- La misma regla aplica a correcciones y entregas históricas. Ningún cliente de la API puede registrar una entrega cuando el programa tiene menos de `N` asistencias conciliadas.
+- Al llegar exactamente al hito `N`, la recompensa pendiente permanece dorada y ya es seleccionable. El estado visual comunica que cumplió el umbral aunque todavía no se haya importado una asistencia posterior; al reflejarse otra visita conserva el flujo visual disponible existente.
 - Una entrega activa sombrea el hito.
 - Toda nueva entrega debe registrar el nombre de la persona que recibe el beneficio. Puede ser el titular de la butaca o una persona autorizada por él.
 - La fecha y hora de entrega las asigna el servidor al confirmar; el cliente no puede modificarlas. También se conserva la cuenta institucional que realizó el registro.

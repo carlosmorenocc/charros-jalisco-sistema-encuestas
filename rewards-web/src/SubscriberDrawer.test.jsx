@@ -81,6 +81,7 @@ function errorResponse(error, status = 500) {
 function liveDetail({
   program = ITEM,
   milestoneFourDelivery = null,
+  redeemFromOffset = 0,
 } = {}) {
   const deliveries = [
     {
@@ -106,6 +107,7 @@ function liveDetail({
       {
         milestone: 4,
         benefit: 'Dos cervezas Charros Brew',
+        redeem_from_offset: redeemFromOffset,
         status: milestoneFourDelivery?.status || null,
         delivery_id: milestoneFourDelivery?.id || null,
       },
@@ -130,6 +132,64 @@ afterEach(() => {
 });
 
 describe('SubscriberDrawer', () => {
+  it('permite registrar una entrega al alcanzar el hito y conserva su estado dorado', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({ id: 'delivery-3' }));
+    render(
+      <SubscriberDrawer
+        item={{ ...ITEM, visits: 4 }}
+        live={false}
+        onClose={() => {}}
+      />,
+    );
+
+    const rewardButton = screen.getByRole('button', {
+      name: /Visita 4:.*Hito alcanzado.*entrega disponible/i,
+    });
+    expect(rewardButton.disabled).toBe(false);
+    expect(rewardButton.closest('.reward-step')?.classList.contains('earned')).toBe(true);
+
+    fireEvent.click(rewardButton);
+    expect(screen.getByRole('alertdialog')).toBeTruthy();
+    fireEvent.change(screen.getByRole('textbox', { name: 'Nombre de quien recibe' }), {
+      target: { value: 'Titular de prueba' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Sí, entregar' }));
+
+    await waitFor(() => expect(fetchSpy).toHaveBeenCalledOnce());
+    expect(JSON.parse(fetchSpy.mock.calls[0][1].body)).toMatchObject({
+      milestone: 4,
+      recipientName: 'Titular de prueba',
+    });
+  });
+
+  it('respeta el desfase del catálogo al habilitar un hito dorado', async () => {
+    const atMilestone = { ...ITEM, id: 'program-offset-1', visits: 4 };
+    const afterMilestone = { ...ITEM, id: 'program-offset-2', visits: 5 };
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(jsonResponse(liveDetail({
+        program: atMilestone,
+        redeemFromOffset: 1,
+      })))
+      .mockResolvedValueOnce(jsonResponse(liveDetail({
+        program: afterMilestone,
+        redeemFromOffset: 1,
+      })));
+    const view = render(<SubscriberDrawer item={atMilestone} live onClose={() => {}} />);
+
+    const blockedReward = await screen.findByRole('button', {
+      name: /Visita 4:.*entrega aún no habilitada/i,
+    });
+    expect(blockedReward.disabled).toBe(true);
+    expect(blockedReward.closest('.reward-step')?.classList.contains('earned')).toBe(true);
+
+    view.rerender(<SubscriberDrawer item={afterMilestone} live onClose={() => {}} />);
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /Visita 4:.*Disponible para entregar/i }).disabled)
+        .toBe(false);
+    });
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+  });
+
   it('muestra una sola versión vigente por recompensa y conserva la corrección más reciente', () => {
     render(<SubscriberDrawer item={ITEM} live={false} onClose={() => {}} />);
 
@@ -180,6 +240,7 @@ describe('SubscriberDrawer', () => {
       <SubscriberDrawer
         item={{
           ...ITEM,
+          visits: 0,
           delivered_milestones: [2, 4],
           deliveries: [
             ...ITEM.deliveries,

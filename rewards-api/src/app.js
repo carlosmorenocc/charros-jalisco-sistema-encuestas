@@ -569,15 +569,20 @@ export function createApp({ pool, config }) {
       if (latestDeliveryId !== expectedLatestDeliveryId) {
         throw httpError(409,'La entrega cambió desde otra sesión; actualiza el perfil antes de continuar');
       }
-      const catalog = await client.query('SELECT milestone FROM rewards_catalog WHERE milestone=$1',[milestone]);
+      const catalog = await client.query(`
+        SELECT milestone,redeem_from_offset
+        FROM rewards_catalog
+        WHERE milestone=$1
+      `,[milestone]);
       if (!catalog.rowCount) throw httpError(400,'Hito de recompensa inválido');
       const eligibility = await client.query(`
         SELECT count(DISTINCT game_id)::int visits
         FROM rewards_attendance
         WHERE program_id=$1
       `,[req.params.id]);
-      if (eligibility.rows[0].visits < milestone + 1) {
-        throw httpError(409,'El canje se habilita desde la siguiente asistencia al hito');
+      const requiredVisits = catalog.rows[0].milestone + catalog.rows[0].redeem_from_offset;
+      if (eligibility.rows[0].visits < requiredVisits) {
+        throw httpError(409,`La entrega requiere ${requiredVisits} asistencias conciliadas`);
       }
       const inserted = await client.query(`
         INSERT INTO rewards_deliveries(

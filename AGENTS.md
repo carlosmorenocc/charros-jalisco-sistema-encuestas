@@ -14,7 +14,7 @@ Este repositorio contiene varios productos. No recorras todo el árbol para una 
 
 - La unidad del programa es la butaca/abono, no el correo ni el comprador.
 - Una butaca cuenta como máximo una asistencia por partido.
-- Un hito `N` se alcanza con `N` asistencias y se puede canjear desde la asistencia `N + 1`.
+- Un hito `N` se alcanza y se puede entregar desde que existen `N` asistencias conciliadas.
 - Una entrega corregida se revierte lógicamente; nunca se borra su historial.
 - Solo el administrador importa archivos. Administrador y consulta pueden registrar o corregir entregas.
 - No mezcles tablas, cookies, usuarios ni secretos del CRM con recompensas.

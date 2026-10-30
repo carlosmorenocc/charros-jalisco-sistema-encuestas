@@ -542,6 +542,8 @@ test('un cliente antiguo sin versión esperada no puede crear una entrega nueva'
 async function postDeliveryAtVisits(t,visits,{
   historical=false,
   role='operator',
+  milestone=2,
+  redeemFromOffset=0,
   recipientName='Persona autorizada',
   payload={}
 }={}) {
@@ -560,13 +562,16 @@ async function postDeliveryAtVisits(t,visits,{
       if (sql.includes('FROM rewards_deliveries') && sql.includes('ORDER BY COALESCE')) {
         return { rowCount:0,rows:[] };
       }
-      if (sql.includes('FROM rewards_catalog')) return { rowCount:1,rows:[{ milestone:2 }] };
+      if (sql.includes('FROM rewards_catalog')) {
+        assert.match(sql,/redeem_from_offset/u);
+        return { rowCount:1,rows:[{ milestone,redeem_from_offset:redeemFromOffset }] };
+      }
       if (sql.includes('count(DISTINCT game_id)')) return { rowCount:1,rows:[{ visits }] };
       if (sql.includes('INSERT INTO rewards_deliveries')) {
         return {
           rowCount:1,
           rows:[{
-            id:'delivery-1',program_id:'program-1',milestone:2,status:'delivered',
+            id:'delivery-1',program_id:'program-1',milestone:params[1],status:'delivered',
             recipient_name:params[8]
           }]
         };
@@ -593,7 +598,7 @@ async function postDeliveryAtVisits(t,visits,{
       'content-type':'application/json'
     },
     body:JSON.stringify({
-      milestone:2,
+      milestone,
       historical,
       unknownDate:historical,
       recipientName,
@@ -712,7 +717,9 @@ test('un retry con la misma llave idempotente devuelve la entrega original sin d
       if (sql.includes('FROM rewards_programs') && sql.includes('FOR UPDATE')) {
         return { rowCount:1,rows:[{ id:'program-1' }] };
       }
-      if (sql.includes('FROM rewards_catalog')) return { rowCount:1,rows:[{ milestone:2 }] };
+      if (sql.includes('FROM rewards_catalog')) {
+        return { rowCount:1,rows:[{ milestone:2,redeem_from_offset:0 }] };
+      }
       if (sql.includes('count(DISTINCT game_id)')) return { rowCount:1,rows:[{ visits:3 }] };
       if (sql.includes('INSERT INTO rewards_deliveries')) return { rowCount:0,rows:[] };
       if (sql.includes('FROM rewards_deliveries') && sql.includes('idempotency_key')) {
@@ -783,23 +790,51 @@ test('la entrega histórica conserva su fecha explícita y también exige destin
   assert.equal(insert.params[8],'Titular del abono');
 });
 
-test('el hito N se entrega únicamente desde N + 1 asistencias',async(t) => {
-  const atMilestone = await postDeliveryAtVisits(t,2);
-  assert.equal(atMilestone.response.status,409);
-  assert.match((await atMilestone.response.json()).error,/siguiente asistencia/i);
-  assert.equal(atMilestone.transactionQueries.at(-1).sql,'ROLLBACK');
+test('el hito N se puede entregar desde N asistencias',async(t) => {
+  const belowMilestone = await postDeliveryAtVisits(t,3,{ milestone:4 });
+  assert.equal(belowMilestone.response.status,409);
+  assert.match((await belowMilestone.response.json()).error,/requiere 4 asistencias conciliadas/i);
+  assert.equal(belowMilestone.transactionQueries.at(-1).sql,'ROLLBACK');
 
-  const nextGame = await postDeliveryAtVisits(t,3);
-  assert.equal(nextGame.response.status,201);
-  assert.equal((await nextGame.response.json()).milestone,2);
-  assert.equal(nextGame.transactionQueries.at(-1).sql,'COMMIT');
+  const atMilestone = await postDeliveryAtVisits(t,4,{ milestone:4 });
+  assert.equal(atMilestone.response.status,201);
+  assert.equal((await atMilestone.response.json()).milestone,4);
+  assert.equal(atMilestone.transactionQueries.at(-1).sql,'COMMIT');
 });
 
-test('una entrega histórica tampoco puede anticipar el N + 1',async(t) => {
-  const historical = await postDeliveryAtVisits(t,2,{ historical:true,role:'administrator' });
-  assert.equal(historical.response.status,409);
-  assert.match((await historical.response.json()).error,/siguiente asistencia/i);
-  assert.equal(historical.transactionQueries.at(-1).sql,'ROLLBACK');
+test('una entrega histórica respeta el mismo límite N sin anticiparlo',async(t) => {
+  const belowMilestone = await postDeliveryAtVisits(t,5,{
+    historical:true,
+    role:'administrator',
+    milestone:6
+  });
+  assert.equal(belowMilestone.response.status,409);
+  assert.match((await belowMilestone.response.json()).error,/requiere 6 asistencias conciliadas/i);
+  assert.equal(belowMilestone.transactionQueries.at(-1).sql,'ROLLBACK');
+
+  const atMilestone = await postDeliveryAtVisits(t,6,{
+    historical:true,
+    role:'administrator',
+    milestone:6
+  });
+  assert.equal(atMilestone.response.status,201);
+  assert.equal((await atMilestone.response.json()).milestone,6);
+  assert.equal(atMilestone.transactionQueries.at(-1).sql,'COMMIT');
+});
+
+test('la API suma el offset configurado al hito antes de permitir una entrega',async(t) => {
+  const beforeOffset = await postDeliveryAtVisits(t,4,{ milestone:4,redeemFromOffset:1 });
+  assert.equal(beforeOffset.response.status,409);
+  assert.match((await beforeOffset.response.json()).error,/requiere 5 asistencias conciliadas/i);
+  assert.equal(beforeOffset.transactionQueries.at(-1).sql,'ROLLBACK');
+
+  const atConfiguredThreshold = await postDeliveryAtVisits(t,5,{
+    milestone:4,
+    redeemFromOffset:1
+  });
+  assert.equal(atConfiguredThreshold.response.status,201);
+  assert.equal((await atConfiguredThreshold.response.json()).milestone,4);
+  assert.equal(atConfiguredThreshold.transactionQueries.at(-1).sql,'COMMIT');
 });
 
 test('un operador de consulta no puede registrar entregas históricas',async(t) => {
