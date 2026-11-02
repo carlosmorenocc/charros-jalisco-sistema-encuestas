@@ -1,3 +1,26 @@
+.stadiumPage {
+  isolation: isolate;
+  background: #052e66;
+}
+
+.stadiumPage::before {
+  content: '';
+  position: fixed;
+  z-index: -1;
+  inset: -18px;
+  pointer-events: none;
+  background:
+    linear-gradient(145deg, rgba(3, 35, 80, .82), rgba(8, 72, 145, .68)),
+    url('./assets/estadio-panamericano.jpg') center / cover no-repeat;
+  filter: blur(5px) saturate(.82) contrast(.94);
+  transform: scale(1.035);
+}
+
+.stadiumFooter {
+  color: rgba(255, 255, 255, .94);
+  text-shadow: 0 1px 5px rgba(0, 18, 48, .68);
+}
+
 .registrationNote {
   display: grid;
   gap: 5px;
@@ -121,6 +144,11 @@
 }
 
 @media (max-width: 560px) {
+  .stadiumPage::before {
+    background-position: 62% center;
+    filter: blur(4px) saturate(.82) contrast(.94);
+  }
+
   .shareControls {
     grid-template-columns: 1fr;
   }

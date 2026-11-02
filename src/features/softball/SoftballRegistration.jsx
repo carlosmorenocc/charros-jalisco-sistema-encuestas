@@ -141,7 +141,7 @@ export default function SoftballRegistration() {
   }
 
   return (
-    <main className={baseStyles.page}>
+    <main className={`${baseStyles.page} ${styles.stadiumPage}`}>
       <div className={baseStyles.glow} aria-hidden="true" />
       <section className={baseStyles.card}>
         <a
@@ -309,7 +309,7 @@ export default function SoftballRegistration() {
           </>
         )}
       </section>
-      <p className={baseStyles.footer}>Charros de Jalisco · Experiencias que nos unen</p>
+      <p className={`${baseStyles.footer} ${styles.stadiumFooter}`}>Charros de Jalisco · Experiencias que nos unen</p>
     </main>
   )
 }
