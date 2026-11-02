@@ -176,7 +176,7 @@ export default function SoftballRegistration() {
               <span><strong>Fecha límite:</strong> martes 3 de noviembre de 2026, hasta el final del día.</span>
             </aside>
 
-            <label className={baseStyles.field} htmlFor="softball-full-name">
+            <label className={`${baseStyles.field} ${styles.participantField}`} htmlFor="softball-full-name">
               <span>Nombre completo</span>
               <input
                 id="softball-full-name"
@@ -193,7 +193,7 @@ export default function SoftballRegistration() {
               <small>Tu nombre se guardará en mayúsculas.</small>
             </label>
 
-            <label className={baseStyles.field} htmlFor="softball-phone">
+            <label className={`${baseStyles.field} ${styles.participantField}`} htmlFor="softball-phone">
               <span>Número de teléfono</span>
               <input
                 id="softball-phone"
