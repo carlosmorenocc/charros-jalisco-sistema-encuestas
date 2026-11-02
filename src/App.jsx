@@ -9,6 +9,7 @@ import EncuestaLargaCsvDownloadPage from './features/registros/admin/EncuestaLar
 import RegistrosCsvDownloadPage from './features/registros/admin/RegistrosCsvDownloadPage'
 import RewardsRegistration from './features/rewards/RewardsRegistration'
 import RewardsCsvDownloadPage from './features/rewards/admin/RewardsCsvDownloadPage'
+import SoftballRegistration from './features/softball/SoftballRegistration'
 
 const SorteosApp = lazy(() => import('./features/sorteos/SorteosApp'))
 
@@ -20,6 +21,7 @@ export default function App() {
   const isAbonadosMode = pathname.startsWith('/abonados')
   const isLeadsMode = pathname.startsWith('/leads')
   const isRewardsMode = pathname.startsWith('/experiencias-recompensas')
+  const isSoftballMode = pathname.startsWith('/softbol-afiliados')
   const isAbonadosAdminMode = normalizedPathname === '/admin/abonados'
   const isRegistrosAdminMode = normalizedPathname === '/admin/registros'
   const isEncuestaLargaAdminMode = normalizedPathname === '/admin/encuesta-larga'
@@ -69,12 +71,18 @@ export default function App() {
   const subscriberFormEnabled = import.meta.env.VITE_SUBSCRIBER_FORM_ENABLED === 'true'
   const leadsFormEnabled = import.meta.env.VITE_LEADS_FORM_ENABLED !== 'false'
   const rewardsFormEnabled = import.meta.env.VITE_REWARDS_FORM_ENABLED !== 'false'
+  const softballFormEnabled = import.meta.env.VITE_SOFTBALL_FORM_ENABLED === 'true'
 
   if ((isAbonadosMode && !subscriberFormEnabled)
     || (isLeadsMode && !leadsFormEnabled)
     || (isRewardsMode && !rewardsFormEnabled)
-    || (!isAbonadosMode && !isLeadsMode && !isRewardsMode && !publicFormsEnabled)) {
+    || (isSoftballMode && !softballFormEnabled)
+    || (!isAbonadosMode && !isLeadsMode && !isRewardsMode && !isSoftballMode && !publicFormsEnabled)) {
     return <FormsPaused />
+  }
+
+  if (isSoftballMode) {
+    return <SoftballRegistration />
   }
 
   if (isRewardsMode) {
