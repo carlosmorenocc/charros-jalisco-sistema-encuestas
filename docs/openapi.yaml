@@ -33,6 +33,11 @@ paths:
                     type: boolean
                   softballFormEnabled:
                     type: boolean
+                  softballRegistrationOpen:
+                    type: boolean
+                  softballRegistrationDeadline:
+                    type: string
+                    format: date-time
 
   /api/submit:
     post:
@@ -404,6 +409,8 @@ paths:
           description: Campos inválidos, evento incorrecto o aviso no aceptado
         '409':
           description: La persona ya fue registrada o el identificador pertenece a otro envío
+        '410':
+          description: La fecha límite de registro ya venció
         '503':
           description: El formulario de sóftbol está temporalmente deshabilitado
 

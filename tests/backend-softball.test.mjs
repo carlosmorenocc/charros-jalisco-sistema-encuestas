@@ -56,7 +56,8 @@ async function startBackend(
   {
     enabled = true,
     exportToken = 'softball-export-token',
-    rateLimit = 1000
+    rateLimit = 1000,
+    registrationDeadline = '2099-11-03T22:00:00.000Z'
   } = {}
 ) {
   const port = await availablePort()
@@ -70,6 +71,7 @@ async function startBackend(
       SUBSCRIBER_FORM_ENABLED: 'false',
       REWARDS_FORM_ENABLED: 'false',
       SOFTBALL_FORM_ENABLED: enabled ? 'true' : 'false',
+      SOFTBALL_REGISTRATION_DEADLINE: registrationDeadline,
       CSV_EXPORT_TOKEN: exportToken,
       ABONADOS_CSV_EXPORT_TOKEN: 'abonados-export-token',
       ALLOWED_ORIGINS: 'http://localhost:5173',
@@ -428,6 +430,33 @@ test('el endpoint de s\u00f3ftbol conserva el rate limit compartido', async (t) 
     telefono: '3399998888'
   }))
   assert.equal(second.status, 429)
+})
+
+test('el backend cierra autom\u00e1ticamente el registro al vencer la fecha l\u00edmite', async (t) => {
+  const dataDir = await mkdtemp(path.join(os.tmpdir(), 'charros-softball-deadline-'))
+  const registrationDeadline = '2000-01-01T00:00:00.000Z'
+  const backend = await startBackend(dataDir, { registrationDeadline })
+  t.after(async () => {
+    await stopBackend(backend.child)
+    await rm(dataDir, { recursive: true, force: true })
+  })
+
+  const health = await (await fetch(`${backend.baseUrl}/healthz`)).json()
+  assert.equal(health.softballFormEnabled, true)
+  assert.equal(health.softballRegistrationOpen, false)
+  assert.equal(health.softballRegistrationDeadline, registrationDeadline)
+
+  const response = await postSoftball(backend.baseUrl, softballBody({
+    submissionId: 'softball-after-deadline'
+  }))
+  assert.equal(response.status, 410)
+  assert.equal(response.headers.get('cache-control'), 'no-store')
+  const result = await response.json()
+  assert.equal(result.error, 'Softball registration is closed')
+  assert.equal(result.deadline, registrationDeadline)
+
+  const { rows } = parseCsv(await readFile(path.join(dataDir, softballCsvFilename), 'utf8'))
+  assert.equal(rows.length, 0)
 })
 
 test('un esquema desconocido de s\u00f3ftbol impide iniciar sin sobrescribir datos', async (t) => {

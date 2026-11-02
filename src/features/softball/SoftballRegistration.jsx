@@ -32,6 +32,9 @@ function submissionErrorMessage(error) {
   if (error?.status === 409) {
     return 'Esta persona ya está registrada. Solo se permite un registro por persona.'
   }
+  if (error?.status === 410) {
+    return 'El periodo de registro cerró el martes 3 de noviembre a las 4:00 p.m.'
+  }
   if (error?.status === 400) {
     return 'Revisa el nombre, el teléfono y el evento seleccionado.'
   }
@@ -180,6 +183,8 @@ export default function SoftballRegistration() {
             <aside className={styles.registrationNote} aria-label="Información importante del registro">
               <strong>Lugares limitados.</strong>
               <span>Se permite un registro por persona. Si quieres registrar a alguien más, envía otro formulario con los datos de esa persona.</span>
+              <span><strong>Fecha límite:</strong> martes 3 de noviembre de 2026 a las 4:00 p.m. (hora de Ciudad de México).</span>
+              <span>Los avisos generales se compartirán en el canal de difusión de WhatsApp. Si tu lugar queda asegurado, te contactaremos personalmente por WhatsApp al número registrado.</span>
             </aside>
 
             <label className={baseStyles.field} htmlFor="softball-full-name">
@@ -255,7 +260,7 @@ export default function SoftballRegistration() {
             <p className={baseStyles.eyebrow}>Antes de finalizar</p>
             <h1 ref={headingRef} tabIndex="-1">Aviso de Privacidad</h1>
             <p className={baseStyles.intro}>
-              Tus datos serán utilizados para registrar tu participación y administrar esta dinámica de Club Charros.
+              Tus datos serán utilizados para registrar tu participación, administrar esta dinámica y contactarte por WhatsApp en caso de ser seleccionado.
             </p>
             <a className={baseStyles.privacyLink} href="https://www.charrosjalisco.com/aviso-de-privacidad" target="_blank" rel="noreferrer">
               Consultar Aviso de Privacidad completo
@@ -295,7 +300,7 @@ export default function SoftballRegistration() {
             <p className={baseStyles.eyebrow}>Registro completado</p>
             <h1 ref={headingRef} tabIndex="-1">¡Tu participación fue registrada!</h1>
             <p>
-              Gracias por participar. Te contactaremos si tu lugar queda asegurado en la rifa del juego de sóftbol.
+              Gracias por participar. Publicaremos los avisos generales en nuestro canal de difusión de WhatsApp y, si tu lugar queda asegurado en la rifa, te contactaremos personalmente por WhatsApp al número que registraste.
             </p>
             <a className={baseStyles.primaryButton} href={WHATSAPP_CHANNEL} target="_blank" rel="noreferrer">Ir al canal de WhatsApp</a>
           </div>

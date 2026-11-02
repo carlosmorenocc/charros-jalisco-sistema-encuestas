@@ -45,10 +45,14 @@ describe('SoftballRegistration', () => {
     expect(screen.getByText('Lugares limitados.')).toBeInTheDocument()
     expect(screen.getByText(/un registro por persona/i)).toBeInTheDocument()
     expect(screen.getByText(/envía otro formulario con los datos de esa persona/i)).toBeInTheDocument()
+    expect(screen.getByText(/martes 3 de noviembre de 2026 a las 4:00 p\.m\./i)).toBeInTheDocument()
+    expect(screen.getByText(/avisos generales se compartirán en el canal de difusión de WhatsApp/i)).toBeInTheDocument()
+    expect(screen.getByText(/te contactaremos personalmente por WhatsApp al número registrado/i)).toBeInTheDocument()
     expect(screen.getByText('Domingo 8 de noviembre de 2026 · 9:00 a.m.')).toBeInTheDocument()
     expect(screen.getByText(/Campo del Estadio Panamericano/i)).toBeInTheDocument()
     expect(screen.getAllByRole('radio')).toHaveLength(1)
-    expect(screen.queryByText(/40 afiliados|40 lugares/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/40 afiliados|40 lugares|cupo:\s*40/i)).not.toBeInTheDocument()
+    expect(screen.queryByLabelText(/correo/i)).not.toBeInTheDocument()
 
     const shareLink = screen.getByRole('link', { name: /softbol-afiliados/i })
     expect(shareLink).toHaveAttribute('href', 'http://localhost:3000/softbol-afiliados')
@@ -94,6 +98,7 @@ describe('SoftballRegistration', () => {
       aceptaComunicaciones: true
     })
     expect(await screen.findByRole('heading', { name: '¡Tu participación fue registrada!' })).toBeInTheDocument()
+    expect(screen.getByText(/te contactaremos personalmente por WhatsApp al número que registraste/i)).toBeInTheDocument()
   })
 
   it('explica el límite de una persona cuando el backend responde 409', async () => {
@@ -158,6 +163,7 @@ describe('SoftballRegistration', () => {
 
   it.each([
     [400, 'Revisa el nombre, el teléfono y el evento seleccionado'],
+    [410, 'periodo de registro cerró'],
     [429, 'muchos registros al mismo tiempo'],
     [503, 'temporalmente pausado'],
     [500, 'en unos momentos']
