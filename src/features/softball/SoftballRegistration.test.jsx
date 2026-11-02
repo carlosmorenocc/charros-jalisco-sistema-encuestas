@@ -1,5 +1,5 @@
 import React from 'react'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import SoftballRegistration from './SoftballRegistration'
 import { submitSoftballForm } from './submitSoftballForm'
 
@@ -42,6 +42,7 @@ describe('SoftballRegistration', () => {
 
     render(<SoftballRegistration />)
 
+    expect(screen.getByRole('heading', { level: 1, name: '¡Regístrate para jugar sóftbol en el Estadio Panamericano!' })).toBeInTheDocument()
     expect(screen.getByText('Lugares limitados.')).toBeInTheDocument()
     expect(screen.getByText(/un registro por persona/i)).toBeInTheDocument()
     expect(screen.getByText(/envía otro formulario con los datos de esa persona/i)).toBeInTheDocument()
@@ -53,12 +54,7 @@ describe('SoftballRegistration', () => {
     expect(screen.getAllByRole('radio')).toHaveLength(1)
     expect(screen.queryByText(/40 afiliados|40 lugares|cupo:\s*40/i)).not.toBeInTheDocument()
     expect(screen.queryByLabelText(/correo/i)).not.toBeInTheDocument()
-
-    const shareLink = screen.getByRole('link', { name: /softbol-afiliados/i })
-    expect(shareLink).toHaveAttribute('href', 'http://localhost:3000/softbol-afiliados')
-    fireEvent.click(screen.getByRole('button', { name: 'Copiar liga' }))
-    await waitFor(() => expect(writeText).toHaveBeenCalledWith('http://localhost:3000/softbol-afiliados'))
-    expect(await screen.findByText(/Liga copiada/i)).toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: 'Comparte este registro' })).not.toBeInTheDocument()
 
     const fullName = screen.getByLabelText(/Nombre completo/i)
     fireEvent.change(fullName, { target: { value: 'Ana López Pérez' } })
@@ -80,6 +76,7 @@ describe('SoftballRegistration', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Continuar' }))
 
     expect(await screen.findByRole('heading', { name: 'Aviso de Privacidad' })).toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: 'Comparte este registro' })).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Enviar registro' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('Debes aceptar')
 
@@ -99,6 +96,14 @@ describe('SoftballRegistration', () => {
     })
     expect(await screen.findByRole('heading', { name: '¡Tu participación fue registrada!' })).toBeInTheDocument()
     expect(screen.getByText(/te contactaremos personalmente por WhatsApp al número que registraste/i)).toBeInTheDocument()
+    const shareRegion = screen.getByRole('region', { name: 'Comparte este registro' })
+    expect(shareRegion).toBeInTheDocument()
+
+    const shareLink = within(shareRegion).getByRole('link', { name: /softbol-afiliados/i })
+    expect(shareLink).toHaveAttribute('href', 'http://localhost:3000/softbol-afiliados')
+    fireEvent.click(within(shareRegion).getByRole('button', { name: 'Copiar liga' }))
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith('http://localhost:3000/softbol-afiliados'))
+    expect(await within(shareRegion).findByText(/Liga copiada/i)).toBeInTheDocument()
   })
 
   it('explica el límite de una persona cuando el backend responde 409', async () => {

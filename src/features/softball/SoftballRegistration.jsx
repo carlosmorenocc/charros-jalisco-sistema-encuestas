@@ -154,16 +154,6 @@ export default function SoftballRegistration() {
           <img className={baseStyles.logo} src={logo} alt="Club Charros, experiencias y recompensas" />
         </a>
 
-        <section className={styles.shareBox} aria-labelledby="softball-share-title">
-          <strong className={styles.shareBoxTitle} id="softball-share-title">Comparte este registro</strong>
-          <p>Copia la liga y envíasela a otra persona afiliada que quiera participar.</p>
-          <div className={styles.shareControls}>
-            <a className={styles.shareLink} href={shareUrl}>{shareUrl}</a>
-            <button className={styles.copyButton} type="button" onClick={copyShareLink}>Copiar liga</button>
-          </div>
-          <p className={styles.copyStatus} role="status" aria-live="polite">{copyStatus}</p>
-        </section>
-
         {step < 3 && (
           <div className={baseStyles.progress} aria-label={`Paso ${step} de 2`}>
             <span className={step >= 1 ? baseStyles.activeDot : ''}>1</span>
@@ -175,7 +165,7 @@ export default function SoftballRegistration() {
         {step === 1 && (
           <form onSubmit={continueToPrivacy}>
             <p className={baseStyles.eyebrow}>Charromanía afiliada</p>
-            <h1 ref={headingRef} tabIndex="-1">Regístrate para jugar sóftbol en el Estadio Panamericano</h1>
+            <h1 ref={headingRef} tabIndex="-1">¡Regístrate para jugar sóftbol en el Estadio Panamericano!</h1>
             <p className={baseStyles.intro}>
               Participa en la rifa para vivir el campo de Club Charros junto con otros afiliados.
             </p>
@@ -294,15 +284,29 @@ export default function SoftballRegistration() {
         )}
 
         {step === 3 && (
-          <div className={baseStyles.success} role="status">
-            <span className={baseStyles.successIcon} aria-hidden="true">✓</span>
-            <p className={baseStyles.eyebrow}>Registro completado</p>
-            <h1 ref={headingRef} tabIndex="-1">¡Tu participación fue registrada!</h1>
-            <p>
-              Gracias por participar. Publicaremos los avisos generales en nuestro canal de difusión de WhatsApp y, si tu lugar queda asegurado en la rifa, te contactaremos personalmente por WhatsApp al número que registraste.
-            </p>
-            <a className={baseStyles.primaryButton} href={WHATSAPP_CHANNEL} target="_blank" rel="noreferrer">Ir al canal de WhatsApp</a>
-          </div>
+          <>
+            <div className={baseStyles.success} role="status">
+              <span className={baseStyles.successIcon} aria-hidden="true">✓</span>
+              <p className={baseStyles.eyebrow}>Registro completado</p>
+              <h1 ref={headingRef} tabIndex="-1">¡Tu participación fue registrada!</h1>
+              <p>
+                Gracias por participar. Publicaremos los avisos generales en nuestro canal de difusión de WhatsApp y, si tu lugar queda asegurado en la rifa, te contactaremos personalmente por WhatsApp al número que registraste.
+              </p>
+              <a className={baseStyles.primaryButton} href={WHATSAPP_CHANNEL} target="_blank" rel="noreferrer">Ir al canal de WhatsApp</a>
+            </div>
+            <section
+              className={`${styles.shareBox} ${styles.successShareBox}`}
+              aria-labelledby="softball-share-title"
+            >
+              <strong className={styles.shareBoxTitle} id="softball-share-title">Comparte este registro</strong>
+              <p>Copia la liga y envíasela a otra persona afiliada que quiera participar.</p>
+              <div className={styles.shareControls}>
+                <a className={styles.shareLink} href={shareUrl}>{shareUrl}</a>
+                <button className={styles.copyButton} type="button" onClick={copyShareLink}>Copiar liga</button>
+              </div>
+              <p className={styles.copyStatus} role="status" aria-live="polite">{copyStatus}</p>
+            </section>
+          </>
         )}
       </section>
       <p className={baseStyles.footer}>Charros de Jalisco · Experiencias que nos unen</p>

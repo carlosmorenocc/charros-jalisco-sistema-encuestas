@@ -23,6 +23,10 @@
   background: #f5f9ff;
 }
 
+.shareBox.successShareBox {
+  margin: 28px 0 0;
+}
+
 .shareBoxTitle {
   display: block;
   margin: 0;
