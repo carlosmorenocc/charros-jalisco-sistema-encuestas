@@ -16,6 +16,10 @@
   transform: scale(1.035);
 }
 
+.stadiumPage h1[tabindex='-1']:focus {
+  outline: none;
+}
+
 .stadiumFooter {
   color: rgba(255, 255, 255, .94);
   text-shadow: 0 1px 5px rgba(0, 18, 48, .68);
@@ -164,3 +168,4 @@
     transition: none;
   }
 }
+
