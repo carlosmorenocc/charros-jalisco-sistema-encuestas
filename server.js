@@ -32,6 +32,12 @@ const publicFormsEnabled = process.env.PUBLIC_FORMS_ENABLED === 'true'
 const subscriberFormEnabled = process.env.SUBSCRIBER_FORM_ENABLED === 'true'
 const rewardsFormEnabled = process.env.REWARDS_FORM_ENABLED === 'true'
 const softballFormEnabled = process.env.SOFTBALL_FORM_ENABLED === 'true'
+const softballRegistrationDeadline = process.env.SOFTBALL_REGISTRATION_DEADLINE
+  || '2026-11-03T22:00:00.000Z'
+const softballRegistrationDeadlineMs = Date.parse(softballRegistrationDeadline)
+if (Number.isNaN(softballRegistrationDeadlineMs)) {
+  throw new Error('SOFTBALL_REGISTRATION_DEADLINE must be a valid ISO-8601 timestamp')
+}
 const csvExportToken = process.env.CSV_EXPORT_TOKEN || ''
 const abonadosCsvExportToken = process.env.ABONADOS_CSV_EXPORT_TOKEN || ''
 
@@ -1115,6 +1121,16 @@ function requireSoftballFormEnabled(_req, res, next) {
   return res.status(503).json({ ok: false, error: 'Softball form is temporarily disabled' })
 }
 
+function requireSoftballRegistrationOpen(_req, res, next) {
+  if (Date.now() < softballRegistrationDeadlineMs) return next()
+  res.setHeader('Cache-Control', 'no-store')
+  return res.status(410).json({
+    ok: false,
+    error: 'Softball registration is closed',
+    deadline: softballRegistrationDeadline
+  })
+}
+
 function secureTokenEquals(received, expected) {
   const receivedBuffer = Buffer.from(received)
   const expectedBuffer = Buffer.from(expected)
@@ -1162,6 +1178,8 @@ app.get('/healthz', (_req, res) => {
     subscriberFormEnabled,
     rewardsFormEnabled,
     softballFormEnabled,
+    softballRegistrationOpen: softballFormEnabled && Date.now() < softballRegistrationDeadlineMs,
+    softballRegistrationDeadline,
     queueSize: pendingRows.length
   })
 })
@@ -1279,7 +1297,12 @@ app.post('/api/rewards-submit', requireRewardsFormEnabled, submitLimiter, async 
   }
 })
 
-app.post('/api/softball-submit', requireSoftballFormEnabled, submitLimiter, async (req, res) => {
+app.post(
+  '/api/softball-submit',
+  requireSoftballFormEnabled,
+  requireSoftballRegistrationOpen,
+  submitLimiter,
+  async (req, res) => {
   const payload = normalizeSoftballPayload(req.body)
   const validation = validateSoftballPayload(payload)
 
@@ -1331,7 +1354,8 @@ app.post('/api/softball-submit', requireSoftballFormEnabled, submitLimiter, asyn
       error: 'Unable to persist softball registration'
     })
   }
-})
+  }
+)
 
 app.post(
   '/api/abonados-lmp-submit',

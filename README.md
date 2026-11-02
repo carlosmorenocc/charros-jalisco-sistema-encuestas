@@ -255,7 +255,9 @@ restaura conscientemente el archivo de respaldo antes de arrancar la versión an
 
 - Se habilita de manera independiente con `SOFTBALL_FORM_ENABLED=true` en el backend y `VITE_SOFTBALL_FORM_ENABLED=true` en el frontend.
 - La ruta pública es `/softbol-afiliados` y registra el evento `softbol-club-charros-2026-11-08`.
+- El evento es el domingo 8 de noviembre de 2026 a las 9:00 a.m.; el backend cierra automáticamente la captura el martes 3 de noviembre a las 4:00 p.m. de Ciudad de México (`2026-11-03T22:00:00.000Z`).
 - Exige nombre completo, teléfono mexicano válido, selección del evento y aceptación del Aviso de Privacidad.
+- Los avisos generales se publican en el canal de difusión y la confirmación del lugar se realiza personalmente por WhatsApp al teléfono registrado; no se solicita correo electrónico.
 - Guarda el nombre en mayúsculas y genera los metadatos de campaña, origen, fecha y consentimiento desde el servidor.
 - Permite un registro por persona. El backend identifica duplicados por la combinación normalizada de nombre y teléfono, por lo que un mismo teléfono puede utilizarse para registrar a otra persona distinta.
 - Los envíos concurrentes se serializan y la deduplicación se reconstruye desde el CSV después de cada reinicio.
@@ -328,6 +330,7 @@ Y en el backend de Render:
 ```text
 SUBSCRIBER_FORM_ENABLED=true
 SOFTBALL_FORM_ENABLED=true
+SOFTBALL_REGISTRATION_DEADLINE=2026-11-03T22:00:00.000Z
 CSV_EXPORT_TOKEN=<secreto-largo-y-aleatorio>
 ABONADOS_CSV_EXPORT_TOKEN=<otro-secreto-largo-y-aleatorio>
 ```
