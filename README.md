@@ -66,6 +66,10 @@ Encuesta de leads en estadio (versión corta de 3 ventanas):
 
 [http://localhost:5173/leads](http://localhost:5173/leads)
 
+Registro independiente para el juego de sóftbol de afiliados:
+
+[http://localhost:5173/softbol-afiliados](http://localhost:5173/softbol-afiliados)
+
 Con esto, cada respuesta se almacena automáticamente en:
 
 `data/submissions.csv`
@@ -77,6 +81,10 @@ Y los leads de estadio en:
 Los registros de abonados LMP 2026-2027 se guardan de forma independiente en:
 
 `data/submissions_abonados_lmp_2026_2027.csv`
+
+Las participaciones del juego de sóftbol se guardan de forma independiente en:
+
+`data/submissions_softbol_afiliados_2026.csv`
 
 Las descargas de encuesta general y leads requieren
 `Authorization: Bearer <CSV_EXPORT_TOKEN>`. La descarga de abonados usa un secreto
@@ -95,11 +103,16 @@ Y para abonados:
 
 `http://localhost:3001/api/abonados-lmp-submissions.csv`
 
+Y para el juego de sóftbol:
+
+`http://localhost:3001/api/softball-submissions.csv`
+
 Portales administrativos (las claves nunca se guardan en el navegador):
 
 - Registro Oficial corto: `http://localhost:5173/admin/registros` con `CSV_EXPORT_TOKEN`.
 - Encuesta larga: `http://localhost:5173/admin/encuesta-larga` con `CSV_EXPORT_TOKEN`.
 - Abonados: `http://localhost:5173/admin/abonados` con `ABONADOS_CSV_EXPORT_TOKEN`.
+- Experiencias y sóftbol: `http://localhost:5173/admin/experiencias-recompensas` con `CSV_EXPORT_TOKEN`; cada campaña se descarga en un CSV separado.
 
 ### 3. Configura Power Automate (opcional)
 Copia `.env.example` a `.env` y añade tu endpoint:
@@ -187,6 +200,8 @@ npm run preview      # Vista previa
 - Endpoint de descarga (leads): `GET /api/leads-submissions.csv`.
 - Endpoint de escritura (abonados): `POST /api/abonados-lmp-submit`.
 - Endpoint de descarga protegida (abonados): `GET /api/abonados-lmp-submissions.csv`.
+- Endpoint de escritura (sóftbol): `POST /api/softball-submit`.
+- Endpoint de descarga protegida (sóftbol): `GET /api/softball-submissions.csv`.
 - En desarrollo, el frontend usa por defecto `http://localhost:3001/api/submit` si no defines otro endpoint.
 
 ### Regla especial para encuesta de leads
@@ -236,6 +251,18 @@ frontend. No reviertas el backend a una versión anterior: la migración de dato
 forward-only. Para una recuperación excepcional del backend, detén la escritura y
 restaura conscientemente el archivo de respaldo antes de arrancar la versión antigua.
 
+### Registro de sóftbol para afiliados
+
+- Se habilita de manera independiente con `SOFTBALL_FORM_ENABLED=true` en el backend y `VITE_SOFTBALL_FORM_ENABLED=true` en el frontend.
+- La ruta pública es `/softbol-afiliados` y registra el evento `softbol-club-charros-2026-11-08`.
+- Exige nombre completo, teléfono mexicano válido, selección del evento y aceptación del Aviso de Privacidad.
+- Guarda el nombre en mayúsculas y genera los metadatos de campaña, origen, fecha y consentimiento desde el servidor.
+- Permite un registro por persona. El backend identifica duplicados por la combinación normalizada de nombre y teléfono, por lo que un mismo teléfono puede utilizarse para registrar a otra persona distinta.
+- Los envíos concurrentes se serializan y la deduplicación se reconstruye desde el CSV después de cada reinicio.
+- El almacenamiento CSV requiere una sola instancia escritora con disco persistente. La configuración actual de Render cumple esta condición; antes de escalar a varias instancias debe migrarse a una base con restricción única transaccional.
+- Las respuestas se almacenan exclusivamente en `submissions_softbol_afiliados_2026.csv`; nunca se mezclan con Papá sobre Ruedas, Romeo Santos, abonados o la encuesta general.
+- La exportación utiliza `CSV_EXPORT_TOKEN` y se ofrece como una sección separada dentro de `/admin/experiencias-recompensas`.
+
 ### Seguridad de exportaciones CSV
 
 Configura un secreto largo y aleatorio en el backend:
@@ -246,8 +273,9 @@ ABONADOS_CSV_EXPORT_TOKEN=<otro-secreto-aleatorio>
 ```
 
 No uses el prefijo `VITE_` ni expongas este valor en Vercel o en el código del navegador.
-`CSV_EXPORT_TOKEN` protege las exportaciones de encuesta general y leads;
-`ABONADOS_CSV_EXPORT_TOKEN` protege exclusivamente la exportación de abonados.
+`CSV_EXPORT_TOKEN` protege las exportaciones de encuesta general, leads,
+experiencias/recompensas y sóftbol; `ABONADOS_CSV_EXPORT_TOKEN` protege exclusivamente
+la exportación de abonados.
 Usa secretos distintos para mantener la separación de privilegios. Ejemplo local:
 
 ```bash
@@ -278,6 +306,15 @@ VITE_SUBSCRIBER_FORM_ENABLED=true
 VITE_ABONADOS_SUBMISSION_ENDPOINT=https://TU-API/api/abonados-lmp-submit
 ```
 
+Para la convocatoria de sóftbol, configura en Vercel:
+
+```text
+VITE_SOFTBALL_FORM_ENABLED=true
+VITE_SOFTBALL_SUBMISSION_ENDPOINT=https://TU-API/api/softball-submit
+VITE_SOFTBALL_EXPORT_ENDPOINT=https://TU-API/api/softball-submissions.csv
+VITE_SOFTBALL_PUBLIC_URL=https://TU-FRONTEND/softbol-afiliados
+```
+
 Para habilitar los portales separados del registro corto y la encuesta larga, configura
 únicamente las URLs públicas; la clave privada permanece exclusivamente en Render:
 
@@ -290,6 +327,7 @@ Y en el backend de Render:
 
 ```text
 SUBSCRIBER_FORM_ENABLED=true
+SOFTBALL_FORM_ENABLED=true
 CSV_EXPORT_TOKEN=<secreto-largo-y-aleatorio>
 ABONADOS_CSV_EXPORT_TOKEN=<otro-secreto-largo-y-aleatorio>
 ```

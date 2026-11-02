@@ -18,6 +18,10 @@ vi.mock('./features/rewards/RewardsRegistration', () => ({
   default: () => <section>Experiencias y recompensas cargado</section>
 }))
 
+vi.mock('./features/softball/SoftballRegistration', () => ({
+  default: () => <section>Registro de sóftbol cargado</section>
+}))
+
 vi.mock('./features/rewards/admin/RewardsCsvDownloadPage', () => ({
   default: () => <main>Exportación privada de recompensas cargada</main>
 }))
@@ -150,6 +154,28 @@ describe('App routing', () => {
 
     expect(screen.getByText('Experiencias y recompensas cargado')).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'Registro temporalmente no disponible' })).not.toBeInTheDocument()
+  })
+
+  it('habilita de forma independiente el registro de sóftbol para afiliados', () => {
+    vi.stubEnv('VITE_PUBLIC_FORMS_ENABLED', 'false')
+    vi.stubEnv('VITE_SOFTBALL_FORM_ENABLED', 'true')
+    window.history.pushState({}, '', '/softbol-afiliados')
+
+    render(<App />)
+
+    expect(screen.getByText('Registro de sóftbol cargado')).toBeInTheDocument()
+    expect(screen.queryByText('Experiencias y recompensas cargado')).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Registro temporalmente no disponible' })).not.toBeInTheDocument()
+  })
+
+  it('permite pausar únicamente el registro de sóftbol', () => {
+    vi.stubEnv('VITE_SOFTBALL_FORM_ENABLED', 'false')
+    window.history.pushState({}, '', '/softbol-afiliados')
+
+    render(<App />)
+
+    expect(screen.getByRole('heading', { name: 'Registro temporalmente no disponible' })).toBeInTheDocument()
+    expect(screen.queryByText('Registro de sóftbol cargado')).not.toBeInTheDocument()
   })
 
   it.each(['/admin/experiencias-recompensas', '/admin/experiencias-recompensas/'])(

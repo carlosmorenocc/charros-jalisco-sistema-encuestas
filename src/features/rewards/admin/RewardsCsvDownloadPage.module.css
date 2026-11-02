@@ -1,0 +1,56 @@
+.rewardsCard {
+  width: min(920px, 100%);
+}
+
+.downloads {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  margin-top: 24px;
+}
+
+.downloadSection {
+  padding: 22px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.downloadSection[data-export-kind='softball'] {
+  border-color: rgba(245, 211, 107, 0.48);
+  background: rgba(224, 177, 48, 0.09);
+}
+
+.sectionLabel {
+  display: block;
+  color: #f5d36b;
+  font-size: 0.7rem;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.downloadSection h2 {
+  margin: 8px 0 0;
+  color: #ffffff;
+  font-size: 1.35rem;
+  line-height: 1.2;
+}
+
+.sectionIntro {
+  min-height: 4.4em;
+  margin: 10px 0 0;
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+@media (max-width: 760px) {
+  .downloads {
+    grid-template-columns: 1fr;
+  }
+
+  .sectionIntro {
+    min-height: 0;
+  }
+}

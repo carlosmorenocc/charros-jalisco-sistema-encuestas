@@ -1,7 +1,7 @@
 openapi: 3.0.0
 info:
   title: Encuesta Oficial Charros - Submit API
-  version: 1.3.0
+  version: 1.4.0
   description: API HTTP para recibir respuestas de encuestas y registros de Charros de Jalisco.
 
 servers:
@@ -28,6 +28,10 @@ paths:
                   publicFormsEnabled:
                     type: boolean
                   subscriberFormEnabled:
+                    type: boolean
+                  rewardsFormEnabled:
+                    type: boolean
+                  softballFormEnabled:
                     type: boolean
 
   /api/submit:
@@ -338,6 +342,79 @@ paths:
           description: Token ausente o incorrecto
         '503':
           description: Exportación deshabilitada porque ABONADOS_CSV_EXPORT_TOKEN no está configurado
+
+  /api/softball-submit:
+    post:
+      summary: Registra una participación individual para el juego de sóftbol de afiliados
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - nombreCompleto
+                - telefono
+                - eventoSeleccionado
+                - aceptaAvisoPrivacidad
+              properties:
+                submissionId:
+                  type: string
+                  maxLength: 128
+                nombreCompleto:
+                  type: string
+                  minLength: 5
+                  maxLength: 140
+                telefono:
+                  type: string
+                  description: Teléfono mexicano de 10 dígitos; se aceptan formatos con +52.
+                eventoSeleccionado:
+                  type: string
+                  enum: [softbol-club-charros-2026-11-08]
+                aceptaAvisoPrivacidad:
+                  type: boolean
+                  enum: [true]
+                aceptaComunicaciones:
+                  type: boolean
+      responses:
+        '200':
+          description: Reintento idempotente de un envío previamente almacenado
+        '201':
+          description: Participación almacenada en el CSV independiente de sóftbol
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  stored:
+                    type: boolean
+                  submissionId:
+                    type: string
+        '400':
+          description: Campos inválidos, evento incorrecto o aviso no aceptado
+        '409':
+          description: La persona ya fue registrada o el identificador pertenece a otro envío
+        '503':
+          description: El formulario de sóftbol está temporalmente deshabilitado
+
+  /api/softball-submissions.csv:
+    get:
+      summary: Descarga protegida del CSV independiente de participantes de sóftbol
+      security:
+        - csvExportToken: []
+      responses:
+        '200':
+          description: Archivo CSV con participaciones de sóftbol
+          content:
+            text/csv:
+              schema:
+                type: string
+        '401':
+          description: Token ausente o incorrecto
+        '503':
+          description: Exportación deshabilitada porque CSV_EXPORT_TOKEN no está configurado
 
 components:
   securitySchemes:
