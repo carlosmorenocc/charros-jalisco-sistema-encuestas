@@ -2,7 +2,7 @@ import express from 'express'
 import cors from 'cors'
 import fs from 'fs'
 import path from 'path'
-import { randomUUID, timingSafeEqual } from 'node:crypto'
+import { createHash, randomUUID, timingSafeEqual } from 'node:crypto'
 import { fileURLToPath } from 'url'
 import rateLimit from 'express-rate-limit'
 import swaggerUi from 'swagger-ui-express'
@@ -56,6 +56,11 @@ const SOFTBALL_SOURCE = 'softbol-afiliados-2026'
 const SOFTBALL_EVENT_ID = 'softbol-club-charros-2026-11-08'
 const SOFTBALL_PRIVACY_NOTICE_VERSION = '2026-11-02'
 const SOFTBALL_MAX_SEASON_TICKETS = 20
+const SOFTBALL_REGISTRATION_MODES = new Set([
+  'INDIVIDUAL_HISTORICO',
+  'INDIVIDUAL_COMPATIBILIDAD',
+  'MULTIPARTICIPANTE'
+])
 
 const CSV_COLUMNS = [
   'submissionId',
@@ -156,8 +161,26 @@ const LEGACY_SOFTBALL_CSV_COLUMNS = [
   'consentTimestamp'
 ]
 
+const PREVIOUS_SOFTBALL_CSV_COLUMNS = [
+  'submissionId',
+  'timestamp',
+  'campaignName',
+  'source',
+  'nombreCompleto',
+  'telefono',
+  'cantidadAbonos',
+  'eventoSeleccionado',
+  'aceptaAvisoPrivacidad',
+  'aceptaComunicaciones',
+  'privacyNoticeVersion',
+  'consentTimestamp'
+]
+
 const SOFTBALL_CSV_COLUMNS = [
   'submissionId',
+  'folioRegistro',
+  'participanteId',
+  'modalidadRegistro',
   'timestamp',
   'campaignName',
   'source',
@@ -250,9 +273,9 @@ let subscriberWriteChain = Promise.resolve()
 let rewardsWriteChain = Promise.resolve()
 const softballSubmissionRegistry = new Map()
 const softballParticipantRegistry = new Set()
-const softballInFlightBySubmissionId = new Map()
-const softballInFlightByParticipant = new Map()
 let softballWriteChain = Promise.resolve()
+let softballNextRegistrationNumber = 1
+const softballTransactionPath = `${softballCsvPath}.transaction.json`
 
 function loadOpenApiSpec() {
   if (!fs.existsSync(openApiPath)) return null
@@ -372,7 +395,11 @@ function ensureSoftballDataFile() {
   const firstLine = legacyContent.split(/\r?\n/, 1)[0].replace(/^\uFEFF/, '')
   if (firstLine === expectedHeader) return
 
-  if (firstLine !== LEGACY_SOFTBALL_CSV_COLUMNS.join(',')) {
+  const supportedPreviousHeaders = new Set([
+    LEGACY_SOFTBALL_CSV_COLUMNS.join(','),
+    PREVIOUS_SOFTBALL_CSV_COLUMNS.join(',')
+  ])
+  if (!supportedPreviousHeaders.has(firstLine)) {
     throw new Error(
       `Unsupported softball CSV schema at ${softballCsvPath}; existing data was preserved`
     )
@@ -411,10 +438,85 @@ function migrateLegacySoftballCsv(legacyContent) {
       throw new Error('Unable to safely migrate malformed softball CSV row')
     }
     const legacyRow = Object.fromEntries(header.map((column, index) => [column, values[index]]))
-    migratedRows.push(buildSoftballCsvRow({ ...legacyRow, cantidadAbonos: '' }).trimEnd())
+    const folioRegistro = formatSoftballRegistrationFolio(migratedRows.length + 1)
+    migratedRows.push(buildSoftballCsvRow({
+      ...legacyRow,
+      folioRegistro,
+      participanteId: `${folioRegistro}.1`,
+      modalidadRegistro: 'INDIVIDUAL_HISTORICO',
+      cantidadAbonos: header.includes('cantidadAbonos') ? legacyRow.cantidadAbonos : ''
+    }).trimEnd())
   }
 
   return `${SOFTBALL_CSV_COLUMNS.join(',')}\n${migratedRows.join('\n')}${migratedRows.length ? '\n' : ''}`
+}
+
+function formatSoftballRegistrationFolio(sequence) {
+  if (!Number.isSafeInteger(sequence) || sequence < 1) {
+    throw new Error('Invalid softball registration sequence')
+  }
+  return String(sequence).padStart(6, '0')
+}
+
+function softballTransactionChecksum(buffer) {
+  return createHash('sha256').update(buffer).digest('hex')
+}
+
+function writeBufferFullySync(fileDescriptor, buffer, position) {
+  let offset = 0
+  while (offset < buffer.length) {
+    const bytesWritten = fs.writeSync(
+      fileDescriptor,
+      buffer,
+      offset,
+      buffer.length - offset,
+      position + offset
+    )
+    if (bytesWritten < 1) throw new Error('Unable to complete softball CSV transaction')
+    offset += bytesWritten
+  }
+}
+
+function recoverSoftballTransaction() {
+  if (!fs.existsSync(softballTransactionPath)) return false
+  if (!fs.existsSync(softballCsvPath)) {
+    throw new Error('Softball CSV transaction exists without its data file')
+  }
+
+  let transaction
+  try {
+    transaction = JSON.parse(fs.readFileSync(softballTransactionPath, 'utf8'))
+  } catch {
+    throw new Error('Unable to parse pending softball CSV transaction')
+  }
+
+  const buffer = Buffer.from(transaction.rowBlockBase64 || '', 'base64')
+  if (
+    transaction.version !== 1
+    || !Number.isSafeInteger(transaction.originalSize)
+    || transaction.originalSize < 0
+    || !buffer.length
+    || transaction.checksum !== softballTransactionChecksum(buffer)
+  ) {
+    throw new Error('Invalid pending softball CSV transaction')
+  }
+
+  const currentSize = fs.statSync(softballCsvPath).size
+  if (currentSize < transaction.originalSize) {
+    throw new Error('Softball CSV is shorter than the pending transaction origin')
+  }
+
+  const fileDescriptor = fs.openSync(softballCsvPath, 'r+')
+  try {
+    fs.ftruncateSync(fileDescriptor, transaction.originalSize)
+    writeBufferFullySync(fileDescriptor, buffer, transaction.originalSize)
+    fs.fsyncSync(fileDescriptor)
+  } finally {
+    fs.closeSync(fileDescriptor)
+  }
+  fs.unlinkSync(softballTransactionPath)
+  console.log('Recovered pending softball CSV transaction')
+  return true
 }
 
 function ensureRewardsMigrationBackup(legacyContent) {
@@ -584,7 +686,7 @@ function softballParticipantKey(nombreCompleto, telefono) {
 }
 
 function softballSubmissionFingerprint({
-  participantKey,
+  participantKeys,
   cantidadAbonos,
   eventoSeleccionado,
   aceptaAvisoPrivacidad,
@@ -592,7 +694,7 @@ function softballSubmissionFingerprint({
   privacyNoticeVersion
 }) {
   return JSON.stringify([
-    participantKey,
+    participantKeys,
     cantidadAbonos,
     eventoSeleccionado,
     aceptaAvisoPrivacidad === true,
@@ -604,6 +706,7 @@ function softballSubmissionFingerprint({
 function loadSoftballRegistrationRegistry() {
   softballSubmissionRegistry.clear()
   softballParticipantRegistry.clear()
+  softballNextRegistrationNumber = 1
   if (!fs.existsSync(softballCsvPath)) return
 
   const content = fs.readFileSync(softballCsvPath, 'utf8')
@@ -612,6 +715,9 @@ function loadSoftballRegistrationRegistry() {
 
   const header = parseCsvLine(lines[0].replace(/^\uFEFF/, ''))
   const submissionIdIdx = header.indexOf('submissionId')
+  const registrationIdIdx = header.indexOf('folioRegistro')
+  const participantIdIdx = header.indexOf('participanteId')
+  const registrationModeIdx = header.indexOf('modalidadRegistro')
   const nameIdx = header.indexOf('nombreCompleto')
   const phoneIdx = header.indexOf('telefono')
   const seasonTicketsIdx = header.indexOf('cantidadAbonos')
@@ -621,6 +727,9 @@ function loadSoftballRegistrationRegistry() {
   const privacyVersionIdx = header.indexOf('privacyNoticeVersion')
   if (
     submissionIdIdx < 0
+    || registrationIdIdx < 0
+    || participantIdIdx < 0
+    || registrationModeIdx < 0
     || nameIdx < 0
     || phoneIdx < 0
     || seasonTicketsIdx < 0
@@ -632,6 +741,10 @@ function loadSoftballRegistrationRegistry() {
     throw new Error(`Unable to index softball registrations at ${softballCsvPath}`)
   }
 
+  const groupedSubmissions = new Map()
+  const folioOwners = new Map()
+  let maxRegistrationNumber = 0
+
   for (const line of lines.slice(1)) {
     const values = parseCsvLine(line)
     if (values.length !== header.length) {
@@ -639,29 +752,110 @@ function loadSoftballRegistrationRegistry() {
     }
 
     const submissionId = values[submissionIdIdx].trim()
+    const folioRegistro = values[registrationIdIdx].trim()
+    const participanteId = values[participantIdIdx].trim()
+    const modalidadRegistro = values[registrationModeIdx].trim()
     const participantKey = softballParticipantKey(values[nameIdx], values[phoneIdx])
-    const submissionFingerprint = softballSubmissionFingerprint({
-      participantKey,
-      cantidadAbonos: values[seasonTicketsIdx].trim()
-        ? Number(values[seasonTicketsIdx].trim())
-        : '',
+    const participantMatch = participanteId.match(/^(\d{6,})\.(\d+)$/)
+    const registrationNumber = Number(folioRegistro)
+    const participantSequence = Number(participantMatch?.[2])
+    const rawSeasonTicketQuantity = values[seasonTicketsIdx].trim()
+    const seasonTicketQuantity = rawSeasonTicketQuantity
+      ? Number(rawSeasonTicketQuantity)
+      : ''
+    if (
+      !submissionId
+      || participantKey === '|'
+      || !/^\d{6,}$/.test(folioRegistro)
+      || !participantMatch
+      || participantMatch[1] !== folioRegistro
+      || !Number.isSafeInteger(registrationNumber)
+      || registrationNumber < 1
+      || !Number.isSafeInteger(participantSequence)
+      || participantSequence < 1
+      || participanteId !== `${folioRegistro}.${participantSequence}`
+      || !SOFTBALL_REGISTRATION_MODES.has(modalidadRegistro)
+      || (rawSeasonTicketQuantity && (
+        !Number.isInteger(seasonTicketQuantity)
+        || seasonTicketQuantity < 1
+        || seasonTicketQuantity > SOFTBALL_MAX_SEASON_TICKETS
+      ))
+    ) {
+      throw new Error(`Incomplete softball CSV row at ${softballCsvPath}`)
+    }
+    maxRegistrationNumber = Math.max(maxRegistrationNumber, registrationNumber)
+
+    const currentFolioOwner = folioOwners.get(folioRegistro)
+    if (currentFolioOwner && currentFolioOwner !== submissionId) {
+      throw new Error(`Conflicting softball registration folio at ${softballCsvPath}`)
+    }
+    folioOwners.set(folioRegistro, submissionId)
+
+    const sharedFields = {
+      cantidadAbonos: seasonTicketQuantity,
+      modalidadRegistro,
       eventoSeleccionado: values[eventIdx].trim(),
       aceptaAvisoPrivacidad: values[privacyIdx].trim().toLowerCase() === 'true',
       aceptaComunicaciones: values[communicationsIdx].trim().toLowerCase() === 'true',
       privacyNoticeVersion: values[privacyVersionIdx].trim()
-    })
-    if (!submissionId || participantKey === '|') {
-      throw new Error(`Incomplete softball CSV row at ${softballCsvPath}`)
+    }
+    const existingGroup = groupedSubmissions.get(submissionId)
+    if (existingGroup) {
+      if (
+        existingGroup.folioRegistro !== folioRegistro
+        || JSON.stringify(existingGroup.sharedFields) !== JSON.stringify(sharedFields)
+        || existingGroup.participants.some((participant) => participant.participanteId === participanteId)
+      ) {
+        throw new Error(`Conflicting softball submission ID at ${softballCsvPath}`)
+      }
+      existingGroup.participants.push({
+        participantKey,
+        participanteId,
+        participantSequence
+      })
+    } else {
+      groupedSubmissions.set(submissionId, {
+        folioRegistro,
+        sharedFields,
+        participants: [{
+          participantKey,
+          participanteId,
+          participantSequence
+        }]
+      })
     }
 
-    const existingFingerprint = softballSubmissionRegistry.get(submissionId)
-    if (existingFingerprint && existingFingerprint !== submissionFingerprint) {
-      throw new Error(`Conflicting softball submission ID at ${softballCsvPath}`)
-    }
-
-    softballSubmissionRegistry.set(submissionId, submissionFingerprint)
     softballParticipantRegistry.add(participantKey)
   }
+
+  for (const [submissionId, group] of groupedSubmissions) {
+    group.participants.sort((left, right) => left.participantSequence - right.participantSequence)
+    const participantKeys = group.participants.map((participant) => participant.participantKey)
+    const participanteIds = group.participants.map((participant) => participant.participanteId)
+    if (
+      new Set(participantKeys).size !== participantKeys.length
+      || group.participants.some((participant, index) => participant.participantSequence !== index + 1)
+      || (
+        group.sharedFields.modalidadRegistro === 'MULTIPARTICIPANTE'
+        && group.sharedFields.cantidadAbonos !== group.participants.length
+      )
+      || (
+        group.sharedFields.modalidadRegistro !== 'MULTIPARTICIPANTE'
+        && group.participants.length !== 1
+      )
+    ) {
+      throw new Error(`Incomplete softball submission group at ${softballCsvPath}`)
+    }
+    softballSubmissionRegistry.set(submissionId, {
+      fingerprint: softballSubmissionFingerprint({
+        participantKeys,
+        ...group.sharedFields
+      }),
+      folioRegistro: group.folioRegistro,
+      participanteIds
+    })
+  }
+  softballNextRegistrationNumber = maxRegistrationNumber + 1
 }
 
 function leadEmailDayKey(email, timestamp) {
@@ -820,36 +1014,63 @@ function normalizeSoftballPayload(input) {
   const timestamp = new Date().toISOString()
   const hasSubmissionId = Object.hasOwn(raw, 'submissionId')
   const rawSubmissionId = typeof raw.submissionId === 'string' ? raw.submissionId.trim() : ''
-  const rawName = typeof raw.nombreCompleto === 'string' ? raw.nombreCompleto : ''
-  const rawPhone = typeof raw.telefono === 'string' ? raw.telefono : ''
-  const hasSeasonTicketQuantity = Object.hasOwn(raw, 'cantidadAbonos')
-  const nombreCompleto = rawName.trim().replace(/\s+/g, ' ').toLocaleUpperCase('es-MX')
-  const telefono = rawPhone.trim()
+  const hasParticipantList = Object.hasOwn(raw, 'participantes')
+  const participantInputs = hasParticipantList && Array.isArray(raw.participantes)
+    ? raw.participantes
+    : [{ nombreCompleto: raw.nombreCompleto, telefono: raw.telefono }]
+  const participants = participantInputs.map((participantInput) => {
+    const participant = participantInput
+      && typeof participantInput === 'object'
+      && !Array.isArray(participantInput)
+      ? participantInput
+      : {}
+    const rawName = typeof participant.nombreCompleto === 'string'
+      ? participant.nombreCompleto
+      : ''
+    const rawPhone = typeof participant.telefono === 'string' ? participant.telefono : ''
+    const nombreCompleto = rawName.trim().replace(/\s+/g, ' ').toLocaleUpperCase('es-MX')
+    const telefono = rawPhone.trim()
+    return {
+      nombreCompleto,
+      telefono,
+      participantKey: softballParticipantKey(nombreCompleto, telefono),
+      nameTypeValid: typeof participant.nombreCompleto === 'string'
+        && !/[\u0000-\u001f\u007f]/.test(participant.nombreCompleto),
+      phoneTypeValid: typeof participant.telefono === 'string'
+        && !/[\u0000-\u001f\u007f]/.test(participant.telefono)
+    }
+  })
   const eventoSeleccionado = typeof raw.eventoSeleccionado === 'string'
     ? raw.eventoSeleccionado.trim()
     : ''
   const aceptaAvisoPrivacidad = raw.aceptaAvisoPrivacidad === true
   const aceptaComunicaciones = raw.aceptaComunicaciones === true
   const cantidadAbonos = Number.isInteger(raw.cantidadAbonos) ? raw.cantidadAbonos : ''
-  const participantKey = softballParticipantKey(nombreCompleto, telefono)
+  const modalidadRegistro = hasParticipantList
+    ? 'MULTIPARTICIPANTE'
+    : 'INDIVIDUAL_COMPATIBILIDAD'
+  const participantKeys = participants.map((participant) => participant.participantKey)
 
   return {
     submissionId: hasSubmissionId ? rawSubmissionId : randomUUID(),
     timestamp,
     campaignName: SOFTBALL_CAMPAIGN_NAME,
     source: SOFTBALL_SOURCE,
-    nombreCompleto,
-    telefono,
+    nombreCompleto: participants[0]?.nombreCompleto || '',
+    telefono: participants[0]?.telefono || '',
+    participants,
+    participantKeys,
+    modalidadRegistro,
     cantidadAbonos,
     eventoSeleccionado,
     aceptaAvisoPrivacidad,
     aceptaComunicaciones,
     privacyNoticeVersion: SOFTBALL_PRIVACY_NOTICE_VERSION,
     consentTimestamp: timestamp,
-    participantKey,
     submissionFingerprint: softballSubmissionFingerprint({
-      participantKey,
+      participantKeys,
       cantidadAbonos,
+      modalidadRegistro,
       eventoSeleccionado,
       aceptaAvisoPrivacidad,
       aceptaComunicaciones,
@@ -859,15 +1080,11 @@ function normalizeSoftballPayload(input) {
       typeof raw.submissionId === 'string'
       && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(rawSubmissionId)
     ),
-    nameTypeValid: typeof raw.nombreCompleto === 'string'
-      && !/[\u0000-\u001f\u007f]/.test(raw.nombreCompleto),
-    phoneTypeValid: typeof raw.telefono === 'string'
-      && !/[\u0000-\u001f\u007f]/.test(raw.telefono),
-    seasonTicketQuantityTypeValid: !hasSeasonTicketQuantity || (
-      Number.isInteger(raw.cantidadAbonos)
+    participantListTypeValid: !hasParticipantList || Array.isArray(raw.participantes),
+    seasonTicketQuantityTypeValid: Number.isInteger(raw.cantidadAbonos)
       && raw.cantidadAbonos >= 1
-      && raw.cantidadAbonos <= SOFTBALL_MAX_SEASON_TICKETS
-    ),
+      && raw.cantidadAbonos <= SOFTBALL_MAX_SEASON_TICKETS,
+    participantCountValid: !hasParticipantList || participants.length === raw.cantidadAbonos,
     privacyTypeValid: typeof raw.aceptaAvisoPrivacidad === 'boolean',
     communicationsTypeValid:
       raw.aceptaComunicaciones === undefined || typeof raw.aceptaComunicaciones === 'boolean'
@@ -876,30 +1093,43 @@ function normalizeSoftballPayload(input) {
 
 function validateSoftballPayload(payload) {
   const invalid = []
-  const nameParts = payload.nombreCompleto.split(' ').filter((part) => /\p{L}/u.test(part))
   const namePattern = /^[\p{L}\p{M}][\p{L}\p{M} .'\u2019-]*$/u
   const phonePattern = /^\+?[0-9() .-]+$/
-  const normalizedPhone = normalizeSoftballPhone(payload.telefono)
 
   if (!payload.submissionIdTypeValid) invalid.push('submissionId')
-  if (
-    !payload.nameTypeValid
-    || payload.nombreCompleto.length < 5
-    || payload.nombreCompleto.length > 140
-    || nameParts.length < 2
-    || !namePattern.test(payload.nombreCompleto)
-  ) {
-    invalid.push('nombreCompleto')
-  }
-  if (
-    !payload.phoneTypeValid
-    || payload.telefono.length > 32
-    || !phonePattern.test(payload.telefono)
-    || normalizedPhone.length !== 10
-  ) {
-    invalid.push('telefono')
+  if (!payload.participantListTypeValid || payload.participants.length < 1) {
+    invalid.push('participantes')
+  } else {
+    payload.participants.forEach((participant, index) => {
+      const nameParts = participant.nombreCompleto
+        .split(' ')
+        .filter((part) => /\p{L}/u.test(part))
+      const invalidName = !participant.nameTypeValid
+        || participant.nombreCompleto.length < 5
+        || participant.nombreCompleto.length > 140
+        || nameParts.length < 2
+        || !namePattern.test(participant.nombreCompleto)
+      const invalidPhone = !participant.phoneTypeValid
+        || participant.telefono.length > 32
+        || !phonePattern.test(participant.telefono)
+        || normalizeSoftballPhone(participant.telefono).length !== 10
+      if (invalidName) {
+        invalid.push(payload.modalidadRegistro === 'MULTIPARTICIPANTE'
+          ? `participantes.${index}.nombreCompleto`
+          : 'nombreCompleto')
+      }
+      if (invalidPhone) {
+        invalid.push(payload.modalidadRegistro === 'MULTIPARTICIPANTE'
+          ? `participantes.${index}.telefono`
+          : 'telefono')
+      }
+    })
   }
   if (!payload.seasonTicketQuantityTypeValid) invalid.push('cantidadAbonos')
+  if (!payload.participantCountValid) invalid.push('participantes')
+  if (new Set(payload.participantKeys).size !== payload.participantKeys.length) {
+    invalid.push('participantes')
+  }
   if (payload.eventoSeleccionado !== SOFTBALL_EVENT_ID) invalid.push('eventoSeleccionado')
   if (!payload.privacyTypeValid || payload.aceptaAvisoPrivacidad !== true) {
     invalid.push('aceptaAvisoPrivacidad')
@@ -1044,13 +1274,80 @@ async function flushRewardsWrites() {
   await rewardsWriteChain
 }
 
-function appendSoftballRow(row) {
-  const writeOperation = softballWriteChain.then(async () => {
-    ensureSoftballDataFile()
-    await fs.promises.appendFile(softballCsvPath, row, 'utf8')
+async function writeBufferFully(fileHandle, buffer, position) {
+  let offset = 0
+  while (offset < buffer.length) {
+    const { bytesWritten } = await fileHandle.write(
+      buffer,
+      offset,
+      buffer.length - offset,
+      position + offset
+    )
+    if (bytesWritten < 1) throw new Error('Unable to complete softball CSV transaction')
+    offset += bytesWritten
+  }
+}
+
+async function appendSoftballBatchAtomically(rowBlock) {
+  ensureSoftballDataFile()
+  if (fs.existsSync(softballTransactionPath)) {
+    throw new Error('Pending softball CSV transaction requires startup recovery')
+  }
+
+  const buffer = Buffer.from(rowBlock, 'utf8')
+  if (!buffer.length) throw new Error('Softball CSV transaction cannot be empty')
+  const originalSize = (await fs.promises.stat(softballCsvPath)).size
+  const transaction = JSON.stringify({
+    version: 1,
+    originalSize,
+    rowBlockBase64: buffer.toString('base64'),
+    checksum: softballTransactionChecksum(buffer)
   })
-  softballWriteChain = writeOperation.catch(() => {})
-  return writeOperation
+  const temporaryTransactionPath = `${softballTransactionPath}.${process.pid}.${randomUUID()}.tmp`
+  let journalPublished = false
+
+  try {
+    const journalHandle = await fs.promises.open(temporaryTransactionPath, 'wx')
+    try {
+      await journalHandle.writeFile(transaction, 'utf8')
+      await journalHandle.sync()
+    } finally {
+      await journalHandle.close()
+    }
+    await fs.promises.rename(temporaryTransactionPath, softballTransactionPath)
+    journalPublished = true
+
+    const currentSize = (await fs.promises.stat(softballCsvPath)).size
+    if (currentSize !== originalSize) {
+      throw new Error('Softball CSV changed outside the serialized writer')
+    }
+
+    const dataHandle = await fs.promises.open(softballCsvPath, 'r+')
+    try {
+      await writeBufferFully(dataHandle, buffer, originalSize)
+      await dataHandle.sync()
+    } finally {
+      await dataHandle.close()
+    }
+    await fs.promises.unlink(softballTransactionPath)
+  } catch (error) {
+    await fs.promises.rm(temporaryTransactionPath, { force: true }).catch(() => {})
+    if (journalPublished) {
+      try {
+        const rollbackHandle = await fs.promises.open(softballCsvPath, 'r+')
+        try {
+          await rollbackHandle.truncate(originalSize)
+          await rollbackHandle.sync()
+        } finally {
+          await rollbackHandle.close()
+        }
+        await fs.promises.rm(softballTransactionPath, { force: true })
+      } catch (rollbackError) {
+        console.error('Softball CSV rollback error; startup recovery is required', rollbackError)
+      }
+    }
+    throw error
+  }
 }
 
 async function flushSoftballWrites() {
@@ -1058,65 +1355,43 @@ async function flushSoftballWrites() {
 }
 
 async function persistSoftballPayload(payload) {
-  const existingFingerprint = softballSubmissionRegistry.get(payload.submissionId)
-  if (existingFingerprint) {
-    return existingFingerprint === payload.submissionFingerprint
-      ? { status: 'duplicate-submission' }
-      : { status: 'submission-conflict' }
-  }
-
-  const inFlightSubmission = softballInFlightBySubmissionId.get(payload.submissionId)
-  if (inFlightSubmission) {
-    if (inFlightSubmission.submissionFingerprint !== payload.submissionFingerprint) {
-      return { status: 'submission-conflict' }
+  const writeOperation = softballWriteChain.then(async () => {
+    const existingSubmission = softballSubmissionRegistry.get(payload.submissionId)
+    if (existingSubmission) {
+      return existingSubmission.fingerprint === payload.submissionFingerprint
+        ? { status: 'duplicate-submission', ...existingSubmission }
+        : { status: 'submission-conflict' }
     }
 
-    try {
-      await inFlightSubmission.promise
-      return { status: 'duplicate-submission' }
-    } catch {
-      return persistSoftballPayload(payload)
-    }
-  }
-
-  if (softballParticipantRegistry.has(payload.participantKey)) {
-    return { status: 'duplicate-participant' }
-  }
-
-  const inFlightParticipant = softballInFlightByParticipant.get(payload.participantKey)
-  if (inFlightParticipant) {
-    try {
-      await inFlightParticipant.promise
+    if (payload.participantKeys.some((key) => softballParticipantRegistry.has(key))) {
       return { status: 'duplicate-participant' }
-    } catch {
-      return persistSoftballPayload(payload)
     }
-  }
 
-  const inFlightRecord = {
-    submissionId: payload.submissionId,
-    participantKey: payload.participantKey,
-    submissionFingerprint: payload.submissionFingerprint,
-    promise: null
-  }
-  const writeOperation = appendSoftballRow(buildSoftballCsvRow(payload)).then(() => {
-    softballSubmissionRegistry.set(payload.submissionId, payload.submissionFingerprint)
-    softballParticipantRegistry.add(payload.participantKey)
-  })
-  const trackedOperation = writeOperation.finally(() => {
-    if (softballInFlightBySubmissionId.get(payload.submissionId) === inFlightRecord) {
-      softballInFlightBySubmissionId.delete(payload.submissionId)
-    }
-    if (softballInFlightByParticipant.get(payload.participantKey) === inFlightRecord) {
-      softballInFlightByParticipant.delete(payload.participantKey)
-    }
-  })
-  inFlightRecord.promise = trackedOperation
-  softballInFlightBySubmissionId.set(payload.submissionId, inFlightRecord)
-  softballInFlightByParticipant.set(payload.participantKey, inFlightRecord)
+    const folioRegistro = formatSoftballRegistrationFolio(softballNextRegistrationNumber)
+    const participanteIds = payload.participants.map((_, index) => `${folioRegistro}.${index + 1}`)
+    const rowBlock = payload.participants.map((participant, index) => buildSoftballCsvRow({
+      ...payload,
+      folioRegistro,
+      participanteId: participanteIds[index],
+      nombreCompleto: participant.nombreCompleto,
+      telefono: participant.telefono
+    })).join('')
 
-  await trackedOperation
-  return { status: 'stored' }
+    await appendSoftballBatchAtomically(rowBlock)
+
+    const storedSubmission = {
+      fingerprint: payload.submissionFingerprint,
+      folioRegistro,
+      participanteIds
+    }
+    softballSubmissionRegistry.set(payload.submissionId, storedSubmission)
+    payload.participantKeys.forEach((key) => softballParticipantRegistry.add(key))
+    softballNextRegistrationNumber += 1
+    return { status: 'stored', ...storedSubmission }
+  })
+
+  softballWriteChain = writeOperation.catch(() => {})
+  return writeOperation
 }
 
 function enqueueRow(row) {
@@ -1438,7 +1713,9 @@ app.post(
         ok: true,
         stored: false,
         duplicate: true,
-        submissionId: payload.submissionId
+        submissionId: payload.submissionId,
+        folioRegistro: result.folioRegistro,
+        participanteIds: result.participanteIds
       })
     }
 
@@ -1446,7 +1723,7 @@ app.post(
       return res.status(409).json({
         ok: false,
         error: 'Softball submission ID already used',
-        detail: 'Este identificador de env\u00edo ya fue utilizado para otra persona.'
+        detail: 'Este identificador de env\u00edo ya fue utilizado para otro registro.'
       })
     }
 
@@ -1461,7 +1738,9 @@ app.post(
     return res.status(201).json({
       ok: true,
       stored: true,
-      submissionId: payload.submissionId
+      submissionId: payload.submissionId,
+      folioRegistro: result.folioRegistro,
+      participanteIds: result.participanteIds
     })
   } catch (error) {
     console.error('Softball CSV persistence error', error)
@@ -1599,6 +1878,7 @@ try {
   ensureLeadsDataFile()
   ensureSubscriberDataFile()
   ensureRewardsDataFile()
+  recoverSoftballTransaction()
   ensureSoftballDataFile()
   loadLeadDailyEmailRegistry()
   loadSubscriberEmailRegistry()

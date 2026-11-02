@@ -223,15 +223,17 @@ La migración es idempotente y conserva la deduplicación por correo.
 - Se habilita de manera independiente con `SOFTBALL_FORM_ENABLED=true` en el backend y `VITE_SOFTBALL_FORM_ENABLED=true` en el frontend.
 - La ruta pública es `/softbol-afiliados` y registra el evento `softbol-club-charros-2026-11-08`.
 - El evento es el domingo 8 de noviembre de 2026 a las 9:00 a.m.; el registro permanece abierto hasta el final del martes 3 de noviembre en Ciudad de México y cierra al comenzar el miércoles (`2026-11-04T06:00:00.000Z`).
-- El formulario exige indicar de 1 a 20 abonos, nombre completo, teléfono mexicano válido, selección del evento y aceptación del Aviso de Privacidad.
-- Al elegir la cantidad muestra cuántos registros puede realizar la afiliación y aclara que cada formulario corresponde a una sola persona. El dato es informativo: no se impone un límite automático entre formularios porque no existe un identificador común de titular.
+- El formulario exige indicar cuántos abonos participan (de 1 a 20) y captura nombre completo y teléfono mexicano de cada participante en un solo envío.
+- `cantidadAbonos` debe coincidir exactamente con `participantes.length`; si una persona del lote es inválida o ya existe, no se guarda ninguna fila del envío.
 - Los avisos generales se publican en el canal de difusión y la confirmación del lugar se realiza personalmente por WhatsApp al teléfono registrado; no se solicita correo electrónico.
-- Guarda el nombre en mayúsculas y genera los metadatos de campaña, origen, fecha y consentimiento desde el servidor.
-- Permite un registro por persona. El backend identifica duplicados por la combinación normalizada de nombre y teléfono, por lo que un mismo teléfono puede utilizarse para registrar a otra persona distinta.
-- Los envíos concurrentes se serializan y la deduplicación se reconstruye desde el CSV después de cada reinicio.
+- Guarda cada participante en una fila independiente, normaliza el nombre a mayúsculas y genera los metadatos de campaña, origen, fecha y consentimiento desde el servidor.
+- Cada envío conserva su `submissionId` técnico para reintentos y recibe un `folioRegistro` secuencial (`000001`) compartido por el grupo; cada fila recibe un `participanteId` (`000001.1`, `000001.2`, etc.).
+- El backend identifica duplicados por la combinación normalizada de nombre y teléfono. Un mismo teléfono puede utilizarse para personas con nombres distintos.
+- Los envíos concurrentes, la asignación de folios y la escritura se serializan. Cada lote se protege con un journal recuperable para que, incluso tras una interrupción, se complete entero y nunca quede aceptado parcialmente.
 - El almacenamiento CSV requiere una sola instancia escritora con disco persistente. La configuración actual de Render cumple esta condición; antes de escalar a varias instancias debe migrarse a una base con restricción única transaccional.
 - Las respuestas se almacenan exclusivamente en `submissions_softbol_afiliados_2026.csv`; nunca se mezclan con Papá sobre Ruedas, Romeo Santos, abonados o la encuesta general.
-- El CSV incluye `cantidadAbonos`. Al desplegar este esquema, los registros históricos se migran automáticamente con el valor vacío y se conserva una copia de respaldo antes de modificar el archivo.
+- El CSV incluye `folioRegistro`, `participanteId`, `modalidadRegistro` y `cantidadAbonos`. Los registros anteriores se migran como `INDIVIDUAL_HISTORICO`, conservando su cantidad original sin reinterpretarla como número de participantes y creando una copia de respaldo antes de modificar el archivo.
+- Durante un despliegue backend-first se acepta temporalmente el payload individual anterior y sus filas se marcan como `INDIVIDUAL_COMPATIBILIDAD`; el contrato nuevo usa `MULTIPARTICIPANTE` y exige coincidencia exacta entre cantidad y personas.
 - La exportación utiliza `CSV_EXPORT_TOKEN` y se ofrece como una sección separada dentro de `/admin/experiencias-recompensas`.
 
 ### Seguridad de exportaciones CSV

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:net'
 import os from 'node:os'
@@ -13,6 +14,9 @@ const rewardsCsvFilename = 'submissions_experiencias_recompensas.csv'
 const eventId = 'softbol-club-charros-2026-11-08'
 const softballColumns = [
   'submissionId',
+  'folioRegistro',
+  'participanteId',
+  'modalidadRegistro',
   'timestamp',
   'campaignName',
   'source',
@@ -25,7 +29,10 @@ const softballColumns = [
   'privacyNoticeVersion',
   'consentTimestamp'
 ]
-const legacySoftballColumns = softballColumns.filter((column) => column !== 'cantidadAbonos')
+const previousSoftballColumns = softballColumns.filter((column) => (
+  !['folioRegistro', 'participanteId', 'modalidadRegistro'].includes(column)
+))
+const legacySoftballColumns = previousSoftballColumns.filter((column) => column !== 'cantidadAbonos')
 const rewardsColumns = [
   'submissionId',
   'timestamp',
@@ -120,6 +127,24 @@ function softballBody(overrides = {}) {
     nombreCompleto: 'Ana L\u00f3pez P\u00e9rez',
     telefono: '+52 33 1234 5678',
     cantidadAbonos: 2,
+    eventoSeleccionado: eventId,
+    aceptaAvisoPrivacidad: true,
+    aceptaComunicaciones: false,
+    ...overrides
+  }
+}
+
+function multiSoftballBody(overrides = {}) {
+  const participantes = overrides.participantes || [
+    { nombreCompleto: 'Ana L\u00f3pez P\u00e9rez', telefono: '3312345678' },
+    { nombreCompleto: 'Beatriz L\u00f3pez P\u00e9rez', telefono: '3312345678' }
+  ]
+  return {
+    submissionId: 'softball-multi-1',
+    nombreCompleto: participantes[0]?.nombreCompleto || '',
+    telefono: participantes[0]?.telefono || '',
+    cantidadAbonos: participantes.length,
+    participantes,
     eventoSeleccionado: eventId,
     aceptaAvisoPrivacidad: true,
     aceptaComunicaciones: false,
@@ -240,13 +265,19 @@ test('s\u00f3ftbol valida, deduplica por persona y persiste en un CSV independie
 
     assert.equal(response.status, 201)
     assert.equal(response.headers.get('access-control-allow-origin'), 'http://localhost:5173')
-    assert.equal((await response.json()).submissionId, 'softball-test-1')
+    const stored = await response.json()
+    assert.equal(stored.submissionId, 'softball-test-1')
+    assert.equal(stored.folioRegistro, '000001')
+    assert.deepEqual(stored.participanteIds, ['000001.1'])
 
     const csv = await readFile(path.join(dataDir, softballCsvFilename), 'utf8')
     const { header, rows } = parseCsv(csv)
     assert.deepEqual(header, softballColumns)
     assert.equal(rows.length, 1)
     assert.equal(rows[0].submissionId, 'softball-test-1')
+    assert.equal(rows[0].folioRegistro, '000001')
+    assert.equal(rows[0].participanteId, '000001.1')
+    assert.equal(rows[0].modalidadRegistro, 'INDIVIDUAL_COMPATIBILIDAD')
     assert.equal(rows[0].campaignName, 'Club Charros \u00b7 Juego de s\u00f3ftbol para afiliados 2026')
     assert.equal(rows[0].source, 'softbol-afiliados-2026')
     assert.equal(rows[0].nombreCompleto, 'ANA L\u00d3PEZ P\u00c9REZ')
@@ -272,7 +303,9 @@ test('s\u00f3ftbol valida, deduplica por persona y persiste en un CSV independie
       ok: true,
       stored: false,
       duplicate: true,
-      submissionId: 'softball-test-1'
+      submissionId: 'softball-test-1',
+      folioRegistro: '000001',
+      participanteIds: ['000001.1']
     })
 
     const { rows } = parseCsv(await readFile(path.join(dataDir, softballCsvFilename), 'utf8'))
@@ -427,6 +460,145 @@ test('s\u00f3ftbol valida, deduplica por persona y persiste en un CSV independie
   })
 })
 
+test('un registro multipersona crea una fila por participante con folio transaccional', async (t) => {
+  const dataDir = await mkdtemp(path.join(os.tmpdir(), 'charros-softball-multi-'))
+  let backend = await startBackend(dataDir)
+  t.after(async () => {
+    await stopBackend(backend?.child)
+    await rm(dataDir, { recursive: true, force: true })
+  })
+
+  const mismatched = await postSoftball(backend.baseUrl, multiSoftballBody({
+    submissionId: 'softball-mismatch',
+    cantidadAbonos: 3
+  }))
+  assert.equal(mismatched.status, 400)
+  assert.ok((await mismatched.json()).invalid.includes('participantes'))
+
+  const sameParticipantTwice = await postSoftball(backend.baseUrl, multiSoftballBody({
+    submissionId: 'softball-duplicate-inside',
+    participantes: [
+      { nombreCompleto: 'Persona Repetida Prueba', telefono: '3311112222' },
+      { nombreCompleto: 'PERSONA REPETIDA PRUEBA', telefono: '+52 33 1111 2222' }
+    ]
+  }))
+  assert.equal(sameParticipantTwice.status, 400)
+  assert.ok((await sameParticipantTwice.json()).invalid.includes('participantes'))
+
+  let csv = parseCsv(await readFile(path.join(dataDir, softballCsvFilename), 'utf8'))
+  assert.equal(csv.rows.length, 0)
+
+  const participantes = [
+    { nombreCompleto: 'Ana Multi Persona', telefono: '3310000000' },
+    { nombreCompleto: 'Beatriz Multi Persona', telefono: '3310000000' },
+    { nombreCompleto: 'Carla Multi Persona', telefono: '3310000000' }
+  ]
+  const body = multiSoftballBody({
+    submissionId: 'softball-multi-primary',
+    participantes
+  })
+  const storedResponse = await postSoftball(backend.baseUrl, body)
+  assert.equal(storedResponse.status, 201)
+  assert.deepEqual(await storedResponse.json(), {
+    ok: true,
+    stored: true,
+    submissionId: 'softball-multi-primary',
+    folioRegistro: '000001',
+    participanteIds: ['000001.1', '000001.2', '000001.3']
+  })
+
+  csv = parseCsv(await readFile(path.join(dataDir, softballCsvFilename), 'utf8'))
+  assert.equal(csv.rows.length, 3)
+  assert.deepEqual(csv.rows.map((row) => row.folioRegistro), ['000001', '000001', '000001'])
+  assert.deepEqual(
+    csv.rows.map((row) => row.participanteId),
+    ['000001.1', '000001.2', '000001.3']
+  )
+  assert.deepEqual(
+    csv.rows.map((row) => row.nombreCompleto),
+    participantes.map((participant) => participant.nombreCompleto.toUpperCase())
+  )
+  assert.ok(csv.rows.every((row) => row.modalidadRegistro === 'MULTIPARTICIPANTE'))
+  assert.ok(csv.rows.every((row) => row.cantidadAbonos === '3'))
+
+  const retry = await postSoftball(backend.baseUrl, body)
+  assert.equal(retry.status, 200)
+  assert.deepEqual(await retry.json(), {
+    ok: true,
+    stored: false,
+    duplicate: true,
+    submissionId: 'softball-multi-primary',
+    folioRegistro: '000001',
+    participanteIds: ['000001.1', '000001.2', '000001.3']
+  })
+
+  const beforeRejectedBatch = (await readFile(path.join(dataDir, softballCsvFilename), 'utf8'))
+  const rejectedBatch = await postSoftball(backend.baseUrl, multiSoftballBody({
+    submissionId: 'softball-batch-rejected',
+    participantes: [
+      { nombreCompleto: 'Persona Nueva Sin Parcial', telefono: '3322223333' },
+      participantes[1]
+    ]
+  }))
+  assert.equal(rejectedBatch.status, 409)
+  assert.equal((await rejectedBatch.json()).error, 'Softball participant already registered')
+  assert.equal(
+    await readFile(path.join(dataDir, softballCsvFilename), 'utf8'),
+    beforeRejectedBatch
+  )
+
+  const formerlyRejectedParticipant = await postSoftball(backend.baseUrl, multiSoftballBody({
+    submissionId: 'softball-after-rejected-batch',
+    participantes: [{ nombreCompleto: 'Persona Nueva Sin Parcial', telefono: '3322223333' }]
+  }))
+  assert.equal(formerlyRejectedParticipant.status, 201)
+  assert.equal((await formerlyRejectedParticipant.json()).folioRegistro, '000002')
+
+  const concurrentBodies = [
+    multiSoftballBody({
+      submissionId: 'softball-concurrent-batch-a',
+      participantes: [
+        { nombreCompleto: 'Concurrente Alfa Uno', telefono: '3333330001' },
+        { nombreCompleto: 'Concurrente Alfa Dos', telefono: '3333330002' }
+      ]
+    }),
+    multiSoftballBody({
+      submissionId: 'softball-concurrent-batch-b',
+      participantes: [
+        { nombreCompleto: 'Concurrente Beta Uno', telefono: '3333330003' },
+        { nombreCompleto: 'Concurrente Beta Dos', telefono: '3333330004' }
+      ]
+    })
+  ]
+  const concurrentResults = await Promise.all(
+    concurrentBodies.map((concurrentBody) => postSoftball(backend.baseUrl, concurrentBody))
+  )
+  assert.deepEqual(concurrentResults.map((response) => response.status), [201, 201])
+  const concurrentFolios = (await Promise.all(
+    concurrentResults.map((response) => response.json())
+  )).map((result) => result.folioRegistro).sort()
+  assert.deepEqual(concurrentFolios, ['000003', '000004'])
+
+  await stopBackend(backend.child)
+  backend = await startBackend(dataDir)
+
+  const afterRestart = await postSoftball(backend.baseUrl, multiSoftballBody({
+    submissionId: 'softball-after-restart-sequence',
+    participantes: [{ nombreCompleto: 'Secuencia Tras Reinicio', telefono: '3344445555' }]
+  }))
+  assert.equal(afterRestart.status, 201)
+  assert.equal((await afterRestart.json()).folioRegistro, '000005')
+
+  const retryAfterRestart = await postSoftball(backend.baseUrl, body)
+  assert.equal(retryAfterRestart.status, 200)
+  const retryAfterRestartResult = await retryAfterRestart.json()
+  assert.equal(retryAfterRestartResult.folioRegistro, '000001')
+  assert.deepEqual(
+    retryAfterRestartResult.participanteIds,
+    ['000001.1', '000001.2', '000001.3']
+  )
+})
+
 test('el endpoint de s\u00f3ftbol conserva el rate limit compartido', async (t) => {
   const dataDir = await mkdtemp(path.join(os.tmpdir(), 'charros-softball-rate-limit-'))
   const backend = await startBackend(dataDir, { rateLimit: 1 })
@@ -503,6 +675,9 @@ test('migra el CSV anterior de s\u00f3ftbol con respaldo y sin inventar cantidad
   assert.deepEqual(migrated.header, softballColumns)
   assert.equal(migrated.rows.length, 1)
   assert.equal(migrated.rows[0].submissionId, 'softball-legacy-1')
+  assert.equal(migrated.rows[0].folioRegistro, '000001')
+  assert.equal(migrated.rows[0].participanteId, '000001.1')
+  assert.equal(migrated.rows[0].modalidadRegistro, 'INDIVIDUAL_HISTORICO')
   assert.equal(migrated.rows[0].cantidadAbonos, '')
   assert.equal(
     await readFile(
@@ -519,6 +694,138 @@ test('migra el CSV anterior de s\u00f3ftbol con respaldo y sin inventar cantidad
   }))
   assert.equal(duplicate.status, 409)
   assert.equal((await duplicate.json()).error, 'Softball participant already registered')
+})
+
+test('migra el esquema individual con cantidad sin reinterpretarlo como participantes', async (t) => {
+  const dataDir = await mkdtemp(path.join(os.tmpdir(), 'charros-softball-v2-migration-'))
+  const csvPath = path.join(dataDir, softballCsvFilename)
+  const previousRow = {
+    submissionId: 'softball-v2-legacy-1',
+    timestamp: '2026-11-02T16:00:00.000Z',
+    campaignName: 'Club Charros \u00b7 Juego de s\u00f3ftbol para afiliados 2026',
+    source: 'softbol-afiliados-2026',
+    nombreCompleto: 'TITULAR HISTORICO CUATRO ABONOS',
+    telefono: '3312340000',
+    cantidadAbonos: 4,
+    eventoSeleccionado: eventId,
+    aceptaAvisoPrivacidad: true,
+    aceptaComunicaciones: false,
+    privacyNoticeVersion: '2026-11-02',
+    consentTimestamp: '2026-11-02T16:00:00.000Z'
+  }
+  const previousContent = `${previousSoftballColumns.join(',')}\n${
+    previousSoftballColumns.map((column) => csvValue(previousRow[column])).join(',')
+  }\n`
+  await writeFile(csvPath, previousContent, 'utf8')
+
+  const backend = await startBackend(dataDir)
+  t.after(async () => {
+    await stopBackend(backend.child)
+    await rm(dataDir, { recursive: true, force: true })
+  })
+
+  const migrated = parseCsv(await readFile(csvPath, 'utf8'))
+  assert.deepEqual(migrated.header, softballColumns)
+  assert.equal(migrated.rows.length, 1)
+  assert.equal(migrated.rows[0].folioRegistro, '000001')
+  assert.equal(migrated.rows[0].participanteId, '000001.1')
+  assert.equal(migrated.rows[0].modalidadRegistro, 'INDIVIDUAL_HISTORICO')
+  assert.equal(migrated.rows[0].cantidadAbonos, '4')
+  assert.equal(
+    await readFile(
+      path.join(dataDir, 'submissions_softbol_afiliados_2026_schema_backup.csv'),
+      'utf8'
+    ),
+    previousContent
+  )
+
+  const idempotentLegacyRetry = await postSoftball(backend.baseUrl, softballBody({
+    submissionId: 'softball-v2-legacy-1',
+    nombreCompleto: 'Titular Historico Cuatro Abonos',
+    telefono: '+52 33 1234 0000',
+    cantidadAbonos: 4
+  }))
+  assert.equal(idempotentLegacyRetry.status, 200)
+  assert.equal((await idempotentLegacyRetry.json()).duplicate, true)
+
+  const newRegistration = await postSoftball(backend.baseUrl, multiSoftballBody({
+    submissionId: 'softball-after-v2-migration',
+    participantes: [
+      { nombreCompleto: 'Nuevo Uno Migracion', telefono: '3312340001' },
+      { nombreCompleto: 'Nuevo Dos Migracion', telefono: '3312340002' }
+    ]
+  }))
+  assert.equal(newRegistration.status, 201)
+  assert.equal((await newRegistration.json()).folioRegistro, '000002')
+})
+
+test('recupera un lote multipersona completo despu\u00e9s de una interrupci\u00f3n', async (t) => {
+  const dataDir = await mkdtemp(path.join(os.tmpdir(), 'charros-softball-recovery-'))
+  const csvPath = path.join(dataDir, softballCsvFilename)
+  const transactionPath = `${csvPath}.transaction.json`
+  const header = `${softballColumns.join(',')}\n`
+  await writeFile(csvPath, header, 'utf8')
+
+  const shared = {
+    submissionId: 'softball-recovered-batch',
+    folioRegistro: '000001',
+    modalidadRegistro: 'MULTIPARTICIPANTE',
+    timestamp: '2026-11-02T17:00:00.000Z',
+    campaignName: 'Club Charros \u00b7 Juego de s\u00f3ftbol para afiliados 2026',
+    source: 'softbol-afiliados-2026',
+    cantidadAbonos: 2,
+    eventoSeleccionado: eventId,
+    aceptaAvisoPrivacidad: true,
+    aceptaComunicaciones: false,
+    privacyNoticeVersion: '2026-11-02',
+    consentTimestamp: '2026-11-02T17:00:00.000Z'
+  }
+  const recoveredRows = [
+    {
+      ...shared,
+      participanteId: '000001.1',
+      nombreCompleto: 'RECUPERACION PERSONA UNO',
+      telefono: '3311110001'
+    },
+    {
+      ...shared,
+      participanteId: '000001.2',
+      nombreCompleto: 'RECUPERACION PERSONA DOS',
+      telefono: '3311110002'
+    }
+  ]
+  const rowBlock = recoveredRows.map((row) => (
+    `${softballColumns.map((column) => csvValue(row[column])).join(',')}\n`
+  )).join('')
+  const rowBuffer = Buffer.from(rowBlock, 'utf8')
+  await writeFile(csvPath, `${header}${rowBlock.slice(0, Math.floor(rowBlock.length / 2))}`, 'utf8')
+  await writeFile(transactionPath, JSON.stringify({
+    version: 1,
+    originalSize: Buffer.byteLength(header),
+    rowBlockBase64: rowBuffer.toString('base64'),
+    checksum: createHash('sha256').update(rowBuffer).digest('hex')
+  }), 'utf8')
+
+  const backend = await startBackend(dataDir)
+  t.after(async () => {
+    await stopBackend(backend.child)
+    await rm(dataDir, { recursive: true, force: true })
+  })
+
+  const recovered = parseCsv(await readFile(csvPath, 'utf8'))
+  assert.equal(recovered.rows.length, 2)
+  assert.deepEqual(
+    recovered.rows.map((row) => row.participanteId),
+    ['000001.1', '000001.2']
+  )
+  await assert.rejects(readFile(transactionPath, 'utf8'), { code: 'ENOENT' })
+
+  const nextRegistration = await postSoftball(backend.baseUrl, multiSoftballBody({
+    submissionId: 'softball-after-recovery',
+    participantes: [{ nombreCompleto: 'Persona Despues Recuperacion', telefono: '3311110003' }]
+  }))
+  assert.equal(nextRegistration.status, 201)
+  assert.equal((await nextRegistration.json()).folioRegistro, '000002')
 })
 
 test('un esquema desconocido de s\u00f3ftbol impide iniciar sin sobrescribir datos', async (t) => {

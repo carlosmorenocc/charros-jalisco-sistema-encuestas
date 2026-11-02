@@ -358,7 +358,7 @@ paths:
 
   /api/softball-submit:
     post:
-      summary: Registra una participación individual para el juego de sóftbol de afiliados
+      summary: Registra uno o varios participantes para el juego de sóftbol de afiliados
       requestBody:
         required: true
         content:
@@ -366,8 +366,8 @@ paths:
             schema:
               type: object
               required:
-                - nombreCompleto
-                - telefono
+                - cantidadAbonos
+                - participantes
                 - eventoSeleccionado
                 - aceptaAvisoPrivacidad
               properties:
@@ -378,14 +378,32 @@ paths:
                   type: string
                   minLength: 5
                   maxLength: 140
+                  deprecated: true
+                  description: Compatibilidad temporal con el formulario individual anterior.
                 telefono:
                   type: string
-                  description: Teléfono mexicano de 10 dígitos; se aceptan formatos con +52.
+                  deprecated: true
+                  description: Compatibilidad temporal con el formulario individual anterior.
                 cantidadAbonos:
                   type: integer
                   minimum: 1
                   maximum: 20
-                  description: Cantidad de abonos de la afiliación. El formulario público la solicita para informar cuántos registros puede realizar la persona.
+                  description: Cantidad de abonos que participan; debe coincidir con participantes.length.
+                participantes:
+                  type: array
+                  minItems: 1
+                  maxItems: 20
+                  items:
+                    type: object
+                    required: [nombreCompleto, telefono]
+                    properties:
+                      nombreCompleto:
+                        type: string
+                        minLength: 5
+                        maxLength: 140
+                      telefono:
+                        type: string
+                        description: Teléfono mexicano de 10 dígitos; se aceptan formatos con +52.
                 eventoSeleccionado:
                   type: string
                   enum: [softbol-club-charros-2026-11-08]
@@ -410,10 +428,18 @@ paths:
                     type: boolean
                   submissionId:
                     type: string
+                  folioRegistro:
+                    type: string
+                    example: '000001'
+                  participanteIds:
+                    type: array
+                    items:
+                      type: string
+                    example: ['000001.1', '000001.2']
         '400':
           description: Cantidad, campos, evento o consentimientos inválidos
         '409':
-          description: La persona ya fue registrada o el identificador pertenece a otro envío
+          description: Alguna persona ya fue registrada o el identificador pertenece a otro envío
         '410':
           description: La fecha límite de registro ya venció
         '503':

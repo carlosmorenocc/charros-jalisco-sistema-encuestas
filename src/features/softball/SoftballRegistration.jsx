@@ -8,6 +8,10 @@ const WHATSAPP_CHANNEL = 'https://whatsapp.com/channel/0029VbE1306LSmbVPqM1Ro02'
 const SOFTBALL_EVENT_ID = 'softbol-club-charros-2026-11-08'
 const SOFTBALL_MAX_SEASON_TICKETS = 20
 
+function emptyParticipant() {
+  return { nombreCompleto: '', telefono: '' }
+}
+
 function normalizeUppercase(value) {
   return value.toLocaleUpperCase('es-MX')
 }
@@ -31,13 +35,13 @@ function validParticipantName(value) {
 
 function submissionErrorMessage(error) {
   if (error?.status === 409) {
-    return 'Esta persona ya está registrada. Solo se permite un registro por persona.'
+    return 'Una o más personas ya están registradas. Revisa la lista; cada persona solo puede registrarse una vez.'
   }
   if (error?.status === 410) {
     return 'El periodo de registro cerró al finalizar el martes 3 de noviembre.'
   }
   if (error?.status === 400) {
-    return 'Revisa la cantidad de abonos, el nombre, el teléfono y el evento seleccionado.'
+    return 'Revisa la cantidad de abonos, los datos de cada participante y el evento seleccionado.'
   }
   if (error?.status === 429) {
     return 'Recibimos muchos registros al mismo tiempo. Espera un momento e inténtalo nuevamente.'
@@ -62,8 +66,7 @@ export default function SoftballRegistration() {
   const [step, setStep] = useState(1)
   const [data, setData] = useState({
     cantidadAbonos: '',
-    nombreCompleto: '',
-    telefono: '',
+    participantes: [],
     eventoSeleccionado: ''
   })
   const [acceptsPrivacy, setAcceptsPrivacy] = useState(false)
@@ -72,34 +75,75 @@ export default function SoftballRegistration() {
   const [sending, setSending] = useState(false)
   const [copyStatus, setCopyStatus] = useState('')
   const headingRef = useRef(null)
+  const submissionIdRef = useRef('')
   const shareUrl = useMemo(getShareUrl, [])
+
+  if (!submissionIdRef.current) {
+    submissionIdRef.current = globalThis.crypto?.randomUUID?.() || `softball_${Date.now()}`
+  }
 
   useEffect(() => {
     headingRef.current?.focus({ preventScroll: true })
   }, [step])
 
+  function updateParticipantQuantity(value) {
+    const quantity = Number(value)
+    setData((current) => ({
+      ...current,
+      cantidadAbonos: value,
+      participantes: Number.isInteger(quantity) && quantity >= 1
+        ? Array.from(
+          { length: quantity },
+          (_, index) => current.participantes[index] || emptyParticipant()
+        )
+        : []
+    }))
+    setError('')
+  }
+
+  function updateParticipant(index, field, value) {
+    setData((current) => ({
+      ...current,
+      participantes: current.participantes.map((participant, participantIndex) => (
+        participantIndex === index
+          ? { ...participant, [field]: value }
+          : participant
+      ))
+    }))
+    setError('')
+  }
+
   function continueToPrivacy(event) {
     event.preventDefault()
     const seasonTicketQuantity = Number(data.cantidadAbonos)
-    const fullName = data.nombreCompleto.trim()
-    const phoneValue = data.telefono.trim()
-    const phoneDigits = normalizeMexicanPhone(phoneValue)
 
     if (
       !Number.isInteger(seasonTicketQuantity)
       || seasonTicketQuantity < 1
       || seasonTicketQuantity > SOFTBALL_MAX_SEASON_TICKETS
     ) {
-      setError('Selecciona cuántos abonos tienes.')
+      setError('Selecciona cuántos de tus abonos participan.')
       return
     }
-    if (!validParticipantName(fullName)) {
-      setError('Escribe tu nombre completo.')
+
+    if (data.participantes.length !== seasonTicketQuantity) {
+      setError('Completa los datos de todas las personas participantes.')
       return
     }
-    if (!/^\+?[0-9() .-]+$/.test(phoneValue) || phoneDigits.length !== 10) {
-      setError('Escribe un número de teléfono mexicano válido de 10 dígitos.')
-      return
+
+    for (const [index, participant] of data.participantes.entries()) {
+      const fullName = participant.nombreCompleto.trim()
+      const phoneValue = participant.telefono.trim()
+      const phoneDigits = normalizeMexicanPhone(phoneValue)
+
+      if (!validParticipantName(fullName)) {
+        setError(`Escribe el nombre completo de la persona ${index + 1}.`)
+        return
+      }
+      if (!/^\+?[0-9() .-]+$/.test(phoneValue) || phoneDigits.length !== 10) {
+        setError(`Escribe un número de teléfono mexicano válido de 10 dígitos para la persona ${index + 1}.`)
+        return
+      }
     }
     if (data.eventoSeleccionado !== SOFTBALL_EVENT_ID) {
       setError('Selecciona el juego de sóftbol para registrar tu participación.')
@@ -120,15 +164,20 @@ export default function SoftballRegistration() {
     setSending(true)
     setError('')
     const consentTimestamp = new Date().toISOString()
+    const participants = data.participantes.map((participant) => ({
+      nombreCompleto: normalizeUppercase(participant.nombreCompleto.trim()),
+      telefono: participant.telefono.trim()
+    }))
 
     try {
       await submitSoftballForm({
-        submissionId: globalThis.crypto?.randomUUID?.() || `softball_${Date.now()}`,
+        submissionId: submissionIdRef.current,
         timestamp: consentTimestamp,
         campaignName: 'Club Charros · Juego de sóftbol para afiliados',
         source: 'club-charros-softball-affiliates',
-        nombreCompleto: normalizeUppercase(data.nombreCompleto.trim()),
-        telefono: data.telefono.trim(),
+        participantes: participants,
+        nombreCompleto: participants[0].nombreCompleto,
+        telefono: participants[0].telefono,
         cantidadAbonos: Number(data.cantidadAbonos),
         eventoSeleccionado: SOFTBALL_EVENT_ID,
         aceptaAvisoPrivacidad: true,
@@ -188,19 +237,16 @@ export default function SoftballRegistration() {
 
             <aside className={styles.registrationNote} aria-label="Información importante del registro">
               <strong>Lugares limitados.</strong>
-              <span>Indica cuántos abonos tienes para conocer cuántos participantes puedes registrar.</span>
+              <span>Indica cuántos de tus abonos participan y registra a todas las personas en un solo envío.</span>
               <span><strong>Fecha límite:</strong> martes 3 de noviembre de 2026, hasta el final del día.</span>
             </aside>
 
             <label className={`${baseStyles.field} ${styles.seasonTicketField}`} htmlFor="softball-season-ticket-quantity">
-              <span>¿Cuántos abonos tienes?</span>
+              <span>¿Cuántos de tus abonos participan?</span>
               <select
                 id="softball-season-ticket-quantity"
                 value={data.cantidadAbonos}
-                onChange={(event) => {
-                  setData((current) => ({ ...current, cantidadAbonos: event.target.value }))
-                  setError('')
-                }}
+                onChange={(event) => updateParticipantQuantity(event.target.value)}
                 aria-describedby={data.cantidadAbonos ? 'softball-registration-allowance' : undefined}
                 required
               >
@@ -209,7 +255,7 @@ export default function SoftballRegistration() {
                   <option key={quantity} value={quantity}>{quantity}</option>
                 ))}
               </select>
-              <small>Selecciona la cantidad total de abonos de tu afiliación.</small>
+              <small>Selecciona cuántos de tus abonos participarán en esta dinámica.</small>
             </label>
 
             {data.cantidadAbonos && (
@@ -220,46 +266,73 @@ export default function SoftballRegistration() {
                 aria-live="polite"
               >
                 {Number(data.cantidadAbonos) === 1
-                  ? 'Con tu abono, puedes realizar 1 registro. Completa y envía un formulario; se registra una persona a la vez.'
-                  : `Con tus ${data.cantidadAbonos} abonos, puedes realizar hasta ${data.cantidadAbonos} registros. Completa y envía un formulario por cada participante; se registra una persona a la vez.`}
+                  ? 'Captura los datos de la persona participante. Al enviar, se generará 1 registro individual.'
+                  : `Captura los datos de las ${data.cantidadAbonos} personas participantes. Al enviar, cada persona se guardará como un registro individual.`}
               </p>
             )}
 
-            <label className={`${baseStyles.field} ${styles.participantField}`} htmlFor="softball-full-name">
-              <span>Nombre completo</span>
-              <input
-                id="softball-full-name"
-                autoComplete="name"
-                maxLength="140"
-                placeholder="NOMBRE COMPLETO"
-                value={data.nombreCompleto}
-                onChange={(event) => {
-                  setData((current) => ({ ...current, nombreCompleto: normalizeUppercase(event.target.value) }))
-                  setError('')
-                }}
-                required
-              />
-              <small>Tu nombre se guardará en mayúsculas.</small>
-            </label>
+            {data.participantes.length > 0 && (
+              <section className={styles.participantsSection} aria-labelledby="softball-participants-title">
+                <div className={styles.participantsHeading}>
+                  <div>
+                    <h2 id="softball-participants-title">Datos de participantes</h2>
+                    <p>Completa el nombre y teléfono de contacto de cada persona.</p>
+                  </div>
+                  <span>{data.participantes.length} {data.participantes.length === 1 ? 'persona' : 'personas'}</span>
+                </div>
 
-            <label className={`${baseStyles.field} ${styles.participantField}`} htmlFor="softball-phone">
-              <span>Número de teléfono</span>
-              <input
-                id="softball-phone"
-                type="tel"
-                inputMode="tel"
-                autoComplete="tel"
-                maxLength="32"
-                placeholder="33 1234 5678"
-                value={data.telefono}
-                onChange={(event) => {
-                  setData((current) => ({ ...current, telefono: event.target.value }))
-                  setError('')
-                }}
-                required
-              />
-              <small>Ingresa 10 dígitos; también puedes incluir la clave +52.</small>
-            </label>
+                <div className={styles.participantList}>
+                  {data.participantes.map((participant, index) => (
+                    <fieldset className={styles.participantCard} key={index}>
+                      <legend>
+                        <span>Participante</span>
+                        <strong>{index + 1} de {data.participantes.length}</strong>
+                      </legend>
+
+                      <label
+                        className={`${baseStyles.field} ${styles.participantField}`}
+                        htmlFor={`softball-full-name-${index}`}
+                      >
+                        <span>Nombre completo</span>
+                        <input
+                          id={`softball-full-name-${index}`}
+                          autoComplete={index === 0 ? 'name' : 'off'}
+                          maxLength="140"
+                          placeholder="NOMBRE COMPLETO"
+                          value={participant.nombreCompleto}
+                          onChange={(event) => updateParticipant(
+                            index,
+                            'nombreCompleto',
+                            normalizeUppercase(event.target.value)
+                          )}
+                          required
+                        />
+                        <small>Se guardará en mayúsculas.</small>
+                      </label>
+
+                      <label
+                        className={`${baseStyles.field} ${styles.participantField}`}
+                        htmlFor={`softball-phone-${index}`}
+                      >
+                        <span>Número de teléfono</span>
+                        <input
+                          id={`softball-phone-${index}`}
+                          type="tel"
+                          inputMode="tel"
+                          autoComplete={index === 0 ? 'tel' : 'off'}
+                          maxLength="32"
+                          placeholder="33 1234 5678"
+                          value={participant.telefono}
+                          onChange={(event) => updateParticipant(index, 'telefono', event.target.value)}
+                          required
+                        />
+                        <small>Ingresa 10 dígitos; también puedes incluir la clave +52.</small>
+                      </label>
+                    </fieldset>
+                  ))}
+                </div>
+              </section>
+            )}
 
             <fieldset className={baseStyles.eventFieldset}>
               <legend>Selecciona el evento al que quieres registrarte</legend>
@@ -298,7 +371,10 @@ export default function SoftballRegistration() {
             <p className={baseStyles.eyebrow}>Antes de finalizar</p>
             <h1 ref={headingRef} tabIndex="-1">Aviso de Privacidad</h1>
             <p className={baseStyles.intro}>
-              Tus datos serán utilizados para registrar tu participación, administrar esta dinámica y contactarte por WhatsApp en caso de ser seleccionado.
+              Los datos que proporciones serán utilizados para registrar las participaciones, administrar esta dinámica y contactar por WhatsApp a las personas seleccionadas.
+            </p>
+            <p className={styles.submissionSummary}>
+              Enviarás <strong>{data.participantes.length} {data.participantes.length === 1 ? 'registro individual' : 'registros individuales'}</strong> en esta operación, uno por cada participante.
             </p>
             <a className={baseStyles.privacyLink} href="https://www.charrosjalisco.com/aviso-de-privacidad" target="_blank" rel="noreferrer">
               Consultar Aviso de Privacidad completo
@@ -306,7 +382,9 @@ export default function SoftballRegistration() {
 
             <label className={baseStyles.checkField}>
               <input type="checkbox" checked={acceptsPrivacy} onChange={(event) => setAcceptsPrivacy(event.target.checked)} />
-              <span>Acepto el Aviso de Privacidad de Charros de Jalisco. <strong>*</strong></span>
+              <span>
+                Acepto el Aviso de Privacidad de Charros de Jalisco y confirmo que tengo autorización de las personas registradas para proporcionar sus datos. <strong>*</strong>
+              </span>
             </label>
             <label className={baseStyles.checkField}>
               <input type="checkbox" checked={acceptsCommunications} onChange={(event) => setAcceptsCommunications(event.target.checked)} />
@@ -337,9 +415,15 @@ export default function SoftballRegistration() {
             <div className={baseStyles.success} role="status">
               <span className={baseStyles.successIcon} aria-hidden="true">✓</span>
               <p className={baseStyles.eyebrow}>Registro completado</p>
-              <h1 ref={headingRef} tabIndex="-1">¡Tu participación fue registrada!</h1>
+              <h1 ref={headingRef} tabIndex="-1">
+                {data.participantes.length === 1
+                  ? '¡Tu participación fue registrada!'
+                  : '¡Las participaciones fueron registradas!'}
+              </h1>
               <p>
-                Gracias por participar. Publicaremos los avisos generales en nuestro canal de difusión de WhatsApp y, si tu lugar queda asegurado en la rifa, te contactaremos personalmente por WhatsApp al número que registraste.
+                {data.participantes.length === 1
+                  ? 'Guardamos 1 registro individual. Si el lugar queda asegurado en la rifa, contactaremos a la persona por WhatsApp al número registrado.'
+                  : `Guardamos ${data.participantes.length} registros individuales. Si algún lugar queda asegurado en la rifa, contactaremos a cada persona por WhatsApp al número registrado.`}
               </p>
               <a className={baseStyles.primaryButton} href={WHATSAPP_CHANNEL} target="_blank" rel="noreferrer">Ir al canal de WhatsApp</a>
             </div>
