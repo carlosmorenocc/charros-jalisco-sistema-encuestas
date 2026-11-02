@@ -6,6 +6,9 @@ import { submitSoftballForm } from './submitSoftballForm'
 vi.mock('./submitSoftballForm', () => ({ submitSoftballForm: vi.fn() }))
 
 function completeRegistrationDetails() {
+  fireEvent.change(screen.getByLabelText(/Cuántos abonos tienes/i), {
+    target: { value: '2' }
+  })
   fireEvent.change(screen.getByLabelText(/Nombre completo/i), {
     target: { value: 'Ana López Pérez' }
   })
@@ -44,8 +47,8 @@ describe('SoftballRegistration', () => {
 
     expect(screen.getByRole('heading', { level: 1, name: '¡Regístrate para jugar sóftbol en el Estadio Panamericano!' })).toBeInTheDocument()
     expect(screen.getByText('Lugares limitados.')).toBeInTheDocument()
-    expect(screen.getByText(/un registro por persona/i)).toBeInTheDocument()
-    expect(screen.getByText(/envía otro formulario con los datos de esa persona/i)).toBeInTheDocument()
+    expect(screen.getByText(/indica cuántos abonos tienes/i)).toBeInTheDocument()
+    expect(screen.queryByText(/se registra una persona a la vez/i)).not.toBeInTheDocument()
     expect(screen.getByText(/martes 3 de noviembre de 2026, hasta el final del día\./i)).toBeInTheDocument()
     expect(screen.queryByText(/avisos generales se compartirán en el canal de difusión de WhatsApp/i)).not.toBeInTheDocument()
     expect(screen.queryByText(/te contactaremos personalmente por WhatsApp al número registrado/i)).not.toBeInTheDocument()
@@ -55,6 +58,18 @@ describe('SoftballRegistration', () => {
     expect(screen.queryByText(/40 afiliados|40 lugares|cupo:\s*40/i)).not.toBeInTheDocument()
     expect(screen.queryByLabelText(/correo/i)).not.toBeInTheDocument()
     expect(screen.queryByRole('region', { name: 'Comparte este registro' })).not.toBeInTheDocument()
+
+    const seasonTicketQuantity = screen.getByLabelText(/Cuántos abonos tienes/i)
+    expect(seasonTicketQuantity).toHaveValue('')
+    fireEvent.change(seasonTicketQuantity, { target: { value: '3' } })
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'Con tus 3 abonos, puedes realizar hasta 3 registros. Completa y envía un formulario por cada participante; se registra una persona a la vez.'
+    )
+    fireEvent.change(seasonTicketQuantity, { target: { value: '1' } })
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'Con tu abono, puedes realizar 1 registro. Completa y envía un formulario; se registra una persona a la vez.'
+    )
+    fireEvent.change(seasonTicketQuantity, { target: { value: '3' } })
 
     const fullName = screen.getByLabelText(/Nombre completo/i)
     fireEvent.change(fullName, { target: { value: 'Ana López Pérez' } })
@@ -90,6 +105,7 @@ describe('SoftballRegistration', () => {
       source: 'club-charros-softball-affiliates',
       nombreCompleto: 'ANA LÓPEZ PÉREZ',
       telefono: '33 1234 5678',
+      cantidadAbonos: 3,
       eventoSeleccionado: 'softbol-club-charros-2026-11-08',
       aceptaAvisoPrivacidad: true,
       aceptaComunicaciones: true
@@ -129,6 +145,9 @@ describe('SoftballRegistration', () => {
     fireEvent.change(screen.getByLabelText(/Nombre completo/i), {
       target: { value: 'Persona Afiliada Prueba' }
     })
+    fireEvent.change(screen.getByLabelText(/Cuántos abonos tienes/i), {
+      target: { value: '4' }
+    })
     fireEvent.change(screen.getByLabelText(/Número de teléfono/i), {
       target: { value: '+52 33 1234 5678' }
     })
@@ -152,8 +171,27 @@ describe('SoftballRegistration', () => {
     expect(screen.getByLabelText(/Acepto recibir información/i)).not.toBeChecked()
   })
 
+  it('requiere indicar la cantidad de abonos antes de continuar', async () => {
+    render(<SoftballRegistration />)
+    fireEvent.change(screen.getByLabelText(/Nombre completo/i), {
+      target: { value: 'Persona Afiliada Prueba' }
+    })
+    fireEvent.change(screen.getByLabelText(/Número de teléfono/i), {
+      target: { value: '3312345678' }
+    })
+    fireEvent.click(screen.getByLabelText(/Juego de sóftbol para afiliados/i))
+
+    fireEvent.submit(screen.getByRole('button', { name: 'Continuar' }).closest('form'))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Selecciona cuántos abonos tienes')
+    expect(screen.queryByRole('heading', { name: 'Aviso de Privacidad' })).not.toBeInTheDocument()
+  })
+
   it('rechaza nombres con caracteres ajenos a un nombre', async () => {
     render(<SoftballRegistration />)
+    fireEvent.change(screen.getByLabelText(/Cuántos abonos tienes/i), {
+      target: { value: '2' }
+    })
     fireEvent.change(screen.getByLabelText(/Nombre completo/i), {
       target: { value: 'ANA PÉREZ 123' }
     })
@@ -167,7 +205,7 @@ describe('SoftballRegistration', () => {
   })
 
   it.each([
-    [400, 'Revisa el nombre, el teléfono y el evento seleccionado'],
+    [400, 'Revisa la cantidad de abonos, el nombre, el teléfono y el evento seleccionado'],
     [410, 'cerró al finalizar el martes 3 de noviembre'],
     [429, 'muchos registros al mismo tiempo'],
     [503, 'temporalmente pausado'],

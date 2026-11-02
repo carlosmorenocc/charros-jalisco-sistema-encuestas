@@ -7,8 +7,8 @@ const HISTORICAL_CSV =
   'ANA PÉREZ,romeo-santos,false,true,,true\n'
 
 const SOFTBALL_CSV =
-  'submissionId,timestamp,campaignName,source,nombreCompleto,telefono,eventoSeleccionado,aceptaAvisoPrivacidad,aceptaComunicaciones,privacyNoticeVersion,consentTimestamp\n' +
-  'submission-1,2026-11-02T15:00:00.000Z,softbol-afiliados-2026,web,ANA PÉREZ,3312345678,softbol-club-charros-2026-11-08,true,false,2026-11-02,2026-11-02T15:00:00.000Z\n'
+  'submissionId,timestamp,campaignName,source,nombreCompleto,telefono,cantidadAbonos,eventoSeleccionado,aceptaAvisoPrivacidad,aceptaComunicaciones,privacyNoticeVersion,consentTimestamp\n' +
+  'submission-1,2026-11-02T15:00:00.000Z,softbol-afiliados-2026,web,ANA PÉREZ,3312345678,2,softbol-club-charros-2026-11-08,true,false,2026-11-02,2026-11-02T15:00:00.000Z\n'
 
 describe('RewardsCsvDownloadPage', () => {
   let anchorClickSpy

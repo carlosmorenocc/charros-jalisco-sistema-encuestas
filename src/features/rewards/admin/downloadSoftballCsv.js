@@ -65,6 +65,7 @@ export function downloadSoftballCsv({
       'source',
       'nombreCompleto',
       'telefono',
+      'cantidadAbonos',
       'eventoSeleccionado',
       'aceptaAvisoPrivacidad',
       'aceptaComunicaciones',

@@ -12,6 +12,7 @@ const SOFTBALL_COLUMNS = [
   'source',
   'nombreCompleto',
   'telefono',
+  'cantidadAbonos',
   'eventoSeleccionado',
   'aceptaAvisoPrivacidad',
   'aceptaComunicaciones',
@@ -75,7 +76,7 @@ describe('downloadSoftballCsv', () => {
   const endpoint = 'https://api.example.com/api/softball-submissions.csv'
 
   it('descarga exclusivamente el esquema de sóftbol con nombre fechado', async () => {
-    const csvText = `${SOFTBALL_COLUMNS.join(',')}\nsubmission-1,2026-11-02T15:00:00.000Z,softbol-afiliados-2026,web,ANA PÉREZ,3312345678,softbol-club-charros-2026-11-08,true,false,2026-11-02,2026-11-02T15:00:00.000Z\n`
+    const csvText = `${SOFTBALL_COLUMNS.join(',')}\nsubmission-1,2026-11-02T15:00:00.000Z,softbol-afiliados-2026,web,ANA PÉREZ,3312345678,2,softbol-club-charros-2026-11-08,true,false,2026-11-02,2026-11-02T15:00:00.000Z\n`
     const fetchImpl = vi.fn().mockResolvedValue(
       new Response(csvText, {
         status: 200,

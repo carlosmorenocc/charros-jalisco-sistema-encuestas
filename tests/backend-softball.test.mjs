@@ -18,12 +18,14 @@ const softballColumns = [
   'source',
   'nombreCompleto',
   'telefono',
+  'cantidadAbonos',
   'eventoSeleccionado',
   'aceptaAvisoPrivacidad',
   'aceptaComunicaciones',
   'privacyNoticeVersion',
   'consentTimestamp'
 ]
+const legacySoftballColumns = softballColumns.filter((column) => column !== 'cantidadAbonos')
 const rewardsColumns = [
   'submissionId',
   'timestamp',
@@ -117,6 +119,7 @@ function softballBody(overrides = {}) {
     submissionId: 'softball-test-1',
     nombreCompleto: 'Ana L\u00f3pez P\u00e9rez',
     telefono: '+52 33 1234 5678',
+    cantidadAbonos: 2,
     eventoSeleccionado: eventId,
     aceptaAvisoPrivacidad: true,
     aceptaComunicaciones: false,
@@ -209,6 +212,9 @@ test('s\u00f3ftbol valida, deduplica por persona y persiste en un CSV independie
       [softballBody({ telefono: '331234567A' }), 'telefono'],
       [softballBody({ telefono: '0443312345678' }), 'telefono'],
       [softballBody({ telefono: '331234567890123' }), 'telefono'],
+      [softballBody({ cantidadAbonos: 0 }), 'cantidadAbonos'],
+      [softballBody({ cantidadAbonos: 21 }), 'cantidadAbonos'],
+      [softballBody({ cantidadAbonos: '2' }), 'cantidadAbonos'],
       [softballBody({ eventoSeleccionado: 'romeo-santos-live-mexico-2026' }), 'eventoSeleccionado'],
       [softballBody({ aceptaAvisoPrivacidad: 'true' }), 'aceptaAvisoPrivacidad'],
       [softballBody({ aceptaComunicaciones: 'false' }), 'aceptaComunicaciones']
@@ -245,6 +251,7 @@ test('s\u00f3ftbol valida, deduplica por persona y persiste en un CSV independie
     assert.equal(rows[0].source, 'softbol-afiliados-2026')
     assert.equal(rows[0].nombreCompleto, 'ANA L\u00d3PEZ P\u00c9REZ')
     assert.equal(rows[0].telefono, "'+52 33 1234 5678")
+    assert.equal(rows[0].cantidadAbonos, '2')
     assert.equal(rows[0].eventoSeleccionado, eventId)
     assert.equal(rows[0].aceptaAvisoPrivacidad, 'true')
     assert.equal(rows[0].aceptaComunicaciones, 'false')
@@ -280,6 +287,12 @@ test('s\u00f3ftbol valida, deduplica por persona y persiste en un CSV independie
     const afterConflict = parseCsv(await readFile(path.join(dataDir, softballCsvFilename), 'utf8'))
     assert.equal(afterConflict.rows.length, 1)
     assert.equal(afterConflict.rows[0].aceptaComunicaciones, 'false')
+
+    const changedSeasonTicketQuantity = await postSoftball(backend.baseUrl, softballBody({
+      cantidadAbonos: 3
+    }))
+    assert.equal(changedSeasonTicketQuantity.status, 409)
+    assert.equal((await changedSeasonTicketQuantity.json()).error, 'Softball submission ID already used')
   })
 
   await t.test('normaliza prefijos telefónicos mexicanos al deduplicar', async () => {
@@ -457,6 +470,55 @@ test('el backend cierra autom\u00e1ticamente el registro al vencer la fecha l\u0
 
   const { rows } = parseCsv(await readFile(path.join(dataDir, softballCsvFilename), 'utf8'))
   assert.equal(rows.length, 0)
+})
+
+test('migra el CSV anterior de s\u00f3ftbol con respaldo y sin inventar cantidades', async (t) => {
+  const dataDir = await mkdtemp(path.join(os.tmpdir(), 'charros-softball-migration-'))
+  const csvPath = path.join(dataDir, softballCsvFilename)
+  const legacyRow = {
+    submissionId: 'softball-legacy-1',
+    timestamp: '2026-11-02T15:00:00.000Z',
+    campaignName: 'Club Charros \u00b7 Juego de s\u00f3ftbol para afiliados 2026',
+    source: 'softbol-afiliados-2026',
+    nombreCompleto: 'PERSONA LEGACY PRUEBA',
+    telefono: '3312345678',
+    eventoSeleccionado: eventId,
+    aceptaAvisoPrivacidad: true,
+    aceptaComunicaciones: false,
+    privacyNoticeVersion: '2026-11-02',
+    consentTimestamp: '2026-11-02T15:00:00.000Z'
+  }
+  const legacyContent = `${legacySoftballColumns.join(',')}\n${
+    legacySoftballColumns.map((column) => csvValue(legacyRow[column])).join(',')
+  }\n`
+  await writeFile(csvPath, legacyContent, 'utf8')
+
+  const backend = await startBackend(dataDir)
+  t.after(async () => {
+    await stopBackend(backend.child)
+    await rm(dataDir, { recursive: true, force: true })
+  })
+
+  const migrated = parseCsv(await readFile(csvPath, 'utf8'))
+  assert.deepEqual(migrated.header, softballColumns)
+  assert.equal(migrated.rows.length, 1)
+  assert.equal(migrated.rows[0].submissionId, 'softball-legacy-1')
+  assert.equal(migrated.rows[0].cantidadAbonos, '')
+  assert.equal(
+    await readFile(
+      path.join(dataDir, 'submissions_softbol_afiliados_2026_schema_backup.csv'),
+      'utf8'
+    ),
+    legacyContent
+  )
+
+  const duplicate = await postSoftball(backend.baseUrl, softballBody({
+    submissionId: 'softball-legacy-duplicate',
+    nombreCompleto: 'Persona Legacy Prueba',
+    telefono: '+52 33 1234 5678'
+  }))
+  assert.equal(duplicate.status, 409)
+  assert.equal((await duplicate.json()).error, 'Softball participant already registered')
 })
 
 test('un esquema desconocido de s\u00f3ftbol impide iniciar sin sobrescribir datos', async (t) => {

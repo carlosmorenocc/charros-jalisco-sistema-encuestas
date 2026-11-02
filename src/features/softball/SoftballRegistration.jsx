@@ -6,6 +6,7 @@ import { submitSoftballForm } from './submitSoftballForm'
 
 const WHATSAPP_CHANNEL = 'https://whatsapp.com/channel/0029VbE1306LSmbVPqM1Ro02'
 const SOFTBALL_EVENT_ID = 'softbol-club-charros-2026-11-08'
+const SOFTBALL_MAX_SEASON_TICKETS = 20
 
 function normalizeUppercase(value) {
   return value.toLocaleUpperCase('es-MX')
@@ -36,7 +37,7 @@ function submissionErrorMessage(error) {
     return 'El periodo de registro cerró al finalizar el martes 3 de noviembre.'
   }
   if (error?.status === 400) {
-    return 'Revisa el nombre, el teléfono y el evento seleccionado.'
+    return 'Revisa la cantidad de abonos, el nombre, el teléfono y el evento seleccionado.'
   }
   if (error?.status === 429) {
     return 'Recibimos muchos registros al mismo tiempo. Espera un momento e inténtalo nuevamente.'
@@ -59,7 +60,12 @@ function getShareUrl() {
 
 export default function SoftballRegistration() {
   const [step, setStep] = useState(1)
-  const [data, setData] = useState({ nombreCompleto: '', telefono: '', eventoSeleccionado: '' })
+  const [data, setData] = useState({
+    cantidadAbonos: '',
+    nombreCompleto: '',
+    telefono: '',
+    eventoSeleccionado: ''
+  })
   const [acceptsPrivacy, setAcceptsPrivacy] = useState(false)
   const [acceptsCommunications, setAcceptsCommunications] = useState(false)
   const [error, setError] = useState('')
@@ -74,10 +80,19 @@ export default function SoftballRegistration() {
 
   function continueToPrivacy(event) {
     event.preventDefault()
+    const seasonTicketQuantity = Number(data.cantidadAbonos)
     const fullName = data.nombreCompleto.trim()
     const phoneValue = data.telefono.trim()
     const phoneDigits = normalizeMexicanPhone(phoneValue)
 
+    if (
+      !Number.isInteger(seasonTicketQuantity)
+      || seasonTicketQuantity < 1
+      || seasonTicketQuantity > SOFTBALL_MAX_SEASON_TICKETS
+    ) {
+      setError('Selecciona cuántos abonos tienes.')
+      return
+    }
     if (!validParticipantName(fullName)) {
       setError('Escribe tu nombre completo.')
       return
@@ -114,6 +129,7 @@ export default function SoftballRegistration() {
         source: 'club-charros-softball-affiliates',
         nombreCompleto: normalizeUppercase(data.nombreCompleto.trim()),
         telefono: data.telefono.trim(),
+        cantidadAbonos: Number(data.cantidadAbonos),
         eventoSeleccionado: SOFTBALL_EVENT_ID,
         aceptaAvisoPrivacidad: true,
         aceptaComunicaciones: acceptsCommunications,
@@ -172,9 +188,42 @@ export default function SoftballRegistration() {
 
             <aside className={styles.registrationNote} aria-label="Información importante del registro">
               <strong>Lugares limitados.</strong>
-              <span>Se permite un registro por persona. Si quieres registrar a alguien más, envía otro formulario con los datos de esa persona.</span>
+              <span>Indica cuántos abonos tienes para conocer cuántos participantes puedes registrar.</span>
               <span><strong>Fecha límite:</strong> martes 3 de noviembre de 2026, hasta el final del día.</span>
             </aside>
+
+            <label className={`${baseStyles.field} ${styles.seasonTicketField}`} htmlFor="softball-season-ticket-quantity">
+              <span>¿Cuántos abonos tienes?</span>
+              <select
+                id="softball-season-ticket-quantity"
+                value={data.cantidadAbonos}
+                onChange={(event) => {
+                  setData((current) => ({ ...current, cantidadAbonos: event.target.value }))
+                  setError('')
+                }}
+                aria-describedby={data.cantidadAbonos ? 'softball-registration-allowance' : undefined}
+                required
+              >
+                <option value="">Selecciona una cantidad</option>
+                {Array.from({ length: SOFTBALL_MAX_SEASON_TICKETS }, (_, index) => index + 1).map((quantity) => (
+                  <option key={quantity} value={quantity}>{quantity}</option>
+                ))}
+              </select>
+              <small>Selecciona la cantidad total de abonos de tu afiliación.</small>
+            </label>
+
+            {data.cantidadAbonos && (
+              <p
+                className={styles.registrationAllowance}
+                id="softball-registration-allowance"
+                role="status"
+                aria-live="polite"
+              >
+                {Number(data.cantidadAbonos) === 1
+                  ? 'Con tu abono, puedes realizar 1 registro. Completa y envía un formulario; se registra una persona a la vez.'
+                  : `Con tus ${data.cantidadAbonos} abonos, puedes realizar hasta ${data.cantidadAbonos} registros. Completa y envía un formulario por cada participante; se registra una persona a la vez.`}
+              </p>
+            )}
 
             <label className={`${baseStyles.field} ${styles.participantField}`} htmlFor="softball-full-name">
               <span>Nombre completo</span>

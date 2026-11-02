@@ -55,6 +55,7 @@ const SOFTBALL_CAMPAIGN_NAME = 'Club Charros \u00b7 Juego de s\u00f3ftbol para a
 const SOFTBALL_SOURCE = 'softbol-afiliados-2026'
 const SOFTBALL_EVENT_ID = 'softbol-club-charros-2026-11-08'
 const SOFTBALL_PRIVACY_NOTICE_VERSION = '2026-11-02'
+const SOFTBALL_MAX_SEASON_TICKETS = 20
 
 const CSV_COLUMNS = [
   'submissionId',
@@ -141,6 +142,20 @@ const REWARD_EVENT_IDS = new Set([
   'romeo-santos-live-mexico-2026'
 ])
 
+const LEGACY_SOFTBALL_CSV_COLUMNS = [
+  'submissionId',
+  'timestamp',
+  'campaignName',
+  'source',
+  'nombreCompleto',
+  'telefono',
+  'eventoSeleccionado',
+  'aceptaAvisoPrivacidad',
+  'aceptaComunicaciones',
+  'privacyNoticeVersion',
+  'consentTimestamp'
+]
+
 const SOFTBALL_CSV_COLUMNS = [
   'submissionId',
   'timestamp',
@@ -148,6 +163,7 @@ const SOFTBALL_CSV_COLUMNS = [
   'source',
   'nombreCompleto',
   'telefono',
+  'cantidadAbonos',
   'eventoSeleccionado',
   'aceptaAvisoPrivacidad',
   'aceptaComunicaciones',
@@ -352,15 +368,53 @@ function ensureSoftballDataFile() {
     return
   }
 
-  const firstLine = fs.readFileSync(softballCsvPath, 'utf8')
-    .split(/\r?\n/, 1)[0]
-    .replace(/^\uFEFF/, '')
+  const legacyContent = fs.readFileSync(softballCsvPath, 'utf8')
+  const firstLine = legacyContent.split(/\r?\n/, 1)[0].replace(/^\uFEFF/, '')
+  if (firstLine === expectedHeader) return
 
-  if (firstLine !== expectedHeader) {
+  if (firstLine !== LEGACY_SOFTBALL_CSV_COLUMNS.join(',')) {
     throw new Error(
       `Unsupported softball CSV schema at ${softballCsvPath}; existing data was preserved`
     )
   }
+
+  const migratedContent = migrateLegacySoftballCsv(legacyContent)
+  const backupPath = ensureSoftballMigrationBackup(legacyContent)
+  const migrationPath = `${softballCsvPath}.migration.tmp`
+  fs.writeFileSync(migrationPath, migratedContent, 'utf8')
+  fs.renameSync(migrationPath, softballCsvPath)
+  console.log(`Softball CSV migrated. Original file saved to: ${backupPath}`)
+}
+
+function ensureSoftballMigrationBackup(legacyContent) {
+  const backupBase = path.join(dataDir, 'submissions_softbol_afiliados_2026_schema_backup')
+  for (let suffix = 0; ; suffix += 1) {
+    const backupPath = `${backupBase}${suffix === 0 ? '' : `_${suffix + 1}`}.csv`
+    if (fs.existsSync(backupPath)) {
+      if (fs.readFileSync(backupPath, 'utf8') === legacyContent) return backupPath
+      continue
+    }
+    fs.copyFileSync(softballCsvPath, backupPath, fs.constants.COPYFILE_EXCL)
+    return backupPath
+  }
+}
+
+function migrateLegacySoftballCsv(legacyContent) {
+  const lines = legacyContent.split(/\r?\n/)
+  const header = parseCsvLine(lines[0].replace(/^\uFEFF/, ''))
+  const migratedRows = []
+
+  for (const line of lines.slice(1)) {
+    if (!line.trim()) continue
+    const values = parseCsvLine(line)
+    if (values.length !== header.length) {
+      throw new Error('Unable to safely migrate malformed softball CSV row')
+    }
+    const legacyRow = Object.fromEntries(header.map((column, index) => [column, values[index]]))
+    migratedRows.push(buildSoftballCsvRow({ ...legacyRow, cantidadAbonos: '' }).trimEnd())
+  }
+
+  return `${SOFTBALL_CSV_COLUMNS.join(',')}\n${migratedRows.join('\n')}${migratedRows.length ? '\n' : ''}`
 }
 
 function ensureRewardsMigrationBackup(legacyContent) {
@@ -531,6 +585,7 @@ function softballParticipantKey(nombreCompleto, telefono) {
 
 function softballSubmissionFingerprint({
   participantKey,
+  cantidadAbonos,
   eventoSeleccionado,
   aceptaAvisoPrivacidad,
   aceptaComunicaciones,
@@ -538,6 +593,7 @@ function softballSubmissionFingerprint({
 }) {
   return JSON.stringify([
     participantKey,
+    cantidadAbonos,
     eventoSeleccionado,
     aceptaAvisoPrivacidad === true,
     aceptaComunicaciones === true,
@@ -558,6 +614,7 @@ function loadSoftballRegistrationRegistry() {
   const submissionIdIdx = header.indexOf('submissionId')
   const nameIdx = header.indexOf('nombreCompleto')
   const phoneIdx = header.indexOf('telefono')
+  const seasonTicketsIdx = header.indexOf('cantidadAbonos')
   const eventIdx = header.indexOf('eventoSeleccionado')
   const privacyIdx = header.indexOf('aceptaAvisoPrivacidad')
   const communicationsIdx = header.indexOf('aceptaComunicaciones')
@@ -566,6 +623,7 @@ function loadSoftballRegistrationRegistry() {
     submissionIdIdx < 0
     || nameIdx < 0
     || phoneIdx < 0
+    || seasonTicketsIdx < 0
     || eventIdx < 0
     || privacyIdx < 0
     || communicationsIdx < 0
@@ -584,6 +642,9 @@ function loadSoftballRegistrationRegistry() {
     const participantKey = softballParticipantKey(values[nameIdx], values[phoneIdx])
     const submissionFingerprint = softballSubmissionFingerprint({
       participantKey,
+      cantidadAbonos: values[seasonTicketsIdx].trim()
+        ? Number(values[seasonTicketsIdx].trim())
+        : '',
       eventoSeleccionado: values[eventIdx].trim(),
       aceptaAvisoPrivacidad: values[privacyIdx].trim().toLowerCase() === 'true',
       aceptaComunicaciones: values[communicationsIdx].trim().toLowerCase() === 'true',
@@ -761,6 +822,7 @@ function normalizeSoftballPayload(input) {
   const rawSubmissionId = typeof raw.submissionId === 'string' ? raw.submissionId.trim() : ''
   const rawName = typeof raw.nombreCompleto === 'string' ? raw.nombreCompleto : ''
   const rawPhone = typeof raw.telefono === 'string' ? raw.telefono : ''
+  const hasSeasonTicketQuantity = Object.hasOwn(raw, 'cantidadAbonos')
   const nombreCompleto = rawName.trim().replace(/\s+/g, ' ').toLocaleUpperCase('es-MX')
   const telefono = rawPhone.trim()
   const eventoSeleccionado = typeof raw.eventoSeleccionado === 'string'
@@ -768,6 +830,7 @@ function normalizeSoftballPayload(input) {
     : ''
   const aceptaAvisoPrivacidad = raw.aceptaAvisoPrivacidad === true
   const aceptaComunicaciones = raw.aceptaComunicaciones === true
+  const cantidadAbonos = Number.isInteger(raw.cantidadAbonos) ? raw.cantidadAbonos : ''
   const participantKey = softballParticipantKey(nombreCompleto, telefono)
 
   return {
@@ -777,6 +840,7 @@ function normalizeSoftballPayload(input) {
     source: SOFTBALL_SOURCE,
     nombreCompleto,
     telefono,
+    cantidadAbonos,
     eventoSeleccionado,
     aceptaAvisoPrivacidad,
     aceptaComunicaciones,
@@ -785,6 +849,7 @@ function normalizeSoftballPayload(input) {
     participantKey,
     submissionFingerprint: softballSubmissionFingerprint({
       participantKey,
+      cantidadAbonos,
       eventoSeleccionado,
       aceptaAvisoPrivacidad,
       aceptaComunicaciones,
@@ -798,6 +863,11 @@ function normalizeSoftballPayload(input) {
       && !/[\u0000-\u001f\u007f]/.test(raw.nombreCompleto),
     phoneTypeValid: typeof raw.telefono === 'string'
       && !/[\u0000-\u001f\u007f]/.test(raw.telefono),
+    seasonTicketQuantityTypeValid: !hasSeasonTicketQuantity || (
+      Number.isInteger(raw.cantidadAbonos)
+      && raw.cantidadAbonos >= 1
+      && raw.cantidadAbonos <= SOFTBALL_MAX_SEASON_TICKETS
+    ),
     privacyTypeValid: typeof raw.aceptaAvisoPrivacidad === 'boolean',
     communicationsTypeValid:
       raw.aceptaComunicaciones === undefined || typeof raw.aceptaComunicaciones === 'boolean'
@@ -829,6 +899,7 @@ function validateSoftballPayload(payload) {
   ) {
     invalid.push('telefono')
   }
+  if (!payload.seasonTicketQuantityTypeValid) invalid.push('cantidadAbonos')
   if (payload.eventoSeleccionado !== SOFTBALL_EVENT_ID) invalid.push('eventoSeleccionado')
   if (!payload.privacyTypeValid || payload.aceptaAvisoPrivacidad !== true) {
     invalid.push('aceptaAvisoPrivacidad')
