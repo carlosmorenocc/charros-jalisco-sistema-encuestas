@@ -184,7 +184,6 @@ export default function SoftballRegistration() {
               <strong>Lugares limitados.</strong>
               <span>Se permite un registro por persona. Si quieres registrar a alguien más, envía otro formulario con los datos de esa persona.</span>
               <span><strong>Fecha límite:</strong> martes 3 de noviembre de 2026 a las 4:00 p.m. (hora de Ciudad de México).</span>
-              <span>Los avisos generales se compartirán en el canal de difusión de WhatsApp. Si tu lugar queda asegurado, te contactaremos personalmente por WhatsApp al número registrado.</span>
             </aside>
 
             <label className={baseStyles.field} htmlFor="softball-full-name">
