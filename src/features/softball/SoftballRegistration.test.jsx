@@ -46,7 +46,7 @@ describe('SoftballRegistration', () => {
     expect(screen.getByText('Lugares limitados.')).toBeInTheDocument()
     expect(screen.getByText(/un registro por persona/i)).toBeInTheDocument()
     expect(screen.getByText(/envía otro formulario con los datos de esa persona/i)).toBeInTheDocument()
-    expect(screen.getByText(/martes 3 de noviembre de 2026 a las 4:00 p\.m\./i)).toBeInTheDocument()
+    expect(screen.getByText(/martes 3 de noviembre de 2026, hasta el final del día\./i)).toBeInTheDocument()
     expect(screen.queryByText(/avisos generales se compartirán en el canal de difusión de WhatsApp/i)).not.toBeInTheDocument()
     expect(screen.queryByText(/te contactaremos personalmente por WhatsApp al número registrado/i)).not.toBeInTheDocument()
     expect(screen.getByText('Domingo 8 de noviembre de 2026 · 9:00 a.m.')).toBeInTheDocument()
@@ -168,7 +168,7 @@ describe('SoftballRegistration', () => {
 
   it.each([
     [400, 'Revisa el nombre, el teléfono y el evento seleccionado'],
-    [410, 'periodo de registro cerró'],
+    [410, 'cerró al finalizar el martes 3 de noviembre'],
     [429, 'muchos registros al mismo tiempo'],
     [503, 'temporalmente pausado'],
     [500, 'en unos momentos']

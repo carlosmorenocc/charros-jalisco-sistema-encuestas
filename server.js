@@ -33,7 +33,7 @@ const subscriberFormEnabled = process.env.SUBSCRIBER_FORM_ENABLED === 'true'
 const rewardsFormEnabled = process.env.REWARDS_FORM_ENABLED === 'true'
 const softballFormEnabled = process.env.SOFTBALL_FORM_ENABLED === 'true'
 const softballRegistrationDeadline = process.env.SOFTBALL_REGISTRATION_DEADLINE
-  || '2026-11-03T22:00:00.000Z'
+  || '2026-11-04T06:00:00.000Z'
 const softballRegistrationDeadlineMs = Date.parse(softballRegistrationDeadline)
 if (Number.isNaN(softballRegistrationDeadlineMs)) {
   throw new Error('SOFTBALL_REGISTRATION_DEADLINE must be a valid ISO-8601 timestamp')

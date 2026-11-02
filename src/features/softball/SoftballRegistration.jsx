@@ -33,7 +33,7 @@ function submissionErrorMessage(error) {
     return 'Esta persona ya está registrada. Solo se permite un registro por persona.'
   }
   if (error?.status === 410) {
-    return 'El periodo de registro cerró el martes 3 de noviembre a las 4:00 p.m.'
+    return 'El periodo de registro cerró al finalizar el martes 3 de noviembre.'
   }
   if (error?.status === 400) {
     return 'Revisa el nombre, el teléfono y el evento seleccionado.'
@@ -173,7 +173,7 @@ export default function SoftballRegistration() {
             <aside className={styles.registrationNote} aria-label="Información importante del registro">
               <strong>Lugares limitados.</strong>
               <span>Se permite un registro por persona. Si quieres registrar a alguien más, envía otro formulario con los datos de esa persona.</span>
-              <span><strong>Fecha límite:</strong> martes 3 de noviembre de 2026 a las 4:00 p.m. (hora de Ciudad de México).</span>
+              <span><strong>Fecha límite:</strong> martes 3 de noviembre de 2026, hasta el final del día.</span>
             </aside>
 
             <label className={baseStyles.field} htmlFor="softball-full-name">
