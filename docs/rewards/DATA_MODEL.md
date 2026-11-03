@@ -44,6 +44,6 @@ La unicidad de `rewards_programs` incluye temporada, orden, zona, sección y asi
 
 ### Excepción de elegibilidad del programa
 
-`rewards_programs.eligibility_exception` es nullable. Su dominio está restringido por la base de datos y actualmente solo admite `authorized_giveaway_courtesy`; `NULL` representa el comportamiento ordinario. El campo pertenece al programa/butaca, no al titular ni a toda la orden, para impedir que la autorización se propague a otros asientos.
+`rewards_programs.eligibility_exception` es nullable. Su dominio está restringido por la base de datos y admite únicamente `authorized_giveaway_courtesy` y `authorized_promotional_courtesy`; `NULL` representa el comportamiento ordinario. El campo pertenece al programa/butaca, no al titular ni a toda la orden, para impedir que la autorización se propague a otros asientos.
 
-La presencia del valor no basta para contar una asistencia. El importador exige además coincidencia exacta de la llave comercial y valida tipo, producto, patrocinio y ausencia de suite. Por ello, aliases y estrategias de conciliación de respaldo no heredan la excepción. El alta o cambio de este campo se realiza únicamente mediante el procedimiento transaccional documentado en `OPERATIONS.md`, con trazabilidad no personal.
+La presencia del valor no basta para contar una asistencia. El importador exige además coincidencia exacta de la llave comercial y valida tipo, producto, campo de patrocinador, parámetro sin patrocinio o colaborador y ausencia de suite. Por ello, aliases y estrategias de conciliación de respaldo no heredan la excepción. El alta o cambio de este campo se realiza únicamente mediante el procedimiento transaccional documentado en `OPERATIONS.md`, con trazabilidad no personal.

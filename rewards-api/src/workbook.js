@@ -26,8 +26,11 @@ const orderSectionSeatKey = (order, section, seat) => [
 const orderSeatKey = (order, seat) => [canonical(order),canonicalSeat(seat)].join('|');
 const numeric = (value) => Number(plain(value).replace(/[$,\s]/g,''));
 const eligibleEvents = new Set([...ELIGIBLE_EVENTS].map(canonical));
-const AUTHORIZED_GIVEAWAY_COURTESY = 'authorized_giveaway_courtesy';
-const GIVEAWAY_COURTESY_EVENT = canonical('Abono Compromisos LMP 2026-27');
+const AUTHORIZED_EXCEPTIONAL_COURTESIES = new Set([
+  'authorized_giveaway_courtesy',
+  'authorized_promotional_courtesy'
+]);
+const AUTHORIZED_COURTESY_EVENT = canonical('Abono Compromisos LMP 2026-27');
 
 function parseAccessTimestamp(value) {
   const match = plain(value).match(/^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
@@ -173,12 +176,16 @@ function accessExclusion(row) {
   return null;
 }
 
-function isAuthorizedGiveawayCourtesy(row,match) {
+function isAuthorizedExceptionalCourtesy(row,match) {
+  const eligibilityException = plain(
+    field(match?.program,'eligibilityException','eligibility_exception')
+  );
   return match?.matchStrategy === 'exact'
-    && plain(field(match.program,'eligibilityException','eligibility_exception')) === AUTHORIZED_GIVEAWAY_COURTESY
+    && AUTHORIZED_EXCEPTIONAL_COURTESIES.has(eligibilityException)
     && canonical(row.TIPO) === 'CORTESIA ABONO'
-    && canonical(row['EVENTO LIGADO']) === GIVEAWAY_COURTESY_EVENT
+    && canonical(row['EVENTO LIGADO']) === AUTHORIZED_COURTESY_EVENT
     && isMarkerEmpty(row.PATROCINADOR)
+    && !/PATROCIN|COLABORADOR/.test(canonical(`${row.PARAMETRO} ${row.TIPO}`))
     && !/SUITE/.test(canonical(row.ZONA));
 }
 
@@ -243,7 +250,7 @@ export async function inspectWorkbook(buffer, { kind, knownPrograms = new Map(),
       segment
     });
     const exclusion = accessExclusion(row);
-    if (exclusion && !isAuthorizedGiveawayCourtesy(row,match)) {
+    if (exclusion && !isAuthorizedExceptionalCourtesy(row,match)) {
       excluded.push({ key, reason:exclusion });
       continue;
     }

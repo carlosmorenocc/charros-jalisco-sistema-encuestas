@@ -34,17 +34,22 @@ El segmento se persiste en PostgreSQL; el frontend no vuelve a inferirlo.
 
 `Lateral Preferente` pertenece a **General**, conforme al material oficial.
 
-## Excepción cerrada de elegibilidad
+## Excepciones cerradas de elegibilidad
 
-Existe una sola clase de excepción operativa para una cortesía de abono de giveaway autorizada. La autorización pertenece a una butaca/programa específico y se persiste mediante el valor cerrado `authorized_giveaway_courtesy`; no habilita por categoría a otras cortesías, compromisos ni filas semejantes.
+Existen dos clases operativas cerradas para cortesías de abono autorizadas:
+
+- `authorized_giveaway_courtesy`: premio individual entregado mediante giveaway.
+- `authorized_promotional_courtesy`: perfil individual invitado para promoción institucional o en redes sociales.
+
+En ambos casos, la autorización pertenece a una sola butaca/programa. Ninguno de los valores habilita por categoría a otras cortesías, compromisos, órdenes o filas semejantes, aunque pertenezcan al mismo titular.
 
 - La fila de acceso solo puede usar la excepción cuando coincide de forma exacta con el programa autorizado por orden, zona, sección y asiento.
-- El tipo debe ser exactamente `Cortesía abono`, el producto debe corresponder al compromiso autorizado, el patrocinador debe estar vacío y la ubicación no puede ser una suite.
+- El tipo debe ser exactamente `Cortesía abono`, el producto debe corresponder al compromiso autorizado, el patrocinador debe estar vacío, el parámetro no puede declarar patrocinio o colaborador y la ubicación no puede ser una suite.
 - Una coincidencia por alias, equivalencia de zona, orden + asiento, nombre, correo, teléfono o cualquier estrategia de respaldo no puede activar la excepción.
 - Patrocinios, suites, otros compromisos y cualquier fila no exacta siguen excluidos, aunque apunten al mismo titular.
 - El programa conserva las mismas reglas de asistencia única por partido, hitos, entrega al alcanzar `N` asistencias y trazabilidad que el resto del padrón.
 
-Toda nueva excepción requiere una decisión de negocio explícita, una revisión de código y una ampliación deliberada de la lista cerrada. Nunca se autoriza mediante texto libre ni ampliando globalmente los eventos excluidos.
+Toda nueva clase de excepción requiere una decisión de negocio explícita, una revisión de código y una ampliación deliberada de la lista cerrada. Nunca se autoriza mediante texto libre ni ampliando globalmente los eventos excluidos.
 
 ## Hitos y canje
 

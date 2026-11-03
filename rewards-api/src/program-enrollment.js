@@ -34,7 +34,10 @@ const ATTENDANCE_FIELDS = new Set([
   'barcode'
 ]);
 const SEGMENTS = new Set(['VIP','PREFERENTE','GENERAL']);
-const REASON_CODES = new Set(['authorized_giveaway_courtesy']);
+const REASON_CODES = new Set([
+  'authorized_giveaway_courtesy',
+  'authorized_promotional_courtesy'
+]);
 const SHA256 = /^[a-f0-9]{64}$/u;
 const SEASON_CODE = /^[A-Z0-9][A-Z0-9._-]{0,31}$/u;
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/u;

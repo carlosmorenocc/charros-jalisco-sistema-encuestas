@@ -68,9 +68,9 @@ El procedimiento es idempotente únicamente cuando todos los programas están to
 
 ## Alta excepcional de un programa autorizado
 
-Una cortesía de abono de giveaway autorizada se incorpora con el prearranque transaccional del API, sin reabrir `roster-bootstrap`. Los datos operativos completos se suministran temporalmente en el secreto `REWARDS_PROGRAM_ENROLLMENT`; nunca se codifican en migraciones, pruebas, documentación, tickets o logs.
+Una cortesía de abono individual autorizada, ya sea de giveaway o de promoción institucional, se incorpora con el prearranque transaccional del API, sin reabrir `roster-bootstrap`. Los datos operativos completos se suministran temporalmente en el secreto `REWARDS_PROGRAM_ENROLLMENT`; nunca se codifican en migraciones, pruebas, documentación, tickets o logs.
 
-El payload versionado debe identificar temporada, titular, orden y una sola butaca, declarar `authorized_giveaway_courtesy`, incluir un código de motivo no personal y, si corresponde reconstruir visitas, enumerar cada asistencia mediante la pareja exacta SHA-256 de importación + fecha de juego junto con sus datos operativos. Correo y teléfono pueden ser nulos cuando la fuente autoritativa no los contiene; no se completan mediante una unión silenciosa por nombre.
+El payload versionado debe identificar temporada, titular, orden y una sola butaca, declarar exactamente `authorized_giveaway_courtesy` o `authorized_promotional_courtesy` según la decisión autorizada y, si corresponde reconstruir visitas, enumerar cada asistencia mediante la pareja exacta SHA-256 de importación + fecha de juego junto con sus datos operativos. Correo y teléfono pueden ser nulos cuando la fuente autoritativa no los contiene; no se completan mediante una unión silenciosa por nombre. El secreto admite un solo programa: varias altas se procesan secuencialmente, verificando y retirando el valor temporal después de cada una.
 
 Procedimiento:
 

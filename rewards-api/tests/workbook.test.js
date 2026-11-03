@@ -69,6 +69,66 @@ test('la cortesía giveaway autorizada entra solo por coincidencia exacta y cond
   assert.equal(result.review.length,0);
 });
 
+test('la cortesía promocional autorizada entra solo para su programa exacto',async()=>{
+  const event='Abono Compromisos LMP 2026-27';
+  const row=['21/10/26 20:10','Entrada','VIP','215','I-14','-','-','-','Cortesía abono','PROMO-1','9','-','-','D','Principal',event,'-'];
+  const result=await inspectWorkbook(await accessWorkbook([row]),{
+    kind:'access',
+    knownPrograms:[{
+      id:'promotional-program',order_number:'PROMO-1',zone:'VIP',
+      section:'215',seat:'I-14',segment:'VIP',
+      eligibility_exception:'authorized_promotional_courtesy'
+    }]
+  });
+  assert.equal(result.included.length,1);
+  assert.equal(result.included[0].programId,'promotional-program');
+  assert.equal(result.included[0].matchStrategy,'exact');
+  assert.equal(result.excluded.length,0);
+  assert.equal(result.review.length,0);
+});
+
+test('un motivo de excepción desconocido no habilita compromisos',async()=>{
+  const event='Abono Compromisos LMP 2026-27';
+  const row=['21/10/26 20:10','Entrada','VIP','215','I-14','-','-','-','Cortesía abono','UNKNOWN-1','9','-','-','D','Principal',event,'-'];
+  const result=await inspectWorkbook(await accessWorkbook([row]),{
+    kind:'access',
+    knownPrograms:[{
+      id:'unknown-program',order_number:'UNKNOWN-1',zone:'VIP',
+      section:'215',seat:'I-14',segment:'VIP',eligibility_exception:'free-form'
+    }]
+  });
+  assert.equal(result.included.length,0);
+  assert.equal(result.excluded.length,1);
+});
+
+test('ninguna excepción autorizada omite patrocinio o colaborador declarado en el parámetro',async()=>{
+  const event='Abono Compromisos LMP 2026-27';
+  const reasonCodes=[
+    'authorized_giveaway_courtesy',
+    'authorized_promotional_courtesy'
+  ];
+  const restrictedParameters=['PATROCINIO INSTITUCIONAL','ABONO COLABORADOR'];
+
+  for (const [reasonIndex,eligibilityException] of reasonCodes.entries()) {
+    for (const [parameterIndex,parameter] of restrictedParameters.entries()) {
+      const order=`RESTRICTED-${reasonIndex}-${parameterIndex}`;
+      const row=[
+        '21/10/26 20:10','Entrada','VIP','215','I-14','-','-','-',
+        'Cortesía abono',order,'9',parameter,'-','D','Principal',event,'-'
+      ];
+      const result=await inspectWorkbook(await accessWorkbook([row]),{
+        kind:'access',
+        knownPrograms:[{
+          id:`program-${order}`,order_number:order,zone:'VIP',section:'215',seat:'I-14',
+          segment:'VIP',eligibility_exception:eligibilityException
+        }]
+      });
+      assert.equal(result.included.length,0,`${eligibilityException}: ${parameter}`);
+      assert.equal(result.excluded.length,1,`${eligibilityException}: ${parameter}`);
+    }
+  }
+});
+
 test('un compromiso o cortesía estándar no entra sin la excepción autorizada',async()=>{
   const event='Abono Compromisos LMP 2026-27';
   const row=['21/10/26 20:10','Entrada','Planta Alta Central','SYNTH-S1','A-1','-','-','-','Cortesía abono','STANDARD-1','9','-','-','D','Principal',event,'-'];

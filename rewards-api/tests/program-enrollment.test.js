@@ -138,9 +138,9 @@ function fakeClient({
   aliasConflict = false,
   missingHistoryImport = false,
   attendanceConflict = false,
-  throwAt = null
+  throwAt = null,
+  config = enrollment()
 } = {}) {
-  const config = enrollment();
   const calls = [];
   return {
     calls,
@@ -218,6 +218,10 @@ test('valida el secreto privado, admite contactos nulos y usa un motivo cerrado'
   assert.equal(parsed.holder.phone,null);
   assert.equal(parsed.reasonCode,'authorized_giveaway_courtesy');
   assert.equal(parsed.historicalAttendance.length,2);
+  assert.equal(
+    enrollment({ reasonCode:'authorized_promotional_courtesy' }).reasonCode,
+    'authorized_promotional_courtesy'
+  );
 
   assertEnrollmentError(
     () => parseProgramEnrollment(rawEnrollment({ unexpected:'not-allowed' })),
@@ -305,6 +309,27 @@ test('crea titular, orden y programa bloqueado y recupera historial con trazabil
     assert.equal(audit.params.includes(value),false);
     assert.equal(audit.sql.includes(value),false);
   }
+});
+
+test('el alta promocional usa su motivo cerrado sin crear visitas no verificadas',async() => {
+  const config = enrollment({
+    reasonCode:'authorized_promotional_courtesy',
+    historicalAttendance:[]
+  });
+  const client = fakeClient({ config });
+  const result = await applyProgramEnrollment(client,config);
+
+  assert.equal(result.status,'applied');
+  assert.equal(result.attendanceCount,0);
+  assert.equal(client.calls.some((call) => call.tag === 'insert-attendance'),false);
+  assert.equal(
+    client.calls.find((call) => call.tag === 'insert-program').params[12],
+    'authorized_promotional_courtesy'
+  );
+  assert.deepEqual(
+    client.calls.find((call) => call.tag === 'audit').params,
+    [programId,'authorized_promotional_courtesy',0]
+  );
 });
 
 test('repetir el mismo secreto valida el estado exacto sin volver a escribir',async() => {
