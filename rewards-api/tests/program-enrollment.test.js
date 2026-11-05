@@ -134,6 +134,8 @@ function historyReference(sha256) {
 function fakeClient({
   alreadyApplied = false,
   existingHolder = alreadyApplied,
+  existingOrder = alreadyApplied,
+  existingProgram = alreadyApplied,
   physicalConflict = false,
   aliasConflict = false,
   missingHistoryImport = false,
@@ -157,17 +159,17 @@ function fakeClient({
           : { rowCount:0,rows:[] };
       }
       if (tag === 'order') {
-        return alreadyApplied
+        return existingOrder
           ? { rowCount:1,rows:[orderRow(config)] }
           : { rowCount:0,rows:[] };
       }
       if (tag === 'program') {
-        return alreadyApplied
+        return existingProgram
           ? { rowCount:1,rows:[programRow(config)] }
           : { rowCount:0,rows:[] };
       }
       if (tag === 'physical-seat') {
-        if (alreadyApplied) return { rowCount:1,rows:[{ id:programId }] };
+        if (existingProgram) return { rowCount:1,rows:[{ id:programId }] };
         if (physicalConflict) {
           return { rowCount:1,rows:[{ id:'00000000-0000-4000-8000-000000000199' }] };
         }
@@ -257,7 +259,7 @@ test('valida el secreto privado, admite contactos nulos y usa un motivo cerrado'
   );
 });
 
-test('los diagnósticos nunca copian datos privados ni errores de PostgreSQL',async() => {
+test('los diagnÃ³sticos nunca copian datos privados ni errores de PostgreSQL',async() => {
   const known = new ProgramEnrollmentError('PHYSICAL_SEAT_CONFLICT');
   assert.equal(
     safeEnrollmentFailureLog(known),
@@ -285,7 +287,7 @@ test('los diagnósticos nunca copian datos privados ni errores de PostgreSQL',as
   );
 });
 
-test('crea titular, orden y programa bloqueado y recupera historial con trazabilidad mínima',async() => {
+test('crea titular, orden y programa bloqueado y recupera historial con trazabilidad mÃ­nima',async() => {
   const client = fakeClient();
   const result = await applyProgramEnrollment(client,enrollment());
 
@@ -358,7 +360,31 @@ test('reutiliza un titular exacto sin deduplicar ni sobrescribir sus contactos',
   );
 });
 
-test('rechaza colisiones físicas, aliases y referencias históricas no verificadas',async() => {
+test('reutiliza una orden exacta para agregar otra butaca independiente',async() => {
+  const client = fakeClient({
+    existingHolder:true,
+    existingOrder:true,
+    existingProgram:false
+  });
+  const result = await applyProgramEnrollment(client,enrollment());
+
+  assert.equal(result.status,'applied');
+  assert.equal(result.holderCreated,false);
+  assert.equal(client.calls.some((call) => call.tag === 'insert-holder'),false);
+  assert.equal(client.calls.some((call) => call.tag === 'insert-order'),false);
+  assert.equal(client.calls.filter((call) => call.tag === 'insert-program').length,1);
+  assert.equal(
+    client.calls.find((call) => call.tag === 'insert-program').params[14],
+    orderId
+  );
+  const programRead = client.calls.find((call) => call.tag === 'program');
+  assert.match(programRead.sql,/source_reference=\$6/u);
+  assert.deepEqual(programRead.params.slice(2),[
+    'SYNTHETICZONE','S1','A1','synthetic-private-source'
+  ]);
+});
+
+test('rechaza colisiones fÃ­sicas, aliases y referencias histÃ³ricas no verificadas',async() => {
   await assert.rejects(
     applyProgramEnrollment(fakeClient({ physicalConflict:true }),enrollment()),
     (error) => error instanceof ProgramEnrollmentError && error.code === 'PHYSICAL_SEAT_CONFLICT'
@@ -373,7 +399,7 @@ test('rechaza colisiones físicas, aliases y referencias históricas no verifica
   );
 });
 
-test('un historial existente sólo es idempotente cuando coincide exactamente',async() => {
+test('un historial existente sÃ³lo es idempotente cuando coincide exactamente',async() => {
   await assert.rejects(
     applyProgramEnrollment(
       fakeClient({ alreadyApplied:true,attendanceConflict:true }),
@@ -385,3 +411,4 @@ test('un historial existente sólo es idempotente cuando coincide exactamente',a
     )
   );
 });
+

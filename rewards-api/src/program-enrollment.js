@@ -454,9 +454,24 @@ export async function applyProgramEnrollment(client,config) {
     FROM rewards_programs
     WHERE season_code=$1
       AND regexp_replace(upper(order_number),'[^A-Z0-9]','','g')=$2
+      AND (
+        (
+          regexp_replace(upper(zone),'[^A-Z0-9]','','g')=$3
+          AND regexp_replace(upper(section),'[^A-Z0-9]','','g')=$4
+          AND regexp_replace(upper(seat),'[^A-Z0-9]','','g')=$5
+        )
+        OR source_reference=$6
+      )
     ORDER BY id
     FOR UPDATE
-  `,[config.seasonCode,normalizedOrder]);
+  `,[
+    config.seasonCode,
+    normalizedOrder,
+    canonicalToken(config.program.zone),
+    canonicalToken(config.program.section),
+    canonicalToken(config.program.seat),
+    config.program.sourceReference
+  ]);
   if (programResult.rowCount > 1) fail('PROGRAM_STATE_AMBIGUOUS');
 
   const physicalResult = await guardedQuery(client,'DB_PHYSICAL_SEAT_READ_FAILED',`
@@ -500,11 +515,12 @@ export async function applyProgramEnrollment(client,config) {
   if (aliasResult.rowCount !== 0) fail('ALIAS_KEY_CONFLICT');
 
   const historicalImports = await resolveHistoricalImports(client,config);
-  const alreadyApplied = orderResult.rowCount === 1 || programResult.rowCount === 1;
-  if (alreadyApplied && (orderResult.rowCount !== 1 || programResult.rowCount !== 1)) {
+  const orderExists = orderResult.rowCount === 1;
+  const programExists = programResult.rowCount === 1;
+  if (programExists && !orderExists) {
     fail('PROGRAM_STATE_MISMATCH');
   }
-  if (!alreadyApplied && physicalResult.rowCount !== 0) fail('PHYSICAL_SEAT_CONFLICT');
+  if (!programExists && physicalResult.rowCount !== 0) fail('PHYSICAL_SEAT_CONFLICT');
 
   let holder = holderResult.rows[0];
   let holderCreated = false;
@@ -522,7 +538,7 @@ export async function applyProgramEnrollment(client,config) {
     holderCreated = true;
   }
 
-  if (alreadyApplied) {
+  if (programExists) {
     const order = orderResult.rows[0];
     const program = programResult.rows[0];
     verifyOrder(order,config,holder.id);
@@ -547,28 +563,31 @@ export async function applyProgramEnrollment(client,config) {
     };
   }
 
-  const insertedOrder = await guardedQuery(client,'DB_ORDER_INSERT_FAILED',`
-    /* program-enrollment:insert-order */
-    INSERT INTO rewards_orders(
-      season_code,order_number,purchase_code,buyer_holder_id,seller,discount_label,
-      purchased_at,payment_type,source_event,active
-    )
-    VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,true)
-    RETURNING id,season_code,order_number,purchase_code,buyer_holder_id,seller,
-              discount_label,purchased_at,payment_type,source_event,active
-  `,[
-    config.seasonCode,
-    config.order.orderNumber,
-    config.order.purchaseCode,
-    holder.id,
-    config.order.seller,
-    config.order.discountLabel,
-    config.order.purchasedAt,
-    config.order.paymentType,
-    config.order.sourceEvent
-  ]);
-  if (insertedOrder.rowCount !== 1) fail('ORDER_INSERT_FAILED');
-  const order = insertedOrder.rows[0];
+  let order = orderResult.rows[0];
+  if (!order) {
+    const insertedOrder = await guardedQuery(client,'DB_ORDER_INSERT_FAILED',`
+      /* program-enrollment:insert-order */
+      INSERT INTO rewards_orders(
+        season_code,order_number,purchase_code,buyer_holder_id,seller,discount_label,
+        purchased_at,payment_type,source_event,active
+      )
+      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,true)
+      RETURNING id,season_code,order_number,purchase_code,buyer_holder_id,seller,
+                discount_label,purchased_at,payment_type,source_event,active
+    `,[
+      config.seasonCode,
+      config.order.orderNumber,
+      config.order.purchaseCode,
+      holder.id,
+      config.order.seller,
+      config.order.discountLabel,
+      config.order.purchasedAt,
+      config.order.paymentType,
+      config.order.sourceEvent
+    ]);
+    if (insertedOrder.rowCount !== 1) fail('ORDER_INSERT_FAILED');
+    order = insertedOrder.rows[0];
+  }
   verifyOrder(order,config,holder.id);
 
   const insertedProgram = await guardedQuery(client,'DB_PROGRAM_INSERT_FAILED',`
@@ -645,3 +664,4 @@ export async function applyProgramEnrollment(client,config) {
     holderCreated
   };
 }
+
