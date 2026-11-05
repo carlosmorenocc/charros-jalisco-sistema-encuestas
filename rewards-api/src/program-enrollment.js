@@ -34,9 +34,28 @@ const ATTENDANCE_FIELDS = new Set([
   'barcode'
 ]);
 const SEGMENTS = new Set(['VIP','PREFERENTE','GENERAL']);
-const REASON_CODES = new Set([
-  'authorized_giveaway_courtesy',
-  'authorized_promotional_courtesy'
+const ENROLLMENT_POLICIES = new Map([
+  ['authorized_giveaway_courtesy',{
+    eligibilityException:'authorized_giveaway_courtesy',
+    auditAction:'program.exception_enrolled',
+    auditReason:'Authorized exceptional enrollment'
+  }],
+  ['authorized_promotional_courtesy',{
+    eligibilityException:'authorized_promotional_courtesy',
+    auditAction:'program.exception_enrolled',
+    auditReason:'Authorized exceptional enrollment'
+  }],
+  ['verified_regular_sale',{
+    eligibilityException:null,
+    auditAction:'program.regular_sale_enrolled',
+    auditReason:'Verified regular sale enrollment'
+  }]
+]);
+const REGULAR_SALE_EVENTS = new Map([
+  ['Charros de Jalisco: Abono Charros LMP 2026-2027',null],
+  ['Charros de Jalisco: Abono General Charros LMP 2026-2027','GENERAL'],
+  ['Charros de Jalisco: Abono VIP Charros LMP 2026-2027','VIP'],
+  ['Charros de Jalisco: Abono Preferente Charros LMP 2026-2027','PREFERENTE']
 ]);
 const SHA256 = /^[a-f0-9]{64}$/u;
 const SEASON_CODE = /^[A-Z0-9][A-Z0-9._-]{0,31}$/u;
@@ -289,7 +308,8 @@ export function parseProgramEnrollment(rawValue) {
   const seasonCode = textField(value.seasonCode,{ required:true,maxLength:32 }).toUpperCase();
   if (!SEASON_CODE.test(seasonCode)) fail('CONFIG_FIELD_FORMAT_INVALID');
   const reasonCode = textField(value.reasonCode,{ required:true,maxLength:80 }).toLowerCase();
-  if (!REASON_CODES.has(reasonCode)) fail('CONFIG_REASON_INVALID');
+  const policy = ENROLLMENT_POLICIES.get(reasonCode);
+  if (!policy) fail('CONFIG_REASON_INVALID');
   if (!Array.isArray(value.historicalAttendance) || value.historicalAttendance.length > 34) {
     fail('CONFIG_ATTENDANCE_INVALID');
   }
@@ -297,13 +317,22 @@ export function parseProgramEnrollment(rawValue) {
   const dates = new Set(historicalAttendance.map((attendance) => attendance.gamePlayedOn));
   if (dates.size !== historicalAttendance.length) fail('CONFIG_ATTENDANCE_DUPLICATE');
 
+  const order = normalizeOrder(value.order);
+  const program = normalizeProgram(value.program);
+  if (reasonCode === 'verified_regular_sale') {
+    if (!REGULAR_SALE_EVENTS.has(order.sourceEvent)) fail('CONFIG_REASON_INVALID');
+    const expectedSegment = REGULAR_SALE_EVENTS.get(order.sourceEvent);
+    if (expectedSegment && program.segment !== expectedSegment) fail('CONFIG_SEGMENT_INVALID');
+  }
+
   return {
     version:1,
     seasonCode,
     reasonCode,
+    ...policy,
     holder:normalizeHolder(value.holder),
-    order:normalizeOrder(value.order),
-    program:normalizeProgram(value.program),
+    order,
+    program,
     historicalAttendance:historicalAttendance.sort((left,right) => (
       left.gamePlayedOn.localeCompare(right.gamePlayedOn)
     ))
@@ -364,7 +393,7 @@ function verifyProgram(program,config,holderId,orderId) {
     || program.source_event !== config.order.sourceEvent
     || program.segment !== config.program.segment
     || program.eligibility_status !== 'eligible'
-    || program.eligibility_exception !== config.reasonCode
+    || !sameNullable(program.eligibility_exception,config.eligibilityException)
     || program.active !== true
     || program.manual_lock !== true
     || !sameNullable(program.source_reference,config.program.sourceReference)
@@ -618,7 +647,7 @@ export async function applyProgramEnrollment(client,config) {
     config.program.barcode,
     config.order.sourceEvent,
     config.program.segment,
-    config.reasonCode,
+    config.eligibilityException,
     holder.id,
     order.id,
     config.program.sourceReference
@@ -648,13 +677,19 @@ export async function applyProgramEnrollment(client,config) {
     /* program-enrollment:audit */
     INSERT INTO rewards_audit(action,entity_type,entity_id,reason,metadata)
     VALUES(
-      'program.exception_enrolled','program',$1,'Authorized exceptional enrollment',
+      $1,'program',$2,$3,
       jsonb_build_object(
-        'reasonCode',$2::text,
-        'historicalAttendanceCount',$3::integer
+        'reasonCode',$4::text,
+        'historicalAttendanceCount',$5::integer
       )
     )
-  `,[program.id,config.reasonCode,historicalImports.length]);
+  `,[
+    config.auditAction,
+    program.id,
+    config.auditReason,
+    config.reasonCode,
+    historicalImports.length
+  ]);
   if (auditResult.rowCount !== 1) fail('AUDIT_WRITE_FAILED');
 
   return {

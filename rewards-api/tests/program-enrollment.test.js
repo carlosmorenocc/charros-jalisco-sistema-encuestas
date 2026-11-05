@@ -116,7 +116,7 @@ function programRow(config) {
     source_event:config.order.sourceEvent,
     segment:config.program.segment,
     eligibility_status:'eligible',
-    eligibility_exception:config.reasonCode,
+    eligibility_exception:config.eligibilityException,
     manual_lock:true,
     active:true,
     holder_id:holderId,
@@ -219,10 +219,30 @@ test('valida el secreto privado, admite contactos nulos y usa un motivo cerrado'
   assert.equal(parsed.holder.email,null);
   assert.equal(parsed.holder.phone,null);
   assert.equal(parsed.reasonCode,'authorized_giveaway_courtesy');
+  assert.equal(parsed.eligibilityException,'authorized_giveaway_courtesy');
   assert.equal(parsed.historicalAttendance.length,2);
   assert.equal(
     enrollment({ reasonCode:'authorized_promotional_courtesy' }).reasonCode,
     'authorized_promotional_courtesy'
+  );
+  assert.equal(
+    enrollment({
+      reasonCode:'verified_regular_sale',
+      order:{
+        orderNumber:privateOrder,
+        purchaseCode:null,
+        sourceEvent:'Charros de Jalisco: Abono Preferente Charros LMP 2026-2027',
+        seller:null,
+        discountLabel:null,
+        purchasedAt:null,
+        paymentType:null
+      },
+      program:{
+        segment:'PREFERENTE',zone:'Synthetic Zone',section:'S-1',seat:'A-1',
+        barcode:null,sourceReference:'synthetic-private-source'
+      }
+    }).eligibilityException,
+    null
   );
 
   assertEnrollmentError(
@@ -232,6 +252,29 @@ test('valida el secreto privado, admite contactos nulos y usa un motivo cerrado'
   assertEnrollmentError(
     () => parseProgramEnrollment(rawEnrollment({ reasonCode:'free-form-reason' })),
     'CONFIG_REASON_INVALID'
+  );
+  assertEnrollmentError(
+    () => parseProgramEnrollment(rawEnrollment({ reasonCode:'verified_regular_sale' })),
+    'CONFIG_REASON_INVALID'
+  );
+  assertEnrollmentError(
+    () => enrollment({
+      reasonCode:'verified_regular_sale',
+      order:{
+        orderNumber:privateOrder,
+        purchaseCode:null,
+        sourceEvent:'Charros de Jalisco: Abono Preferente Charros LMP 2026-2027',
+        seller:null,
+        discountLabel:null,
+        purchasedAt:null,
+        paymentType:null
+      },
+      program:{
+        segment:'GENERAL',zone:'Synthetic Zone',section:'S-1',seat:'A-1',
+        barcode:null,sourceReference:'synthetic-private-source'
+      }
+    }),
+    'CONFIG_SEGMENT_INVALID'
   );
   const withoutSourceReference = JSON.parse(rawEnrollment());
   delete withoutSourceReference.program.sourceReference;
@@ -259,7 +302,7 @@ test('valida el secreto privado, admite contactos nulos y usa un motivo cerrado'
   );
 });
 
-test('los diagnÃ³sticos nunca copian datos privados ni errores de PostgreSQL',async() => {
+test('los diagnósticos nunca copian datos privados ni errores de PostgreSQL',async() => {
   const known = new ProgramEnrollmentError('PHYSICAL_SEAT_CONFLICT');
   assert.equal(
     safeEnrollmentFailureLog(known),
@@ -287,7 +330,7 @@ test('los diagnÃ³sticos nunca copian datos privados ni errores de PostgreSQL',
   );
 });
 
-test('crea titular, orden y programa bloqueado y recupera historial con trazabilidad mÃ­nima',async() => {
+test('crea titular, orden y programa bloqueado y recupera historial con trazabilidad mínima',async() => {
   const client = fakeClient();
   const result = await applyProgramEnrollment(client,enrollment());
 
@@ -304,9 +347,12 @@ test('crea titular, orden y programa bloqueado y recupera historial con trazabil
   assert.equal(programInsert.params[12],'authorized_giveaway_courtesy');
 
   const audit = client.calls.find((call) => call.tag === 'audit');
-  assert.deepEqual(audit.params,[programId,'authorized_giveaway_courtesy',2]);
-  assert.match(audit.sql,/'reasonCode',\$2::text/u);
-  assert.match(audit.sql,/'historicalAttendanceCount',\$3::integer/u);
+  assert.deepEqual(audit.params,[
+    'program.exception_enrolled',programId,'Authorized exceptional enrollment',
+    'authorized_giveaway_courtesy',2
+  ]);
+  assert.match(audit.sql,/'reasonCode',\$4::text/u);
+  assert.match(audit.sql,/'historicalAttendanceCount',\$5::integer/u);
   for (const value of [privateName,privateOrder,privateEvent,privateBarcode]) {
     assert.equal(audit.params.includes(value),false);
     assert.equal(audit.sql.includes(value),false);
@@ -330,7 +376,46 @@ test('el alta promocional usa su motivo cerrado sin crear visitas no verificadas
   );
   assert.deepEqual(
     client.calls.find((call) => call.tag === 'audit').params,
-    [programId,'authorized_promotional_courtesy',0]
+    [
+      'program.exception_enrolled',programId,'Authorized exceptional enrollment',
+      'authorized_promotional_courtesy',0
+    ]
+  );
+});
+
+test('el alta de venta verificada queda elegible sin excepción de cortesía',async() => {
+  const config = enrollment({
+    reasonCode:'verified_regular_sale',
+    order:{
+      orderNumber:privateOrder,
+      purchaseCode:null,
+      sourceEvent:'Charros de Jalisco: Abono Preferente Charros LMP 2026-2027',
+      seller:null,
+      discountLabel:null,
+      purchasedAt:null,
+      paymentType:null
+    },
+    program:{
+      segment:'PREFERENTE',zone:'Synthetic Zone',section:'S-1',seat:'A-1',
+      barcode:null,sourceReference:'synthetic-private-source'
+    },
+    historicalAttendance:[]
+  });
+  const client = fakeClient({ config });
+  const result = await applyProgramEnrollment(client,config);
+
+  assert.equal(result.status,'applied');
+  assert.equal(config.eligibilityException,null);
+  assert.equal(
+    client.calls.find((call) => call.tag === 'insert-program').params[12],
+    null
+  );
+  assert.deepEqual(
+    client.calls.find((call) => call.tag === 'audit').params,
+    [
+      'program.regular_sale_enrolled',programId,'Verified regular sale enrollment',
+      'verified_regular_sale',0
+    ]
   );
 });
 
@@ -384,7 +469,7 @@ test('reutiliza una orden exacta para agregar otra butaca independiente',async()
   ]);
 });
 
-test('rechaza colisiones fÃ­sicas, aliases y referencias histÃ³ricas no verificadas',async() => {
+test('rechaza colisiones físicas, aliases y referencias históricas no verificadas',async() => {
   await assert.rejects(
     applyProgramEnrollment(fakeClient({ physicalConflict:true }),enrollment()),
     (error) => error instanceof ProgramEnrollmentError && error.code === 'PHYSICAL_SEAT_CONFLICT'
@@ -399,7 +484,7 @@ test('rechaza colisiones fÃ­sicas, aliases y referencias histÃ³ricas no veri
   );
 });
 
-test('un historial existente sÃ³lo es idempotente cuando coincide exactamente',async() => {
+test('un historial existente sólo es idempotente cuando coincide exactamente',async() => {
   await assert.rejects(
     applyProgramEnrollment(
       fakeClient({ alreadyApplied:true,attendanceConflict:true }),
