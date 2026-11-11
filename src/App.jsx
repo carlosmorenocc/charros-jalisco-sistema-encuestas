@@ -10,6 +10,7 @@ import RegistrosCsvDownloadPage from './features/registros/admin/RegistrosCsvDow
 import RewardsRegistration from './features/rewards/RewardsRegistration'
 import RewardsCsvDownloadPage from './features/rewards/admin/RewardsCsvDownloadPage'
 import SoftballRegistration from './features/softball/SoftballRegistration'
+import ArjonaRegistration from './features/arjona/ArjonaRegistration'
 
 const SorteosApp = lazy(() => import('./features/sorteos/SorteosApp'))
 
@@ -22,6 +23,7 @@ export default function App() {
   const isLeadsMode = pathname.startsWith('/leads')
   const isRewardsMode = pathname.startsWith('/experiencias-recompensas')
   const isSoftballMode = pathname.startsWith('/softbol-afiliados')
+  const isArjonaMode = normalizedPathname === '/ricardo-arjona'
   const isAbonadosAdminMode = normalizedPathname === '/admin/abonados'
   const isRegistrosAdminMode = normalizedPathname === '/admin/registros'
   const isEncuestaLargaAdminMode = normalizedPathname === '/admin/encuesta-larga'
@@ -72,13 +74,19 @@ export default function App() {
   const leadsFormEnabled = import.meta.env.VITE_LEADS_FORM_ENABLED !== 'false'
   const rewardsFormEnabled = import.meta.env.VITE_REWARDS_FORM_ENABLED !== 'false'
   const softballFormEnabled = import.meta.env.VITE_SOFTBALL_FORM_ENABLED === 'true'
+  const arjonaFormEnabled = import.meta.env.VITE_ARJONA_FORM_ENABLED === 'true'
 
   if ((isAbonadosMode && !subscriberFormEnabled)
     || (isLeadsMode && !leadsFormEnabled)
     || (isRewardsMode && !rewardsFormEnabled)
     || (isSoftballMode && !softballFormEnabled)
-    || (!isAbonadosMode && !isLeadsMode && !isRewardsMode && !isSoftballMode && !publicFormsEnabled)) {
+    || (isArjonaMode && !arjonaFormEnabled)
+    || (!isAbonadosMode && !isLeadsMode && !isRewardsMode && !isSoftballMode && !isArjonaMode && !publicFormsEnabled)) {
     return <FormsPaused />
+  }
+
+  if (isArjonaMode) {
+    return <ArjonaRegistration />
   }
 
   if (isSoftballMode) {

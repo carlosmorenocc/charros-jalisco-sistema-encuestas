@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react'
 import logo from '../../../assets/logo.png'
 import { ProtectedCsvDownloadError } from '../../registros/admin/downloadProtectedCsv'
 import adminStyles from '../../abonados/admin/AbonadosCsvDownloadPage.module.css'
+import { downloadArjonaCsv } from './downloadArjonaCsv'
 import { downloadRewardsCsv } from './downloadRewardsCsv'
 import { downloadSoftballCsv } from './downloadSoftballCsv'
 import styles from './RewardsCsvDownloadPage.module.css'
@@ -133,8 +134,7 @@ export default function RewardsCsvDownloadPage() {
         <span className={adminStyles.eyebrow}>Acceso administrativo</span>
         <h1 id="experiencias-recompensas-export-title">Bases de participaciones</h1>
         <p className={adminStyles.intro}>
-          Descarga por separado el histórico de experiencias y la convocatoria del partido de
-          sóftbol para afiliados.
+          Descarga por separado el histórico de experiencias y cada convocatoria independiente.
         </p>
         <p className={adminStyles.privacyNotice}>
           <strong>Información confidencial:</strong> los archivos contienen datos personales y
@@ -159,6 +159,15 @@ export default function RewardsCsvDownloadPage() {
             buttonText="Descargar sóftbol CSV"
             idPrefix="experiencias-recompensas-softbol"
             downloadCsv={downloadSoftballCsv}
+          />
+          <CsvDownloadSection
+            kind="ricardo-arjona"
+            label="Evento independiente"
+            heading="Ricardo Arjona · 16 de noviembre de 2026"
+            intro="Incluye exclusivamente las participaciones por el pase doble para el concierto de Ricardo Arjona."
+            buttonText="Descargar Ricardo Arjona CSV"
+            idPrefix="experiencias-recompensas-ricardo-arjona"
+            downloadCsv={downloadArjonaCsv}
           />
         </div>
       </section>

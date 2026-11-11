@@ -37,6 +37,10 @@ Registro independiente para el juego de sóftbol de afiliados:
 
 [http://localhost:5173/softbol-afiliados](http://localhost:5173/softbol-afiliados)
 
+Registro independiente para el pase doble de Ricardo Arjona:
+
+[http://localhost:5173/ricardo-arjona](http://localhost:5173/ricardo-arjona)
+
 Con esto, cada respuesta se almacena automáticamente en:
 
 `data/submissions.csv`
@@ -52,6 +56,10 @@ Los registros de abonados LMP 2026-2027 se guardan de forma independiente en:
 Las participaciones del juego de sóftbol se guardan de forma independiente en:
 
 `data/submissions_softbol_afiliados_2026.csv`
+
+Las participaciones para Ricardo Arjona se guardan de forma independiente en:
+
+`data/submissions_ricardo_arjona_2026.csv`
 
 Las descargas de encuesta general y leads requieren
 `Authorization: Bearer <CSV_EXPORT_TOKEN>`. La descarga de abonados usa un secreto
@@ -74,12 +82,16 @@ Y para el juego de sóftbol:
 
 `http://localhost:3001/api/softball-submissions.csv`
 
+Y para Ricardo Arjona:
+
+`http://localhost:3001/api/ricardo-arjona-submissions.csv`
+
 Portales administrativos (las claves nunca se guardan en el navegador):
 
 - Registro Oficial corto: `http://localhost:5173/admin/registros` con `CSV_EXPORT_TOKEN`.
 - Encuesta larga: `http://localhost:5173/admin/encuesta-larga` con `CSV_EXPORT_TOKEN`.
 - Abonados: `http://localhost:5173/admin/abonados` con `ABONADOS_CSV_EXPORT_TOKEN`.
-- Experiencias y sóftbol: `http://localhost:5173/admin/experiencias-recompensas` con `CSV_EXPORT_TOKEN`; cada campaña se descarga en un CSV separado.
+- Experiencias, Ricardo Arjona y sóftbol: `http://localhost:5173/admin/experiencias-recompensas` con `CSV_EXPORT_TOKEN`; cada campaña se descarga en un CSV separado.
 
 ### 3. Configura Power Automate (opcional)
 Copia `.env.example` a `.env` y añade tu endpoint:
@@ -169,6 +181,8 @@ npm run preview      # Vista previa
 - Endpoint de descarga protegida (abonados): `GET /api/abonados-lmp-submissions.csv`.
 - Endpoint de escritura (sóftbol): `POST /api/softball-submit`.
 - Endpoint de descarga protegida (sóftbol): `GET /api/softball-submissions.csv`.
+- Endpoint de escritura (Ricardo Arjona): `POST /api/ricardo-arjona-submit`.
+- Endpoint de descarga protegida (Ricardo Arjona): `GET /api/ricardo-arjona-submissions.csv`.
 - En desarrollo, el frontend usa por defecto `http://localhost:3001/api/submit` si no defines otro endpoint.
 
 ### Regla especial para encuesta de leads
@@ -236,6 +250,20 @@ La migración es idempotente y conserva la deduplicación por correo.
 - Durante un despliegue backend-first se acepta temporalmente el payload individual anterior y sus filas se marcan como `INDIVIDUAL_COMPATIBILIDAD`; el contrato nuevo usa `MULTIPARTICIPANTE` y exige coincidencia exacta entre cantidad y personas.
 - La exportación utiliza `CSV_EXPORT_TOKEN` y se ofrece como una sección separada dentro de `/admin/experiencias-recompensas`.
 
+### Pase doble para Ricardo Arjona
+
+- Se habilita independientemente con `ARJONA_FORM_ENABLED=true` en el backend y `VITE_ARJONA_FORM_ENABLED=true` en el frontend.
+- La ruta pública es `/ricardo-arjona` y acepta únicamente el evento `ricardo-arjona-pase-doble-2026-11-16`.
+- El premio es un pase doble para el concierto de Ricardo Arjona del lunes 16 de noviembre de 2026.
+- El registro cierra el viernes 13 de noviembre de 2026 a las 9:00 a. m. de Guadalajara (`2026-11-13T15:00:00.000Z`). El backend devuelve `410 Gone` a partir de ese instante y es la fuente autoritativa del cierre.
+- Conserva las preguntas de la dinámica histórica: nombre completo, evento, recomendación al Club, aviso de privacidad obligatorio y comunicaciones opcionales.
+- El servidor normaliza el nombre a mayúsculas y genera campaña, origen, fecha y metadatos de consentimiento.
+- Cada respuesta se confirma con `201 Created` solamente después de escribirse y los reintentos con el mismo `submissionId` son idempotentes.
+- Si un `submissionId` se reutiliza con datos distintos, el servidor responde `409 Conflict` y conserva intacto el registro original.
+- Los registros se serializan para soportar envíos concurrentes y se almacenan exclusivamente en `submissions_ricardo_arjona_2026.csv`, sin mezclarse con Papá sobre Ruedas, Romeo Santos ni sóftbol.
+- Un encabezado desconocido detiene el arranque sin reemplazar ni ocultar el archivo existente.
+- La exportación protegida usa `CSV_EXPORT_TOKEN` y aparece como una base independiente dentro de `/admin/experiencias-recompensas`.
+
 ### Seguridad de exportaciones CSV
 
 Configura un secreto largo y aleatorio en el backend:
@@ -247,7 +275,7 @@ ABONADOS_CSV_EXPORT_TOKEN=<otro-secreto-aleatorio>
 
 No uses el prefijo `VITE_` ni expongas este valor en Vercel o en el código del navegador.
 `CSV_EXPORT_TOKEN` protege las exportaciones de encuesta general, leads,
-experiencias/recompensas y sóftbol; `ABONADOS_CSV_EXPORT_TOKEN` protege exclusivamente
+experiencias/recompensas, Ricardo Arjona y sóftbol; `ABONADOS_CSV_EXPORT_TOKEN` protege exclusivamente
 la exportación de abonados.
 Usa secretos distintos para mantener la separación de privilegios. Ejemplo local:
 
@@ -288,6 +316,14 @@ VITE_SOFTBALL_EXPORT_ENDPOINT=https://TU-API/api/softball-submissions.csv
 VITE_SOFTBALL_PUBLIC_URL=https://TU-FRONTEND/softbol-afiliados
 ```
 
+Para la campaña de Ricardo Arjona, configura en Vercel:
+
+```text
+VITE_ARJONA_FORM_ENABLED=true
+VITE_ARJONA_SUBMISSION_ENDPOINT=https://TU-API/api/ricardo-arjona-submit
+VITE_ARJONA_EXPORT_ENDPOINT=https://TU-API/api/ricardo-arjona-submissions.csv
+```
+
 Para habilitar los portales separados del registro corto y la encuesta larga, configura
 únicamente las URLs públicas; la clave privada permanece exclusivamente en Render:
 
@@ -300,6 +336,8 @@ Y en el backend de Render:
 
 ```text
 SUBSCRIBER_FORM_ENABLED=true
+ARJONA_FORM_ENABLED=true
+ARJONA_REGISTRATION_DEADLINE=2026-11-13T15:00:00.000Z
 SOFTBALL_FORM_ENABLED=true
 SOFTBALL_REGISTRATION_DEADLINE=2026-11-04T06:00:00.000Z
 CSV_EXPORT_TOKEN=<secreto-largo-y-aleatorio>

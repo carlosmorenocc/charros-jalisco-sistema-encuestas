@@ -1,0 +1,42 @@
+.deadlineNotice {
+  margin: -10px 0 24px;
+  padding: 13px 15px;
+  border: 1px solid rgba(215, 170, 45, .48);
+  border-radius: 14px;
+  color: #624a12;
+  background: #fff8e6;
+  font-size: .9rem;
+  font-weight: 650;
+  line-height: 1.5;
+}
+
+.deadlineNotice strong {
+  color: #3f310d;
+}
+
+.closed {
+  text-align: center;
+}
+
+.closedBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin: 4px auto 20px;
+  padding: 8px 14px;
+  border: 1px solid rgba(215, 170, 45, .55);
+  border-radius: 999px;
+  color: #674d11;
+  background: #fff6dc;
+  font-size: .78rem;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.closed p:not(.closedBadge) {
+  margin: 16px auto 28px;
+  max-width: 520px;
+  color: #5b687b;
+  line-height: 1.65;
+}

@@ -22,6 +22,10 @@ vi.mock('./features/softball/SoftballRegistration', () => ({
   default: () => <section>Registro de sóftbol cargado</section>
 }))
 
+vi.mock('./features/arjona/ArjonaRegistration', () => ({
+  default: () => <section>Registro de Ricardo Arjona cargado</section>
+}))
+
 vi.mock('./features/rewards/admin/RewardsCsvDownloadPage', () => ({
   default: () => <main>Exportación privada de recompensas cargada</main>
 }))
@@ -204,6 +208,28 @@ describe('App routing', () => {
 
     expect(screen.getByRole('heading', { name: 'Registro temporalmente no disponible' })).toBeInTheDocument()
     expect(screen.queryByText('Registro de sóftbol cargado')).not.toBeInTheDocument()
+  })
+
+  it('habilita de forma independiente la campaña de Ricardo Arjona', () => {
+    vi.stubEnv('VITE_PUBLIC_FORMS_ENABLED', 'false')
+    vi.stubEnv('VITE_ARJONA_FORM_ENABLED', 'true')
+    window.history.pushState({}, '', '/ricardo-arjona')
+
+    render(<App />)
+
+    expect(screen.getByText('Registro de Ricardo Arjona cargado')).toBeInTheDocument()
+    expect(screen.queryByText('Experiencias y recompensas cargado')).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Registro temporalmente no disponible' })).not.toBeInTheDocument()
+  })
+
+  it('permite pausar únicamente la campaña de Ricardo Arjona', () => {
+    vi.stubEnv('VITE_ARJONA_FORM_ENABLED', 'false')
+    window.history.pushState({}, '', '/ricardo-arjona')
+
+    render(<App />)
+
+    expect(screen.getByRole('heading', { name: 'Registro temporalmente no disponible' })).toBeInTheDocument()
+    expect(screen.queryByText('Registro de Ricardo Arjona cargado')).not.toBeInTheDocument()
   })
 
   it.each(['/admin/experiencias-recompensas', '/admin/experiencias-recompensas/'])(

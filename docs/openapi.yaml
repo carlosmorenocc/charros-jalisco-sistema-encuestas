@@ -1,7 +1,7 @@
 openapi: 3.0.0
 info:
   title: Encuesta Oficial Charros - Submit API
-  version: 1.4.0
+  version: 1.5.0
   description: API HTTP para recibir respuestas de encuestas y registros de Charros de Jalisco.
 
 servers:
@@ -31,6 +31,13 @@ paths:
                     type: boolean
                   rewardsFormEnabled:
                     type: boolean
+                  arjonaFormEnabled:
+                    type: boolean
+                  arjonaRegistrationOpen:
+                    type: boolean
+                  arjonaRegistrationDeadline:
+                    type: string
+                    format: date-time
                   softballFormEnabled:
                     type: boolean
                   softballRegistrationOpen:
@@ -355,6 +362,78 @@ paths:
           description: Token ausente o incorrecto
         '503':
           description: Exportación deshabilitada porque ABONADOS_CSV_EXPORT_TOKEN no está configurado
+
+  /api/ricardo-arjona-submit:
+    post:
+      summary: Registra una participación para el pase doble de Ricardo Arjona
+      description: >-
+        Campaña independiente para el concierto del 16 de noviembre de 2026.
+        El registro cierra el 13 de noviembre de 2026 a las 9:00 a. m. de
+        Guadalajara (2026-11-13T15:00:00.000Z).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+                - nombreCompleto
+                - eventoSeleccionado
+                - recomendacion
+                - aceptaAvisoPrivacidad
+              properties:
+                submissionId:
+                  type: string
+                  maxLength: 128
+                  description: Identificador idempotente opcional generado por el frontend.
+                nombreCompleto:
+                  type: string
+                  minLength: 5
+                  maxLength: 140
+                eventoSeleccionado:
+                  type: string
+                  enum: [ricardo-arjona-pase-doble-2026-11-16]
+                recomendacion:
+                  type: string
+                  minLength: 5
+                  maxLength: 1200
+                aceptaAvisoPrivacidad:
+                  type: boolean
+                  enum: [true]
+                aceptaComunicaciones:
+                  type: boolean
+                  default: false
+      responses:
+        '200':
+          description: Reintento idempotente de una participación ya almacenada
+        '201':
+          description: Participación confirmada en el CSV independiente
+        '400':
+          description: Nombre, evento, recomendación o consentimiento inválidos
+        '409':
+          description: El submissionId ya pertenece a otra participación con contenido distinto
+        '410':
+          description: La fecha límite de registro ya venció
+        '503':
+          description: El formulario de Ricardo Arjona está temporalmente deshabilitado
+
+  /api/ricardo-arjona-submissions.csv:
+    get:
+      summary: Descarga protegida del CSV independiente de Ricardo Arjona
+      security:
+        - csvExportToken: []
+      responses:
+        '200':
+          description: Archivo CSV con participaciones para Ricardo Arjona
+          content:
+            text/csv:
+              schema:
+                type: string
+        '401':
+          description: Token ausente o incorrecto
+        '503':
+          description: Exportación deshabilitada porque CSV_EXPORT_TOKEN no está configurado
 
   /api/softball-submit:
     post:

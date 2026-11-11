@@ -20,6 +20,7 @@ const csvPath = path.join(dataDir, 'submissions.csv')
 const leadsCsvPath = path.join(dataDir, 'submissions_leads.csv')
 const subscriberCsvPath = path.join(dataDir, 'submissions_abonados_lmp_2026_2027.csv')
 const rewardsCsvPath = path.join(dataDir, 'submissions_experiencias_recompensas.csv')
+const arjonaCsvPath = path.join(dataDir, 'submissions_ricardo_arjona_2026.csv')
 const softballCsvPath = path.join(dataDir, 'submissions_softbol_afiliados_2026.csv')
 const openApiPath = path.join(__dirname, 'docs', 'openapi.yaml')
 const flushIntervalMs = Number(process.env.CSV_FLUSH_INTERVAL_MS || 250)
@@ -31,7 +32,14 @@ const allowedOrigins = (process.env.ALLOWED_ORIGINS || '').split(',').map((v) =>
 const publicFormsEnabled = process.env.PUBLIC_FORMS_ENABLED === 'true'
 const subscriberFormEnabled = process.env.SUBSCRIBER_FORM_ENABLED === 'true'
 const rewardsFormEnabled = process.env.REWARDS_FORM_ENABLED === 'true'
+const arjonaFormEnabled = process.env.ARJONA_FORM_ENABLED === 'true'
 const softballFormEnabled = process.env.SOFTBALL_FORM_ENABLED === 'true'
+const arjonaRegistrationDeadline = process.env.ARJONA_REGISTRATION_DEADLINE
+  || '2026-11-13T15:00:00.000Z'
+const arjonaRegistrationDeadlineMs = Date.parse(arjonaRegistrationDeadline)
+if (Number.isNaN(arjonaRegistrationDeadlineMs)) {
+  throw new Error('ARJONA_REGISTRATION_DEADLINE must be a valid ISO-8601 timestamp')
+}
 const softballRegistrationDeadline = process.env.SOFTBALL_REGISTRATION_DEADLINE
   || '2026-11-04T06:00:00.000Z'
 const softballRegistrationDeadlineMs = Date.parse(softballRegistrationDeadline)
@@ -146,6 +154,24 @@ const REWARD_EVENT_IDS = new Set([
   'papa-sobre-ruedas-2026',
   'romeo-santos-live-mexico-2026'
 ])
+
+const ARJONA_CAMPAIGN_NAME = 'Club Charros · Pase doble Ricardo Arjona 2026'
+const ARJONA_SOURCE = 'ricardo-arjona-2026'
+const ARJONA_EVENT_ID = 'ricardo-arjona-pase-doble-2026-11-16'
+const ARJONA_PRIVACY_NOTICE_VERSION = '2026-11-11'
+const ARJONA_CSV_COLUMNS = [
+  'submissionId',
+  'timestamp',
+  'campaignName',
+  'source',
+  'nombreCompleto',
+  'eventoSeleccionado',
+  'recomendacion',
+  'aceptaAvisoPrivacidad',
+  'aceptaComunicaciones',
+  'privacyNoticeVersion',
+  'consentTimestamp'
+]
 
 const LEGACY_SOFTBALL_CSV_COLUMNS = [
   'submissionId',
@@ -271,6 +297,8 @@ const leadDailyEmailRegistry = new Map()
 const subscriberEmailRegistry = new Set()
 let subscriberWriteChain = Promise.resolve()
 let rewardsWriteChain = Promise.resolve()
+const arjonaSubmissionRegistry = new Map()
+let arjonaWriteChain = Promise.resolve()
 const softballSubmissionRegistry = new Map()
 const softballParticipantRegistry = new Set()
 let softballWriteChain = Promise.resolve()
@@ -380,6 +408,60 @@ function ensureRewardsDataFile() {
   fs.writeFileSync(migrationPath, migratedContent, 'utf8')
   fs.renameSync(migrationPath, rewardsCsvPath)
   console.log(`Rewards CSV migrated. Original file saved to: ${backupPath}`)
+}
+
+function ensureArjonaDataFile() {
+  fs.mkdirSync(dataDir, { recursive: true })
+  const expectedHeader = ARJONA_CSV_COLUMNS.join(',')
+
+  if (!fs.existsSync(arjonaCsvPath)) {
+    fs.writeFileSync(arjonaCsvPath, `${expectedHeader}\n`, 'utf8')
+    return
+  }
+
+  const existingContent = fs.readFileSync(arjonaCsvPath, 'utf8')
+  const firstLine = existingContent.split(/\r?\n/, 1)[0].replace(/^\uFEFF/, '')
+  if (firstLine !== expectedHeader) {
+    throw new Error(
+      `Unsupported Ricardo Arjona CSV schema at ${arjonaCsvPath}; existing data was preserved`
+    )
+  }
+}
+
+function loadArjonaSubmissionRegistry() {
+  arjonaSubmissionRegistry.clear()
+  ensureArjonaDataFile()
+
+  const lines = fs.readFileSync(arjonaCsvPath, 'utf8').split(/\r?\n/).filter(Boolean)
+  if (lines.length < 2) return
+
+  const header = parseCsvLine(lines[0].replace(/^\uFEFF/, ''))
+  const submissionIdIndex = header.indexOf('submissionId')
+  if (submissionIdIndex < 0) {
+    throw new Error(`Arjona CSV is missing submissionId at ${arjonaCsvPath}`)
+  }
+
+  for (const line of lines.slice(1)) {
+    const values = parseCsvLine(line)
+    const submissionId = values[submissionIdIndex]?.trim()
+    if (!submissionId) continue
+
+    const storedPayload = Object.fromEntries(
+      header.map((column, index) => [column, values[index]])
+    )
+    const fingerprint = buildArjonaPayloadFingerprint({
+      nombreCompleto: storedPayload.nombreCompleto,
+      eventoSeleccionado: storedPayload.eventoSeleccionado,
+      recomendacion: storedPayload.recomendacion,
+      aceptaAvisoPrivacidad: storedPayload.aceptaAvisoPrivacidad === 'true',
+      aceptaComunicaciones: storedPayload.aceptaComunicaciones === 'true'
+    })
+    const previousFingerprint = arjonaSubmissionRegistry.get(submissionId)
+    if (previousFingerprint && previousFingerprint !== fingerprint) {
+      throw new Error(`Conflicting Ricardo Arjona submissionId in ${arjonaCsvPath}`)
+    }
+    arjonaSubmissionRegistry.set(submissionId, fingerprint)
+  }
 }
 
 function ensureSoftballDataFile() {
@@ -625,6 +707,20 @@ function buildSubscriberCsvRow(payload) {
 
 function buildRewardsCsvRow(payload) {
   return REWARDS_CSV_COLUMNS.map((column) => toCsvValue(payload[column])).join(',') + '\n'
+}
+
+function buildArjonaCsvRow(payload) {
+  return ARJONA_CSV_COLUMNS.map((column) => toCsvValue(payload[column])).join(',') + '\n'
+}
+
+function buildArjonaPayloadFingerprint(payload) {
+  return JSON.stringify({
+    nombreCompleto: payload.nombreCompleto,
+    eventoSeleccionado: payload.eventoSeleccionado,
+    recomendacion: payload.recomendacion,
+    aceptaAvisoPrivacidad: payload.aceptaAvisoPrivacidad,
+    aceptaComunicaciones: payload.aceptaComunicaciones
+  })
 }
 
 function buildSoftballCsvRow(payload) {
@@ -1009,6 +1105,56 @@ function validateRewardsPayload(payload) {
   return { valid: invalid.length === 0, invalid }
 }
 
+function normalizeArjonaPayload(input) {
+  const raw = input && typeof input === 'object' && !Array.isArray(input) ? input : {}
+  const timestamp = new Date().toISOString()
+  return {
+    submissionId: typeof raw.submissionId === 'string' && raw.submissionId.trim()
+      ? raw.submissionId.trim()
+      : randomUUID(),
+    timestamp,
+    campaignName: ARJONA_CAMPAIGN_NAME,
+    source: ARJONA_SOURCE,
+    nombreCompleto: typeof raw.nombreCompleto === 'string'
+      ? raw.nombreCompleto.trim().replace(/\s+/g, ' ').toLocaleUpperCase('es-MX')
+      : '',
+    eventoSeleccionado: typeof raw.eventoSeleccionado === 'string'
+      ? raw.eventoSeleccionado.trim()
+      : '',
+    recomendacion: typeof raw.recomendacion === 'string' ? raw.recomendacion.trim() : '',
+    aceptaAvisoPrivacidad: raw.aceptaAvisoPrivacidad === true,
+    aceptaComunicaciones: raw.aceptaComunicaciones === true,
+    privacyNoticeVersion: ARJONA_PRIVACY_NOTICE_VERSION,
+    consentTimestamp: timestamp
+  }
+}
+
+function validateArjonaPayload(payload) {
+  const invalid = []
+  if (
+    payload.submissionId.length < 1
+    || payload.submissionId.length > 128
+    || /[\u0000-\u001f\u007f]/.test(payload.submissionId)
+  ) {
+    invalid.push('submissionId')
+  }
+  if (
+    payload.nombreCompleto.length < 5
+    || payload.nombreCompleto.length > 140
+    || !payload.nombreCompleto.includes(' ')
+  ) {
+    invalid.push('nombreCompleto')
+  }
+  if (payload.eventoSeleccionado !== ARJONA_EVENT_ID) {
+    invalid.push('eventoSeleccionado')
+  }
+  if (payload.recomendacion.length < 5 || payload.recomendacion.length > 1200) {
+    invalid.push('recomendacion')
+  }
+  if (payload.aceptaAvisoPrivacidad !== true) invalid.push('aceptaAvisoPrivacidad')
+  return { valid: invalid.length === 0, invalid }
+}
+
 function normalizeSoftballPayload(input) {
   const raw = input && typeof input === 'object' && !Array.isArray(input) ? input : {}
   const timestamp = new Date().toISOString()
@@ -1274,6 +1420,28 @@ async function flushRewardsWrites() {
   await rewardsWriteChain
 }
 
+function persistArjonaPayload(payload) {
+  const writeOperation = arjonaWriteChain.then(async () => {
+    ensureArjonaDataFile()
+    const fingerprint = buildArjonaPayloadFingerprint(payload)
+    if (arjonaSubmissionRegistry.has(payload.submissionId)) {
+      const duplicate = arjonaSubmissionRegistry.get(payload.submissionId) === fingerprint
+      return { stored: false, duplicate, conflict: !duplicate }
+    }
+
+    await fs.promises.appendFile(arjonaCsvPath, buildArjonaCsvRow(payload), 'utf8')
+    arjonaSubmissionRegistry.set(payload.submissionId, fingerprint)
+    return { stored: true, duplicate: false, conflict: false }
+  })
+
+  arjonaWriteChain = writeOperation.catch(() => {})
+  return writeOperation
+}
+
+async function flushArjonaWrites() {
+  await arjonaWriteChain
+}
+
 async function writeBufferFully(fileHandle, buffer, position) {
   let offset = 0
   while (offset < buffer.length) {
@@ -1505,6 +1673,22 @@ function requireRewardsFormEnabled(_req, res, next) {
   return res.status(503).json({ ok: false, error: 'Rewards form is temporarily disabled' })
 }
 
+function requireArjonaFormEnabled(_req, res, next) {
+  if (arjonaFormEnabled) return next()
+  res.setHeader('Cache-Control', 'no-store')
+  return res.status(503).json({ ok: false, error: 'Ricardo Arjona registration is temporarily disabled' })
+}
+
+function requireArjonaRegistrationOpen(_req, res, next) {
+  if (Date.now() < arjonaRegistrationDeadlineMs) return next()
+  res.setHeader('Cache-Control', 'no-store')
+  return res.status(410).json({
+    ok: false,
+    error: 'Ricardo Arjona registration is closed',
+    deadline: arjonaRegistrationDeadline
+  })
+}
+
 function requireSoftballFormEnabled(_req, res, next) {
   if (softballFormEnabled) return next()
   res.setHeader('Cache-Control', 'no-store')
@@ -1568,6 +1752,9 @@ app.get('/healthz', (_req, res) => {
     publicFormsEnabled,
     subscriberFormEnabled,
     rewardsFormEnabled,
+    arjonaFormEnabled,
+    arjonaRegistrationOpen: arjonaFormEnabled && Date.now() < arjonaRegistrationDeadlineMs,
+    arjonaRegistrationDeadline,
     softballFormEnabled,
     softballRegistrationOpen: softballFormEnabled && Date.now() < softballRegistrationDeadlineMs,
     softballRegistrationDeadline,
@@ -1687,6 +1874,57 @@ app.post('/api/rewards-submit', requireRewardsFormEnabled, submitLimiter, async 
     return res.status(500).json({ ok: false, error: 'Unable to persist rewards submission' })
   }
 })
+
+app.post(
+  '/api/ricardo-arjona-submit',
+  requireArjonaFormEnabled,
+  requireArjonaRegistrationOpen,
+  submitLimiter,
+  async (req, res) => {
+    const payload = normalizeArjonaPayload(req.body)
+    const validation = validateArjonaPayload(payload)
+
+    if (!validation.valid) {
+      return res.status(400).json({
+        ok: false,
+        error: 'Invalid Ricardo Arjona registration fields',
+        invalid: validation.invalid
+      })
+    }
+
+    try {
+      const result = await persistArjonaPayload(payload)
+      if (result.conflict) {
+        return res.status(409).json({
+          ok: false,
+          stored: false,
+          conflict: true,
+          error: 'submissionId already belongs to a different Ricardo Arjona registration',
+          submissionId: payload.submissionId
+        })
+      }
+      if (result.duplicate) {
+        return res.status(200).json({
+          ok: true,
+          stored: false,
+          duplicate: true,
+          submissionId: payload.submissionId
+        })
+      }
+      return res.status(201).json({
+        ok: true,
+        stored: true,
+        submissionId: payload.submissionId
+      })
+    } catch (error) {
+      console.error('Ricardo Arjona CSV persistence error', error)
+      return res.status(500).json({
+        ok: false,
+        error: 'Unable to persist Ricardo Arjona registration'
+      })
+    }
+  }
+)
 
 app.post(
   '/api/softball-submit',
@@ -1835,6 +2073,25 @@ app.get('/api/rewards-submissions.csv', requireCsvExportToken, async (_req, res)
   }
 })
 
+app.get('/api/ricardo-arjona-submissions.csv', requireCsvExportToken, async (_req, res) => {
+  try {
+    await flushArjonaWrites()
+    ensureArjonaDataFile()
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8')
+    res.setHeader(
+      'Content-Disposition',
+      'attachment; filename="submissions_ricardo_arjona_2026.csv"'
+    )
+    return fs.createReadStream(arjonaCsvPath).pipe(res)
+  } catch (error) {
+    console.error('Ricardo Arjona CSV download error', error)
+    return res.status(500).json({
+      ok: false,
+      error: 'Unable to read Ricardo Arjona CSV'
+    })
+  }
+})
+
 app.get('/api/softball-submissions.csv', requireCsvExportToken, async (_req, res) => {
   try {
     await flushSoftballWrites()
@@ -1878,10 +2135,12 @@ try {
   ensureLeadsDataFile()
   ensureSubscriberDataFile()
   ensureRewardsDataFile()
+  ensureArjonaDataFile()
   recoverSoftballTransaction()
   ensureSoftballDataFile()
   loadLeadDailyEmailRegistry()
   loadSubscriberEmailRegistry()
+  loadArjonaSubmissionRegistry()
   loadSoftballRegistrationRegistry()
 } catch (error) {
   console.error('CSV init error', error)
@@ -1907,6 +2166,7 @@ async function shutdown(signal) {
     await flushLeadQueue()
     await flushSubscriberWrites()
     await flushRewardsWrites()
+    await flushArjonaWrites()
     await flushSoftballWrites()
   } catch (error) {
     exitCode = 1
@@ -1923,5 +2183,6 @@ const httpServer = app.listen(port, () => {
   console.log(`Submission API listening on port ${port}`)
   console.log(`CSV storage path: ${csvPath}`)
   console.log(`Subscriber CSV storage path: ${subscriberCsvPath}`)
+  console.log(`Ricardo Arjona CSV storage path: ${arjonaCsvPath}`)
   console.log(`Softball CSV storage path: ${softballCsvPath}`)
 })
