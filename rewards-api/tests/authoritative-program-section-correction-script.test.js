@@ -28,6 +28,6 @@ test('el prearranque aplica la correccion de secciones en transaccion y sin impr
   assert.doesNotMatch(script,/console\.(?:log|error)\([^)]*error\.(?:message|stack)/u);
   assert.equal(
     packageJson.scripts.prestart,
-    'node scripts/apply-authoritative-order-correction.js && node scripts/apply-authoritative-program-section-correction.js && node scripts/apply-program-enrollment.js'
+    'node scripts/apply-authoritative-order-correction.js && node scripts/apply-authoritative-program-section-correction.js && node scripts/apply-program-enrollment.js && node scripts/apply-attendance-correction.js'
   );
 });
