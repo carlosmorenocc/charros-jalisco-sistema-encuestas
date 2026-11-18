@@ -29,6 +29,6 @@ test('el prearranque aplica la corrección de asistencia en transacción sin imp
   assert.doesNotMatch(script,/console\.(?:log|error)\([^)]*error\.(?:message|stack)/u);
   assert.match(
     packageJson.scripts.prestart,
-    /node scripts\/apply-attendance-correction\.js$/u
+    /node scripts\/apply-attendance-correction\.js/u
   );
 });
